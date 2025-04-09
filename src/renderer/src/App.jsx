@@ -1,34 +1,13 @@
-import Versions from './components/Versions'
-import electronLogo from './assets/electron.svg'
-
-function App() {
-  const ipcHandle = () => window.electron.ipcRenderer.send('ping')
-
+export default function App() {
   return (
-    <>
-      <img alt="logo" className="logo" src={electronLogo} />
-      <div className="creator">Powered by electron-vite</div>
-      <div className="text">
-        Build an Electron app with <span className="react">React</span>
-      </div>
-      <p className="tip">
-        Please try pressing <code>F12</code> to open the devTool
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 text-center px-4">
+      <h1 className="text-4xl font-bold text-blue-600">Hello from Tailwind CSS v4!</h1>
+      <p className="mt-4 text-gray-700">
+        This is a minimal setup using Vite, React, and Tailwind v4.
       </p>
-      <div className="actions">
-        <div className="action">
-          <a href="https://electron-vite.org/" target="_blank" rel="noreferrer">
-            Documentation
-          </a>
-        </div>
-        <div className="action">
-          <a target="_blank" rel="noreferrer" onClick={ipcHandle}>
-            Send IPC
-          </a>
-        </div>
-      </div>
-      <Versions></Versions>
-    </>
+      <button className="mt-6 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
+        Click me
+      </button>
+    </div>
   )
 }
-
-export default App
