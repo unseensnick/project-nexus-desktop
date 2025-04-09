@@ -1,3 +1,5 @@
+import { Button } from '@/components/ui/button'
+
 export default function App() {
   return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 text-center px-4">
@@ -5,9 +7,9 @@ export default function App() {
       <p className="mt-4 text-gray-700">
         This is a minimal setup using Vite, React, and Tailwind v4.
       </p>
-      <button className="mt-6 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
+      <Button className="mt-6 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600">
         Click me
-      </button>
+      </Button>
     </div>
   )
 }
