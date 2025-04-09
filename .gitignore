@@ -144,3 +144,4 @@ dist
 # miscellaneous
 *.log*
 .DS_Store
+output/
