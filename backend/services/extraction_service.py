@@ -16,6 +16,7 @@ from exceptions import MediaAnalysisError, TrackExtractionError
 from extractors.audio import AudioExtractor
 from extractors.subtitle import SubtitleExtractor
 from extractors.video import VideoExtractor
+from utils.extraction_utils import determine_track_types
 from utils.file_utils import ensure_directory, find_media_files
 from utils.path_utils import get_output_path_for_file
 
@@ -79,53 +80,71 @@ class ExtractionService:
         Returns:
             Dict with extraction results
         """
-        # Create output directory if it doesn't exist
+        # Create output directory and initialize result
         output_dir = ensure_directory(output_dir)
-
-        # Initialize result
         result = self._initialize_result_dict(file_path)
 
         try:
+            # Initial progress update
+            if progress_callback:
+                try:
+                    progress_callback("initializing", 0, 0, "")
+                except Exception as e:
+                    logger.error(f"Error in progress callback: {e}")
+                    
             # Analyze the file
             if not self._analyze_file(file_path, result):
+                # Signal completion even for failed analysis
+                if progress_callback:
+                    try:
+                        progress_callback(None, 0, 100, None)
+                    except Exception as e:
+                        logger.error(f"Error in final progress callback: {e}")
                 return result
 
+            # Progress update for analysis completion
+            if progress_callback:
+                try:
+                    progress_callback("analysis", 0, 20, "")
+                except Exception as e:
+                    logger.error(f"Error in progress callback: {e}")
+
             # Determine track types to extract
-            (
-                extract_audio,
-                extract_subtitles,
-                extract_video,
-            ) = self._determine_track_types(
+            extract_audio, extract_subtitles, extract_video = determine_track_types(
                 audio_only, subtitle_only, video_only, include_video
             )
 
-            # Extract audio tracks if needed
-            if extract_audio:
-                self._extract_audio_tracks(
-                    file_path, output_dir, languages, progress_callback, result
-                )
-
-            # Extract subtitle tracks if needed
-            if extract_subtitles:
-                self._extract_subtitle_tracks(
-                    file_path, output_dir, languages, progress_callback, result
-                )
-
-            # Extract video tracks if needed
-            if extract_video:
-                self._extract_video_tracks(
-                    file_path, output_dir, remove_letterbox, progress_callback, result
-                )
+            # Extract tracks based on determined types
+            self._extract_tracks_by_type(
+                file_path,
+                output_dir,
+                languages,
+                extract_audio,
+                extract_subtitles,
+                extract_video,
+                remove_letterbox,
+                progress_callback,
+                result,
+            )
 
             # Update success status
             self._update_extraction_status(result, languages)
 
             # Signal completion
             if progress_callback:
-                progress_callback(None, 0, 100, None)
+                try:
+                    progress_callback(None, 0, 100, None)
+                except Exception as e:
+                    logger.error(f"Error in final progress callback: {e}")
 
         except (IOError, RuntimeError, MediaAnalysisError, TrackExtractionError) as e:
             self._handle_extraction_error(e, file_path, result)
+            # Signal completion even in case of error
+            if progress_callback:
+                try:
+                    progress_callback("error", 0, 100, None)
+                except Exception as ex:
+                    logger.error(f"Error in error progress callback: {ex}")
 
         return result
 
@@ -151,30 +170,33 @@ class ExtractionService:
             self.failed_files.append((str(file_path), str(e)))
             return False
 
-    def _determine_track_types(
+    def _extract_tracks_by_type(
         self,
-        audio_only: bool = False,
-        subtitle_only: bool = False,
-        video_only: bool = False,
-        include_video: bool = False,
-    ):
-        """Determine which track types to extract based on flag combinations."""
-        # Handle exclusive flags - video_only takes precedence
-        if video_only:
-            return False, False, True
-
-        # Determine which types to extract
-        extract_audio = not subtitle_only
-        extract_subtitles = not audio_only
-        extract_video = include_video
-
-        # If both audio_only and subtitle_only are set, warn in logs
-        if audio_only and subtitle_only:
-            logger.warning(
-                "Both audio_only and subtitle_only flags are set, no tracks will be extracted"
+        file_path: Path,
+        output_dir: Path,
+        languages: List[str],
+        extract_audio: bool,
+        extract_subtitles: bool,
+        extract_video: bool,
+        remove_letterbox: bool,
+        progress_callback: Optional[Callable],
+        result: Dict,
+    ) -> None:
+        """Extract tracks based on determined types."""
+        if extract_audio:
+            self._extract_audio_tracks(
+                file_path, output_dir, languages, progress_callback, result
             )
 
-        return extract_audio, extract_subtitles, extract_video
+        if extract_subtitles:
+            self._extract_subtitle_tracks(
+                file_path, output_dir, languages, progress_callback, result
+            )
+
+        if extract_video:
+            self._extract_video_tracks(
+                file_path, output_dir, remove_letterbox, progress_callback, result
+            )
 
     def _create_track_progress_callback(
         self,
@@ -196,12 +218,32 @@ class ExtractionService:
         if not progress_callback:
             return None
 
-        def callback(track_id, _total_tracks, track_progress=None):
-            language = ""
-            if track_id < len(track_collection):
-                language = track_collection[track_id].language or ""
+        def callback(track_id, _total_tracks=None, track_progress=None):
+            try:
+                # Ensure consistent parameter order for the parent callback
+                # Format: args = [track_type, track_id, percentage, language]
+                language = ""
+                if track_id < len(track_collection):
+                    language = track_collection[track_id].language or ""
 
-            progress_callback(track_type, track_id, track_progress or 0, language)
+                # Log the progress update for debugging
+                logger.debug(f"Track progress: {track_type} {track_id} at {track_progress}% [{language}]")
+                
+                # Ensure track_progress is a number between 0-100
+                if track_progress is None:
+                    track_progress = 0
+                try:
+                    track_progress = float(track_progress)
+                    track_progress = min(100, max(0, track_progress))
+                except (ValueError, TypeError):
+                    track_progress = 0
+                    
+                # Always ensure track_progress is provided as the 3rd parameter
+                # This is critical for the frontend which expects percentage in args[2]
+                progress_callback(track_type, track_id, track_progress, language)
+            except Exception as e:
+                # Don't let progress callback errors disrupt extraction
+                logger.error(f"Error in track progress callback: {e}")
 
         return callback
 
@@ -264,7 +306,7 @@ class ExtractionService:
         """Extract video tracks with appropriate progress reporting."""
         successful_video_tracks = 0
         
-        # Add debug information 
+        # Log video extraction request
         logger.info(f"Video extraction requested for {file_path}")
         logger.info(f"Found {len(self.media_analyzer.video_tracks)} video tracks")
         
@@ -274,18 +316,29 @@ class ExtractionService:
             result["extracted_video"] = 0
             return
 
-        for track in self.media_analyzer.video_tracks:
+        for idx, track in enumerate(self.media_analyzer.video_tracks):
+            # Create a closure to preserve the track value for the callback
+            def create_callback_for_track(track_id, track_language):
+                def update_video_progress(percent):
+                    try:
+                        # Ensure the progress is passed as the 3rd parameter
+                        # Format: track_type, track_id, percentage, language
+                        if progress_callback:
+                            progress_callback("video", track_id, percent, track_language or "")
+                    except Exception as e:
+                        logger.error(f"Error in video progress callback: {e}")
+                return update_video_progress
+
             try:
-                # Log which track we're trying to extract
-                logger.info(f"Attempting to extract video track {track.id} with codec {track.codec}")
-                
                 # Create a callback for this specific video track
                 video_progress = None
                 if progress_callback:
-                    def update_video_progress(percent):
-                        progress_callback("video", track.id, percent)
-                    video_progress = update_video_progress
+                    video_progress = create_callback_for_track(track.id, track.language)
 
+                # Initial progress update for this track
+                if video_progress:
+                    video_progress(0)
+                    
                 # Extract the video track
                 video_path = self.video_extractor.extract_track(
                     file_path,
@@ -298,9 +351,14 @@ class ExtractionService:
                 # Log successful extraction
                 logger.info(f"Successfully extracted video track {track.id} to {video_path}")
                 successful_video_tracks += 1
+                
+                # Final progress update for this track
+                if video_progress:
+                    video_progress(100)
+                    
             except (TrackExtractionError, IOError, RuntimeError) as e:
                 logger.error(f"Failed to extract video track {track.id}: {e}")
-                # Continue with other video tracks
+                
 
         logger.info(f"Total video tracks successfully extracted: {successful_video_tracks}")
         result["extracted_video"] = successful_video_tracks
@@ -381,17 +439,35 @@ class ExtractionService:
             if not self._analyze_file(file_path, result):
                 return result
 
+            # Get the appropriate extractor and extract the track
+            extractor = self._get_extractor_for_track_type(track_type)
+            if not extractor:
+                result["error"] = f"Invalid track type: {track_type}"
+                return result
+
+            # Wrap the progress callback for consistent parameter order
+            wrapped_callback = None
+            if progress_callback:
+                def wrapped_progress(percentage):
+                    # Ensure the progress is passed as the 3rd parameter
+                    progress_callback(track_type, track_id, percentage, "")
+                wrapped_callback = wrapped_progress
+            
+            # Set up extraction parameters
+            kwargs = {}
+            if track_type == "video" and remove_letterbox:
+                kwargs["remove_letterbox"] = remove_letterbox
+
             # Extract the track
-            output_path = self._extract_single_track(
+            output_path = extractor.extract_track(
                 file_path,
                 output_dir,
-                track_type,
                 track_id,
-                remove_letterbox,
-                progress_callback,
-                result,
+                progress_callback=wrapped_callback,
+                **kwargs
             )
 
+            # Update result with success information
             if output_path:
                 result["success"] = True
                 result["output_path"] = str(output_path)
@@ -405,36 +481,6 @@ class ExtractionService:
 
         return result
 
-    def _extract_single_track(
-        self,
-        file_path: Path,
-        output_dir: Path,
-        track_type: str,
-        track_id: int,
-        remove_letterbox: bool,
-        progress_callback: Optional[Callable],
-        result: Dict,
-    ) -> Optional[Path]:
-        """Extract a single track with error handling."""
-        # Get the appropriate extractor
-        extractor = self._get_extractor_for_track_type(track_type)
-        if not extractor:
-            result["error"] = f"Invalid track type: {track_type}"
-            return None
-
-        try:
-            # Extract the track
-            return extractor.extract_track(
-                file_path,
-                output_dir,
-                track_id,
-                progress_callback=progress_callback,
-                remove_letterbox=remove_letterbox if track_type == "video" else False,
-            )
-        except (ValueError, IOError, TrackExtractionError) as e:
-            result["error"] = str(e)
-            return None
-
     def _get_extractor_for_track_type(self, track_type: str):
         """
         Get the appropriate extractor for a track type.
@@ -445,14 +491,12 @@ class ExtractionService:
         Returns:
             The appropriate extractor or None if track_type is invalid
         """
-        if track_type == "audio":
-            return self.audio_extractor
-        elif track_type == "subtitle":
-            return self.subtitle_extractor
-        elif track_type == "video":
-            return self.video_extractor
-        else:
-            return None
+        extractors = {
+            "audio": self.audio_extractor,
+            "subtitle": self.subtitle_extractor,
+            "video": self.video_extractor
+        }
+        return extractors.get(track_type)
 
     def batch_extract(
         self,
@@ -499,8 +543,14 @@ class ExtractionService:
         if self.total_files == 0:
             return self._create_empty_batch_result()
 
-        # Process files based on concurrency mode
-        results = self._process_files(
+        # Choose processing strategy based on worker count
+        batch_processor = (
+            self._process_files_parallel if max_workers > 1 
+            else self._process_files_sequential
+        )
+        
+        # Process files using appropriate method
+        results = batch_processor(
             all_media_files,
             output_dir,
             languages,
@@ -537,52 +587,8 @@ class ExtractionService:
             "successful_files": 0,
             "failed_files": 0,
             "extracted_tracks": 0,
-            "results": [],
             "failed_files_list": [],
         }
-
-    def _process_files(
-        self,
-        all_media_files: List[Path],
-        output_dir: Path,
-        languages: List[str],
-        audio_only: bool,
-        subtitle_only: bool,
-        include_video: bool,
-        video_only: bool,
-        remove_letterbox: bool,
-        use_org_structure: bool,
-        progress_callback: Optional[Callable],
-        max_workers: int,
-    ) -> List[Dict]:
-        """Process files using appropriate concurrency strategy."""
-        if max_workers > 1:
-            return self._process_files_parallel(
-                all_media_files,
-                output_dir,
-                languages,
-                audio_only,
-                subtitle_only,
-                include_video,
-                video_only,
-                remove_letterbox,
-                use_org_structure,
-                progress_callback,
-                max_workers,
-            )
-        else:
-            return self._process_files_sequential(
-                all_media_files,
-                output_dir,
-                languages,
-                audio_only,
-                subtitle_only,
-                include_video,
-                video_only,
-                remove_letterbox,
-                use_org_structure,
-                progress_callback,
-            )
 
     def _prepare_batch_report(self, results: List[Dict]) -> Dict:
         """Prepare the final batch report."""
@@ -595,10 +601,9 @@ class ExtractionService:
             "successful_files": successful_files,
             "failed_files": failed_files,
             "extracted_tracks": self.extracted_tracks,
-            "results": results,
             "failed_files_list": self.failed_files,
         }
-
+        
     def _prepare_output_dir(
         self, output_dir: Path, file_path: Path, use_org_structure: bool
     ) -> Path:
@@ -614,127 +619,51 @@ class ExtractionService:
             Prepared output directory
         """
         if use_org_structure:
-            # First get the output path without creating the directory
             output_path = get_output_path_for_file(output_dir, file_path)
-            # Then ensure the directory exists
             return ensure_directory(output_path)
-        else:
-            return ensure_directory(output_dir)
-
-    def _process_files_parallel(
-        self,
-        all_media_files: List[Path],
-        output_dir: Path,
-        languages: List[str],
-        audio_only: bool,
-        subtitle_only: bool,
-        include_video: bool,
-        video_only: bool,
-        remove_letterbox: bool,
-        use_org_structure: bool,
-        progress_callback: Optional[Callable],
-        max_workers: int,
-    ) -> List[Dict]:
-        """Process files in parallel using a thread pool."""
-        # Create thread-local storage and synchronization
-        thread_local = threading.local()
-        stats_lock = threading.Lock()
-        results = []
-
-        # Factory function to create a file processor for each file
-        def create_file_processor(idx: int, file_path: Path):
-            def process_file():
-                try:
-                    # Get thread-local extraction service
-                    extraction_service = self._get_thread_local_extraction_service(
-                        thread_local
-                    )
-
-                    # Prepare output directory
-                    file_output_dir = self._prepare_output_dir(
-                        output_dir, file_path, use_org_structure
-                    )
-
-                    # Create file progress callback
-                    file_progress_callback = self._create_file_progress_callback(
-                        idx, progress_callback
-                    )
-
-                    # Process the file
-                    result = extraction_service.extract_tracks(
-                        file_path,
-                        file_output_dir,
-                        languages,
-                        audio_only,
-                        subtitle_only,
-                        include_video,
-                        video_only,
-                        remove_letterbox,
-                        file_progress_callback,
-                    )
-
-                    # Update shared statistics
-                    self._update_shared_stats(result, file_path, stats_lock)
-
-                    # Signal file completion
-                    if progress_callback:
-                        progress_callback(idx + 1, self.total_files, 100, None, True)
-
-                    return result
-
-                except Exception as e:
-                    return self._handle_parallel_file_error(
-                        e, file_path, idx, progress_callback, stats_lock
-                    )
-
-            return process_file
-
-        # Use ThreadPoolExecutor to process files in parallel
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            # Submit all file processing tasks
-            futures_map = {
-                executor.submit(create_file_processor(idx, file_path)): (idx, file_path)
-                for idx, file_path in enumerate(all_media_files)
-            }
-
-            # Collect results as they complete
-            for future in futures_map:
-                try:
-                    result = future.result()
-                    results.append(result)
-                except Exception as e:
-                    idx, file_path = futures_map[future]
-                    logger.error(f"Exception in future for {file_path}: {e}")
-                    results.append(self._create_error_result(file_path, str(e)))
-                    with stats_lock:
-                        self.failed_files.append((str(file_path), str(e)))
-
-        return results
-
-    def _get_thread_local_extraction_service(self, thread_local):
-        """Get or create thread-local extraction service."""
-        if not hasattr(thread_local, "extraction_service"):
-            thread_local.extraction_service = ExtractionService()
-        return thread_local.extraction_service
-
+        return ensure_directory(output_dir)
+        
     def _create_file_progress_callback(
         self, idx: int, progress_callback: Optional[Callable]
     ):
-        """Create a progress callback for a specific file."""
+        """
+        Create a progress callback for a specific file.
+        
+        Ensures consistent progress reporting format for the frontend.
+
+        Args:
+            idx: File index in batch
+            progress_callback: Parent progress callback
+            
+        Returns:
+            File-specific progress callback function
+        """
         if not progress_callback:
             return None
 
-        def file_progress_callback(track_type, track_id, percentage, language=""):
+        def file_progress_callback(track_type=None, track_id=None, percentage=0, language=""):
+            # Log the progress data for debugging
+            logger.debug(f"Progress update: file {idx+1}, track {track_type} {track_id}, {percentage}%")
+            
+            # Call the parent callback with consistent parameter ordering
+            # This ensures the percentage is always in position args[2]
+            # Format: [current_file, total_files, percentage, track_type, language]
             progress_callback(
                 idx + 1,
                 self.total_files,
-                percentage,
+                percentage,  # Ensure percentage is in position 2 (args[2])
                 track_type,
                 language,
             )
 
         return file_progress_callback
-
+        
+    def _get_thread_local_extraction_service(self, thread_local):
+        """Get or create thread-local extraction service."""
+        if not hasattr(thread_local, "extraction_service"):
+            thread_local.extraction_service = ExtractionService()
+        return thread_local.extraction_service
+        
     def _update_shared_stats(
         self, result: Dict, file_path: Path, stats_lock: threading.Lock
     ):
@@ -749,7 +678,7 @@ class ExtractionService:
                 )
             if result["error"]:
                 self.failed_files.append((str(file_path), result["error"]))
-
+                
     def _handle_parallel_file_error(
         self,
         e: Exception,
@@ -766,10 +695,10 @@ class ExtractionService:
             self.failed_files.append((str(file_path), str(e)))
 
         if progress_callback:
-            progress_callback(idx + 1, self.total_files, 100, None, True)
+            progress_callback(idx + 1, self.total_files, 100, None, "")
 
         return self._create_error_result(file_path, str(e))
-
+        
     def _create_error_result(self, file_path: Path, error: str) -> Dict:
         """Create an error result for a file."""
         return {
@@ -780,7 +709,91 @@ class ExtractionService:
             "extracted_video": 0,
             "error": error,
         }
+        
+    def _process_files_parallel(
+        self,
+        all_media_files: List[Path],
+        output_dir: Path,
+        languages: List[str],
+        audio_only: bool,
+        subtitle_only: bool,
+        include_video: bool,
+        video_only: bool,
+        remove_letterbox: bool,
+        use_org_structure: bool,
+        progress_callback: Optional[Callable],
+        max_workers: int,
+    ) -> List[Dict]:
+        """Process files in parallel using a thread pool."""
+        thread_local = threading.local()
+        stats_lock = threading.Lock()
+        results = []
 
+        # Create a task for each file to be processed in parallel
+        def process_file_task(idx: int, file_path: Path):
+            try:
+                # Get thread-local extraction service
+                extraction_service = self._get_thread_local_extraction_service(thread_local)
+
+                # Prepare output directory
+                file_output_dir = self._prepare_output_dir(
+                    output_dir, file_path, use_org_structure
+                )
+
+                # Create file progress callback
+                file_progress_callback = self._create_file_progress_callback(
+                    idx, progress_callback
+                )
+
+                # Process the file
+                result = extraction_service.extract_tracks(
+                    file_path,
+                    file_output_dir,
+                    languages,
+                    audio_only,
+                    subtitle_only,
+                    include_video,
+                    video_only,
+                    remove_letterbox,
+                    file_progress_callback,
+                )
+
+                # Update shared statistics
+                self._update_shared_stats(result, file_path, stats_lock)
+
+                # Signal file completion
+                if progress_callback:
+                    progress_callback(idx + 1, self.total_files, 100, None, "")
+
+                return result
+
+            except Exception as e:
+                return self._handle_parallel_file_error(
+                    e, file_path, idx, progress_callback, stats_lock
+                )
+
+        # Use ThreadPoolExecutor to process files in parallel
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit all tasks and map them to their corresponding file paths
+            future_to_file = {
+                executor.submit(process_file_task, idx, file_path): (idx, file_path)
+                for idx, file_path in enumerate(all_media_files)
+            }
+
+            # Collect results as they complete
+            for future in future_to_file:
+                try:
+                    result = future.result()
+                    results.append(result)
+                except Exception as e:
+                    idx, file_path = future_to_file[future]
+                    logger.error(f"Exception in future for {file_path}: {e}")
+                    results.append(self._create_error_result(file_path, str(e)))
+                    with stats_lock:
+                        self.failed_files.append((str(file_path), str(e)))
+
+        return results
+        
     def _process_files_sequential(
         self,
         all_media_files: List[Path],
@@ -793,6 +806,7 @@ class ExtractionService:
         remove_letterbox: bool,
         use_org_structure: bool,
         progress_callback: Optional[Callable],
+        max_workers: int = 1,  # Kept for interface consistency
     ) -> List[Dict]:
         """
         Process files sequentially.
@@ -808,13 +822,14 @@ class ExtractionService:
             remove_letterbox: Remove letterboxing from video tracks if True
             use_org_structure: Organize output using parsed filenames if True
             progress_callback: Optional callback function for progress updates
+            max_workers: Not used in sequential processing, kept for interface consistency
 
         Returns:
             List of result dictionaries for each file
         """
         results = []
 
-        # Process files sequentially
+        # Process files one by one
         for idx, file_path in enumerate(all_media_files):
             try:
                 # Determine output directory for this file
@@ -845,31 +860,19 @@ class ExtractionService:
 
                 # Report completion of this file
                 if progress_callback:
-                    progress_callback(idx + 1, self.total_files, 100, None, True)
+                    progress_callback(idx + 1, self.total_files, 100, None, "")
 
             except Exception as e:
                 # Handle unexpected errors
-                error_result = self._handle_sequential_file_error(
-                    e, file_path, idx, progress_callback
-                )
-                results.append(error_result)
+                error_msg = f"Unexpected error processing {file_path}: {str(e)}"
+                logger.error(error_msg)
+                self.failed_files.append((str(file_path), str(e)))
+                
+                # Signal completion even in case of error
+                if progress_callback:
+                    progress_callback(idx + 1, self.total_files, 100, None, "")
+                
+                # Add error result
+                results.append(self._create_error_result(file_path, str(e)))
 
         return results
-
-    def _handle_sequential_file_error(
-        self,
-        e: Exception,
-        file_path: Path,
-        idx: int,
-        progress_callback: Optional[Callable],
-    ) -> Dict:
-        """Handle errors in sequential file processing."""
-        error_msg = f"Unexpected error processing {file_path}: {str(e)}"
-        logger.error(error_msg)
-        self.failed_files.append((str(file_path), str(e)))
-
-        # Signal completion even in case of error
-        if progress_callback:
-            progress_callback(idx + 1, self.total_files, 100, None, True)
-
-        return self._create_error_result(file_path, str(e))

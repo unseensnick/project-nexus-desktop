@@ -8,7 +8,7 @@ a common interface and shared functionality.
 import logging
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Union
 
 from core.media_analyzer import MediaAnalyzer, Track
 from exceptions import TrackExtractionError
@@ -45,6 +45,7 @@ class BaseExtractor(ABC):
 
         Must be implemented by subclasses to return 'audio', 'subtitle', or 'video'.
         """
+        pass
 
     @property
     @abstractmethod
@@ -54,15 +55,17 @@ class BaseExtractor(ABC):
 
         Must be implemented by subclasses to provide the appropriate mapping.
         """
+        pass
 
     @property
     @abstractmethod
-    def error_class(self):
+    def error_class(self) -> Any:
         """
         The error class to use for this extractor.
 
         Must be implemented by subclasses to provide the appropriate error class.
         """
+        pass
 
     def extract_track(
         self,
@@ -89,25 +92,18 @@ class BaseExtractor(ABC):
             TrackExtractionError: If extraction fails
         """
         try:
+            # Normalize paths
             input_path = Path(input_file)
             output_dir = Path(output_dir)
+            
+            # Ensure output directory exists
             output_dir.mkdir(parents=True, exist_ok=True)
 
             # Analyze media file if not already analyzed
-            if not self.media_analyzer.tracks:
-                self.media_analyzer.analyze_file(input_path)
+            self._ensure_media_analyzed(input_path)
 
-            # Find the specified track
-            tracks = getattr(self.media_analyzer, f"{self.track_type}_tracks")
-            if track_id >= len(tracks):
-                raise self.error_class(
-                    f"{self.track_type.capitalize()} track with ID {track_id} not found. "
-                    f"Available tracks: 0-{len(tracks)-1 if tracks else 'none'}",
-                    track_id,
-                    self._module_name,
-                )
-
-            track = tracks[track_id]
+            # Validate track exists and get track info
+            track = self._get_and_validate_track(track_id)
 
             # Allow subclasses to perform specialized extraction
             if hasattr(self, "_extract_specialized_track"):
@@ -116,41 +112,74 @@ class BaseExtractor(ABC):
                 )
 
             # Standard extraction for most track types
-            # Determine output extension based on codec
-            extension = self.codec_to_extension.get(
-                track.codec, self.codec_to_extension["default"]
+            return self._perform_standard_extraction(
+                input_path, output_dir, track_id, track, progress_callback
             )
-            output_filename = self.get_output_filename(input_path, track, extension)
-            output_path = output_dir / output_filename
-
-            # Extract the track
-            logger.info(
-                f"Extracting {self.track_type} track {track_id} to {output_path}"
-            )
-            success = extract_track(
-                input_path,
-                output_path,
-                track_id,
-                self.track_type,
-                self._module_name,
-                progress_callback,
-            )
-
-            if not success:
-                raise self.error_class(
-                    f"FFmpeg failed to extract {self.track_type} track {track_id}",
-                    track_id,
-                    self._module_name,
-                )
-
-            return output_path
 
         except Exception as e:
+            # Ensure we're using the proper error class for this extractor
             if not isinstance(e, TrackExtractionError):
                 error_msg = f"Failed to extract {self.track_type} track {track_id}: {e}"
                 logger.error(error_msg)
                 e = self.error_class(str(e), track_id, self._module_name)
             raise e
+
+    def _ensure_media_analyzed(self, input_path: Path) -> None:
+        """Ensure the media file has been analyzed."""
+        if not self.media_analyzer.tracks:
+            self.media_analyzer.analyze_file(input_path)
+
+    def _get_and_validate_track(self, track_id: int) -> Track:
+        """Get the track and validate it exists."""
+        tracks = getattr(self.media_analyzer, f"{self.track_type}_tracks")
+        if track_id >= len(tracks):
+            raise self.error_class(
+                f"{self.track_type.capitalize()} track with ID {track_id} not found. "
+                f"Available tracks: 0-{len(tracks)-1 if tracks else 'none'}",
+                track_id,
+                self._module_name,
+            )
+        return tracks[track_id]
+
+    def _perform_standard_extraction(
+        self,
+        input_path: Path,
+        output_dir: Path,
+        track_id: int,
+        track: Track,
+        progress_callback: Optional[Callable[[int], None]] = None,
+    ) -> Path:
+        """Perform standard extraction for the track."""
+        # Determine output extension based on codec
+        extension = self.codec_to_extension.get(
+            track.codec, self.codec_to_extension["default"]
+        )
+        
+        # Generate output filename
+        output_filename = self.get_output_filename(input_path, track, extension)
+        output_path = output_dir / output_filename
+
+        # Extract the track
+        logger.info(
+            f"Extracting {self.track_type} track {track_id} to {output_path}"
+        )
+        success = extract_track(
+            input_path,
+            output_path,
+            track_id,
+            self.track_type,
+            self._module_name,
+            progress_callback,
+        )
+
+        if not success:
+            raise self.error_class(
+                f"FFmpeg failed to extract {self.track_type} track {track_id}",
+                track_id,
+                self._module_name,
+            )
+
+        return output_path
 
     def extract_tracks_by_language(
         self,
@@ -191,39 +220,9 @@ class BaseExtractor(ABC):
                 )
                 return []
 
-            # Extract each matching track
-            extracted_paths = []
-            total_tracks = len(tracks)
-
-            for idx, track in enumerate(tracks):
-                try:
-                    # Report the start of this track's extraction
-                    if progress_callback:
-                        progress_callback(idx + 1, total_tracks)
-
-                    # Create a track-specific progress callback
-                    track_progress_callback = None
-                    if progress_callback:
-
-                        def track_progress(percent):
-                            progress_callback(idx + 1, total_tracks, percent)
-
-                        track_progress_callback = track_progress
-
-                    output_path = self.extract_track(
-                        input_file,
-                        output_dir,
-                        track.id,
-                        track_progress_callback,
-                        **kwargs,
-                    )
-                    extracted_paths.append(output_path)
-                    logger.info(f"Extracted {track.display_name} to {output_path}")
-                except TrackExtractionError as e:
-                    # Log but continue with other tracks
-                    logger.error(f"Failed to extract {track.display_name}: {e}")
-
-            return extracted_paths
+            return self._extract_multiple_tracks(
+                input_file, output_dir, tracks, progress_callback, **kwargs
+            )
 
         except Exception as e:
             error_msg = f"Failed to extract {self.track_type} tracks by language: {e}"
@@ -231,6 +230,49 @@ class BaseExtractor(ABC):
             raise TrackExtractionError(
                 str(e), self.track_type, None, self._module_name
             ) from e
+
+    def _extract_multiple_tracks(
+        self,
+        input_file: Union[str, Path],
+        output_dir: Union[str, Path],
+        tracks: List[Track],
+        progress_callback: Optional[Callable[[int, int, Optional[float]], None]] = None,
+        **kwargs,
+    ) -> List[Path]:
+        """Extract multiple tracks and handle progress reporting."""
+        extracted_paths = []
+        total_tracks = len(tracks)
+
+        for idx, track in enumerate(tracks):
+            try:
+                # Report the start of this track's extraction
+                if progress_callback:
+                    progress_callback(idx + 1, total_tracks)
+
+                # Create a track-specific progress callback
+                track_progress_callback = None
+                if progress_callback:
+                    def track_progress(percent):
+                        progress_callback(idx + 1, total_tracks, percent)
+                    track_progress_callback = track_progress
+
+                # Extract this track
+                output_path = self.extract_track(
+                    input_file,
+                    output_dir,
+                    track.id,
+                    track_progress_callback,
+                    **kwargs,
+                )
+                
+                extracted_paths.append(output_path)
+                logger.info(f"Extracted {track.display_name} to {output_path}")
+                
+            except TrackExtractionError as e:
+                # Log but continue with other tracks
+                logger.error(f"Failed to extract {track.display_name}: {e}")
+
+        return extracted_paths
 
     def get_output_filename(
         self, input_file: Union[str, Path], track: Track, extension: str

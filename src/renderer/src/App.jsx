@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import "./assets/main.css"
 
 // Import Shadcn/UI components
@@ -45,6 +45,7 @@ function App() {
 	const [extractionResult, setExtractionResult] = useState(null)
 	const [progressInfo, setProgressInfo] = useState(null)
 	const [progressValue, setProgressValue] = useState(0)
+	const [progressText, setProgressText] = useState("Extracting tracks...")
 	const [activeTab, setActiveTab] = useState("select")
 	const [error, setError] = useState(null)
 
@@ -62,16 +63,89 @@ function App() {
 		setError(null)
 	}, [filePath, outputPath, selectedLanguages, extractionOptions])
 
-	// Update progress value when progressInfo changes
-	useEffect(() => {
-		if (progressInfo?.args?.length > 0) {
-			// The progress percentage is in args[2], not args[0]
-			// Format: args = [track_type, track_id, percentage, language]
-			const percentage = progressInfo.args[2]
-			if (typeof percentage === "number") {
-				setProgressValue(percentage)
-				console.log(`Updating progress bar to ${percentage}%`)
+	// Memoized progress update handler to prevent recreation on each render
+	const handleProgressUpdate = useCallback((data) => {
+		// Only update if there's a meaningful change to avoid render loops
+		setProgressInfo((prev) => {
+			// Simple check to avoid unnecessary state updates
+			if (!prev || JSON.stringify(prev) !== JSON.stringify(data)) {
+				return data
 			}
+			return prev
+		})
+	}, [])
+
+	// Update progress value when progressInfo changes, with protections against infinite loops
+	useEffect(() => {
+		if (!progressInfo) return
+
+		try {
+			console.log("Processing progress update:", progressInfo)
+
+			let percentage = 0
+
+			// Try to extract percentage from different possible locations
+			if (
+				progressInfo.args &&
+				progressInfo.args.length > 2 &&
+				progressInfo.args[2] !== null
+			) {
+				percentage = progressInfo.args[2]
+			} else if (progressInfo.kwargs && typeof progressInfo.kwargs.percentage === "number") {
+				percentage = progressInfo.kwargs.percentage
+			} else if (
+				progressInfo.args &&
+				progressInfo.args.length > 0 &&
+				typeof progressInfo.args[0] === "number"
+			) {
+				percentage = progressInfo.args[0]
+			}
+
+			// Ensure percentage is a number and within valid range
+			if (typeof percentage !== "number") {
+				try {
+					percentage = parseInt(percentage, 10)
+				} catch (e) {
+					percentage = 0
+				}
+			}
+
+			// Clamp to valid range
+			percentage = Math.max(0, Math.min(100, percentage))
+
+			// Only update if percentage has actually changed to prevent loops
+			setProgressValue((prev) => {
+				if (Math.abs(prev - percentage) >= 1) {
+					// Only update for changes of 1% or more
+					return percentage
+				}
+				return prev
+			})
+
+			// Update progress text if available - separate from progressInfo state update
+			let newProgressText = "Extracting tracks..."
+			if (progressInfo.args && progressInfo.args.length > 0) {
+				const trackType = progressInfo.args[0]
+				const trackId = progressInfo.args.length > 1 ? progressInfo.args[1] : null
+				const language = progressInfo.args.length > 3 ? progressInfo.args[3] : ""
+
+				if (trackType && trackId !== null) {
+					newProgressText = `Extracting ${trackType} track ${trackId}`
+					if (language) {
+						newProgressText += ` [${language}]`
+					}
+				}
+			}
+
+			// Only update progress text if it changed
+			setProgressText((prev) => {
+				if (prev !== newProgressText) {
+					return newProgressText
+				}
+				return prev
+			})
+		} catch (error) {
+			console.error("Error processing progress update:", error)
 		}
 	}, [progressInfo])
 
@@ -244,6 +318,7 @@ function App() {
 		setError(null)
 		setProgressInfo(null)
 		setProgressValue(0)
+		setProgressText("Initializing extraction...")
 
 		try {
 			// Generate a unique operation ID
@@ -258,8 +333,8 @@ function App() {
 				for (const progress of progressSteps) {
 					await new Promise((resolve) => setTimeout(resolve, 500))
 
-					// Update progress
-					setProgressInfo({
+					// Update progress using the handler to avoid loops
+					handleProgressUpdate({
 						operationId,
 						args: ["audio", 1, progress, "eng"],
 						kwargs: { track_type: progress < 50 ? "audio" : "subtitle" }
@@ -281,9 +356,7 @@ function App() {
 			// Setup progress tracking
 			let unsubscribe = () => {}
 			if (window.pythonApi.onProgress) {
-				unsubscribe = window.pythonApi.onProgress(operationId, (progressData) => {
-					setProgressInfo(progressData)
-				})
+				unsubscribe = window.pythonApi.onProgress(operationId, handleProgressUpdate)
 			}
 
 			// Create extraction parameters with all options explicitly included
@@ -304,15 +377,15 @@ function App() {
 
 			const result = await window.pythonApi.extractTracks(extractionParams)
 
+			// Clean up progress listener
+			unsubscribe()
+
 			if (result.success) {
 				setExtractionResult(result)
 				setActiveTab("results")
 			} else {
 				setError(result.error || "Extraction failed")
 			}
-
-			// Clean up progress listener
-			unsubscribe()
 		} catch (err) {
 			console.error("Error extracting tracks:", err)
 			setError(`Error extracting tracks: ${err.message}`)
@@ -321,7 +394,8 @@ function App() {
 		}
 	}
 
-	const toggleLanguage = (language) => {
+	// Use memoized callbacks for these functions to prevent infinite loops
+	const toggleLanguage = useCallback((language) => {
 		setSelectedLanguages((prev) => {
 			if (prev.includes(language)) {
 				return prev.filter((lang) => lang !== language)
@@ -329,9 +403,9 @@ function App() {
 				return [...prev, language]
 			}
 		})
-	}
+	}, [])
 
-	const toggleOption = (option) => {
+	const toggleOption = useCallback((option) => {
 		setExtractionOptions((prev) => {
 			const newOptions = {
 				...prev,
@@ -340,13 +414,24 @@ function App() {
 			console.log(`Option ${option} toggled to ${!prev[option]}`, newOptions)
 			return newOptions
 		})
-	}
+	}, [])
 
 	// Helper function to get file name from path
 	const getFileName = (path) => {
 		if (!path) return ""
 		return path.split(/[\\/]/).pop()
 	}
+
+	// Memoize the available languages to avoid recalculations
+	const availableLanguages = useMemo(() => {
+		if (!analyzed || !analyzed.languages) return []
+		return [
+			...new Set([
+				...(analyzed.languages.audio || []),
+				...(analyzed.languages.subtitle || [])
+			])
+		]
+	}, [analyzed])
 
 	return (
 		<div className="container mx-auto p-6 max-w-4xl">
@@ -504,52 +589,59 @@ function App() {
 
 									<div className="space-y-2">
 										<Label className="text-base">Available Tracks</Label>
-										<ScrollArea className="h-40 rounded border p-2">
-											{analyzed.tracks.map((track, idx) => (
-												<div key={idx} className="py-1 text-sm">
-													{track.type === "audio" ? (
-														<Badge
-															variant="outline"
-															className="bg-blue-50 mr-2 flex items-center gap-1"
-														>
-															<Headphones className="h-3 w-3" />
-															Audio
+										{/* Wrap this in a div to avoid direct ScrollArea rerender issues */}
+										<div className="rounded border">
+											<ScrollArea className="h-40 p-2">
+												{analyzed.tracks.map((track, idx) => (
+													<div key={idx} className="py-1 text-sm">
+														{track.type === "audio" ? (
+															<Badge
+																variant="outline"
+																className="bg-blue-50 mr-2 flex items-center gap-1"
+															>
+																<Headphones className="h-3 w-3" />
+																Audio
+															</Badge>
+														) : track.type === "subtitle" ? (
+															<Badge
+																variant="outline"
+																className="bg-green-50 mr-2 flex items-center gap-1"
+															>
+																<Subtitles className="h-3 w-3" />
+																Subtitle
+															</Badge>
+														) : (
+															<Badge
+																variant="outline"
+																className="bg-amber-50 mr-2 flex items-center gap-1"
+															>
+																<Video className="h-3 w-3" />
+																Video
+															</Badge>
+														)}
+														<span className="font-medium">
+															{track.language &&
+																`[${track.language}]`}{" "}
+															{track.title || `Track ${track.id}`}
+														</span>
+														{track.default && (
+															<Badge
+																variant="secondary"
+																className="ml-2"
+															>
+																Default
+															</Badge>
+														)}
+														{track.forced && (
+															<Badge className="ml-2">Forced</Badge>
+														)}
+														<Badge variant="outline" className="ml-2">
+															{track.codec}
 														</Badge>
-													) : track.type === "subtitle" ? (
-														<Badge
-															variant="outline"
-															className="bg-green-50 mr-2 flex items-center gap-1"
-														>
-															<Subtitles className="h-3 w-3" />
-															Subtitle
-														</Badge>
-													) : (
-														<Badge
-															variant="outline"
-															className="bg-amber-50 mr-2 flex items-center gap-1"
-														>
-															<Video className="h-3 w-3" />
-															Video
-														</Badge>
-													)}
-													<span className="font-medium">
-														{track.language && `[${track.language}]`}{" "}
-														{track.title || `Track ${track.id}`}
-													</span>
-													{track.default && (
-														<Badge variant="secondary" className="ml-2">
-															Default
-														</Badge>
-													)}
-													{track.forced && (
-														<Badge className="ml-2">Forced</Badge>
-													)}
-													<Badge variant="outline" className="ml-2">
-														{track.codec}
-													</Badge>
-												</div>
-											))}
-										</ScrollArea>
+													</div>
+												))}
+											</ScrollArea>
+										</div>
 									</div>
 
 									<Separator />
@@ -559,12 +651,7 @@ function App() {
 											Select Languages to Extract
 										</Label>
 										<div className="flex flex-wrap gap-2">
-											{[
-												...new Set([
-													...analyzed.languages.audio,
-													...analyzed.languages.subtitle
-												])
-											].map((lang, idx) => (
+											{availableLanguages.map((lang, idx) => (
 												<Badge
 													key={idx}
 													variant={
@@ -695,11 +782,7 @@ function App() {
 									<RefreshCw className="h-4 w-4 animate-spin" />
 									Extraction Progress
 								</CardTitle>
-								<CardDescription>
-									{progressInfo?.args?.[0]
-										? `Currently extracting ${progressInfo.args[0]} tracks`
-										: "Extracting tracks..."}
-								</CardDescription>
+								<CardDescription>{progressText}</CardDescription>
 							</CardHeader>
 							<CardContent>
 								<Progress value={progressValue} className="w-full" />

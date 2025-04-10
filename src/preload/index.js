@@ -42,13 +42,50 @@ const pythonApi = {
 		// Remove any existing listeners
 		ipcRenderer.removeAllListeners(channel)
 
-		// Add the new listener
-		ipcRenderer.on(channel, (_, data) => callback(data))
+		// Add the new listener with error handling
+		ipcRenderer.on(channel, (_, data) => {
+			try {
+				if (data && typeof data === "object") {
+					callback(data)
+				} else {
+					console.warn(`Received invalid progress data: ${data}`)
+				}
+			} catch (error) {
+				console.error("Error in progress callback:", error)
+			}
+		})
 
 		// Return a function to unsubscribe
 		return () => {
 			ipcRenderer.removeAllListeners(channel)
 		}
+	},
+
+	/**
+	 * Extract a specific track from a media file
+	 * @param {Object} options - Extraction options
+	 * @returns {Promise<Object>} - Extraction result
+	 */
+	extractSpecificTrack: (options) => {
+		return ipcRenderer.invoke("python:extract-specific-track", options)
+	},
+
+	/**
+	 * Batch extract tracks from multiple media files
+	 * @param {Object} options - Batch extraction options
+	 * @returns {Promise<Object>} - Batch extraction results
+	 */
+	batchExtract: (options) => {
+		return ipcRenderer.invoke("python:batch-extract", options)
+	},
+
+	/**
+	 * Find media files in specified paths
+	 * @param {Array<string>} paths - Paths to search
+	 * @returns {Promise<Object>} - Found media files
+	 */
+	findMediaFiles: (paths) => {
+		return ipcRenderer.invoke("python:find-media-files", paths)
 	}
 }
 

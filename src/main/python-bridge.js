@@ -154,31 +154,42 @@ function setupHandlers(mainWindow, pythonPath, bridgeScriptPath) {
 
 				// Handle stdout (for normal output and progress updates)
 				pythonProcess.stdout.on("data", (data) => {
-					const dataStr = data.toString()
+					try {
+						const dataStr = data.toString()
 
-					// Debug what we're receiving from Python
-					console.log(`Raw Python stdout: "${dataStr}"`)
+						// Debug what we're receiving from Python
+						console.log(`Raw Python stdout: "${dataStr}"`)
 
-					// Handle progress updates separately from other output
-					const lines = dataStr.split("\n")
+						// Handle progress updates separately from other output
+						const lines = dataStr.split("\n")
 
-					for (const line of lines) {
-						if (line.trim() === "") continue
+						for (const line of lines) {
+							if (line.trim() === "") continue
 
-						if (line.startsWith("PROGRESS:")) {
-							try {
-								const progressJson = line.substring(9).trim()
-								console.log(`Progress data: ${progressJson}`)
-								const progressData = JSON.parse(progressJson)
-								mainWindow.webContents.send(`python:progress:${opId}`, progressData)
-							} catch (err) {
-								console.error(`Error parsing progress data: ${err.message}`)
-								console.error(`Raw progress data: "${line.substring(9)}"`)
+							if (line.startsWith("PROGRESS:")) {
+								try {
+									const progressJson = line.substring(9).trim()
+									console.log(`Progress data: ${progressJson}`)
+									const progressData = JSON.parse(progressJson)
+									// Make sure we have a valid object before sending to UI
+									if (progressData && typeof progressData === "object") {
+										mainWindow.webContents.send(
+											`python:progress:${opId}`,
+											progressData
+										)
+									}
+								} catch (err) {
+									console.error(`Error parsing progress data: ${err.message}`)
+									console.error(`Raw progress data: "${line.substring(9)}"`)
+								}
+							} else {
+								// Regular output data
+								result += line + "\n"
 							}
-						} else {
-							// Regular output data
-							result += line + "\n"
 						}
+					} catch (err) {
+						console.error("Error processing Python stdout:", err)
+						// Don't add this error data to result, continue processing
 					}
 				})
 
@@ -230,7 +241,12 @@ function setupHandlers(mainWindow, pythonPath, bridgeScriptPath) {
 	// Analyze media file
 	ipcMain.handle("python:analyze-file", async (_, filePath) => {
 		console.log(`Analyzing file: ${filePath}`)
-		return executePythonFunction("analyze_file", [filePath])
+		try {
+			return await executePythonFunction("analyze_file", [filePath])
+		} catch (err) {
+			console.error("Error analyzing file:", err)
+			return { success: false, error: err.message }
+		}
 	})
 
 	// Extract tracks
@@ -240,16 +256,21 @@ function setupHandlers(mainWindow, pythonPath, bridgeScriptPath) {
 		// Debug the options we're receiving from the UI
 		console.log("Original extraction options from UI:", options)
 
-		// Make a copy of options without operationId for Python
-		const { operationId, ...optionsForPython } = options
+		try {
+			// Make a copy of options without operationId for Python
+			const { operationId, ...optionsForPython } = options
 
-		// Convert camelCase JavaScript params to snake_case Python params
-		const pythonOptions = convertToPythonParams(optionsForPython)
+			// Convert camelCase JavaScript params to snake_case Python params
+			const pythonOptions = convertToPythonParams(optionsForPython)
 
-		// Debug the options we're sending to Python
-		console.log("Converted Python options:", pythonOptions)
+			// Debug the options we're sending to Python
+			console.log("Converted Python options:", pythonOptions)
 
-		return executePythonFunction("extract_tracks", pythonOptions, operationId)
+			return await executePythonFunction("extract_tracks", pythonOptions, operationId)
+		} catch (err) {
+			console.error("Error extracting tracks:", err)
+			return { success: false, error: err.message }
+		}
 	})
 
 	// Extract specific track
@@ -258,32 +279,47 @@ function setupHandlers(mainWindow, pythonPath, bridgeScriptPath) {
 			`Extracting ${options.trackType} track ${options.trackId} from: ${options.filePath}`
 		)
 
-		// Make a copy of options without operationId for Python
-		const { operationId, ...optionsForPython } = options
+		try {
+			// Make a copy of options without operationId for Python
+			const { operationId, ...optionsForPython } = options
 
-		// Convert camelCase JavaScript params to snake_case Python params
-		const pythonOptions = convertToPythonParams(optionsForPython)
+			// Convert camelCase JavaScript params to snake_case Python params
+			const pythonOptions = convertToPythonParams(optionsForPython)
 
-		return executePythonFunction("extract_specific_track", pythonOptions, operationId)
+			return await executePythonFunction("extract_specific_track", pythonOptions, operationId)
+		} catch (err) {
+			console.error("Error extracting specific track:", err)
+			return { success: false, error: err.message }
+		}
 	})
 
 	// Batch extract
 	ipcMain.handle("python:batch-extract", async (_, options) => {
 		console.log(`Batch extracting from ${options.inputPaths.length} paths`)
 
-		// Make a copy of options without operationId for Python
-		const { operationId, ...optionsForPython } = options
+		try {
+			// Make a copy of options without operationId for Python
+			const { operationId, ...optionsForPython } = options
 
-		// Convert camelCase JavaScript params to snake_case Python params
-		const pythonOptions = convertToPythonParams(optionsForPython)
+			// Convert camelCase JavaScript params to snake_case Python params
+			const pythonOptions = convertToPythonParams(optionsForPython)
 
-		return executePythonFunction("batch_extract", pythonOptions, operationId)
+			return await executePythonFunction("batch_extract", pythonOptions, operationId)
+		} catch (err) {
+			console.error("Error in batch extraction:", err)
+			return { success: false, error: err.message }
+		}
 	})
 
 	// Find media files
 	ipcMain.handle("python:find-media-files", async (_, paths) => {
 		console.log(`Finding media files in ${paths.length} paths`)
-		return executePythonFunction("find_media_files_in_paths", paths)
+		try {
+			return await executePythonFunction("find_media_files_in_paths", paths)
+		} catch (err) {
+			console.error("Error finding media files:", err)
+			return { success: false, error: err.message }
+		}
 	})
 }
 
@@ -358,7 +394,7 @@ function setupMockHandlers(mainWindow) {
 				// Send progress update
 				mainWindow.webContents.send(`python:progress:${options.operationId}`, {
 					operationId: options.operationId,
-					args: [progress],
+					args: ["audio", 0, progress, "eng"],
 					kwargs: { track_type: progress < 50 ? "audio" : "subtitle" }
 				})
 			}
