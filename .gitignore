@@ -145,3 +145,4 @@ dist
 *.log*
 .DS_Store
 output/
+test/

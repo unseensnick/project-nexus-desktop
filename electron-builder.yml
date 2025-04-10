@@ -8,15 +8,32 @@ files:
     - "!electron.vite.config.{js,ts,mjs,cjs}"
     - "!{.eslintignore,.eslintrc.cjs,.prettierignore,.prettierrc.yaml,dev-app-update.yml,CHANGELOG.md,README.md}"
     - "!{.env,.env.*,.npmrc,pnpm-lock.yaml}"
+    - "!backend/**/*.py"  # Exclude Python source files
 asarUnpack:
     - resources/**
+    - node_modules/**
+    - python/**  # Ensure Python distribution is unpacked
+    - ffmpeg/**  # Ensure FFmpeg binaries are unpacked
+extraResources:
+    - from: "backend-dist"  # Python distribution built with PyInstaller
+      to: "python"
+    - from: "ffmpeg-bin/${os}"  # FFmpeg binaries organized by OS
+      to: "ffmpeg"
+    - from: "backend/config.py"  # Include configuration file
+      to: "python/config.py"
 win:
     executableName: project-nexus-desktop
+    target:
+        - target: nsis
+          arch:
+              - x64
 nsis:
     artifactName: ${name}-${version}-setup.${ext}
     shortcutName: ${productName}
     uninstallDisplayName: ${productName}
     createDesktopShortcut: always
+    oneClick: false
+    allowToChangeInstallationDirectory: true
 mac:
     entitlementsInherit: build/entitlements.mac.plist
     extendInfo:
@@ -25,6 +42,11 @@ mac:
         - NSDocumentsFolderUsageDescription: Application requests access to the user's Documents folder.
         - NSDownloadsFolderUsageDescription: Application requests access to the user's Downloads folder.
     notarize: false
+    target:
+        - target: dmg
+          arch:
+              - x64
+              - arm64
 dmg:
     artifactName: ${name}-${version}.${ext}
 linux:
@@ -34,6 +56,7 @@ linux:
         - deb
     maintainer: electronjs.org
     category: Utility
+    executableName: project-nexus-desktop
 appImage:
     artifactName: ${name}-${version}.${ext}
 npmRebuild: false

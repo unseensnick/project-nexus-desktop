@@ -1,0 +1,13 @@
+# Core dependencies
+pydantic==2.5.2        # Data validation and settings management
+rich==14.0.0 
+
+# FFmpeg interaction
+python-ffmpeg==2.0.2   # FFmpeg Python wrapper (consider alternatives based on research)
+
+# Development dependencies
+black==23.11.0         # Code formatting
+isort==5.12.0          # Import sorting
+pylint==3.3.6          # Linting & Static analysis
+autoflake==2.0.1       # Remove unused imports and variables
+# flake8==6.1.0        # Optional, if you need simpler linting

@@ -1,0 +1,51 @@
+{
+    "python.linting.enabled": true,
+    "python.linting.pylintEnabled": true,
+    "python.linting.pylintArgs": [
+        "--rcfile=.pylintrc"
+    ],
+    "python.formatting.provider": "black",
+    "python.formatting.blackArgs": [
+        "--line-length",
+        "100"
+    ],
+    "editor.formatOnSave": true,
+    "editor.codeActionsOnSave": {
+        "source.organizeImports": "explicit"
+    },
+    "python.testing.pytestEnabled": true,
+    "python.testing.unittestEnabled": false,
+    "python.testing.nosetestsEnabled": false,
+    "python.testing.pytestArgs": [
+        "tests"
+    ],
+    "[python]": {
+        "editor.rulers": [
+            100
+        ],
+        "editor.defaultFormatter": "esbenp.prettier-vscode"
+    },
+    "files.exclude": {
+        "**/__pycache__": true,
+        "**/.pytest_cache": true,
+        "**/*.egg-info": true,
+        "**/.mypy_cache": true
+    },
+    "isort.args": [
+        "--profile",
+        "black",
+        "--line-length",
+        "100"
+    ],
+    "python.analysis.extraPaths": [
+        "${workspaceFolder}"
+    ],
+    "python.analysis.diagnosticMode": "workspace",
+    "python.analysis.typeCheckingMode": "off",
+    "python.linting.mypyEnabled": false,
+    "python.linting.flake8Enabled": false,
+    "python-envs.pythonProjects": [],
+    "terminal.integrated.env.windows": {
+        "PYTHON_PATH": "c:\\Users\\UnseenSnick\\Desktop\\DeleteMe\\Projects\\JavaScript\\01_Work\\00_Course\\Webutvikling-4\\project-nexus-desktop\\backend\\venv\\Scripts\\python.exe"
+    }
+}

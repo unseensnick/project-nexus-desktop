@@ -1,0 +1,74 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Current File",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": false
+        },
+        {
+            "name": "Python: Nexus CLI",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "nexus.cli",
+            "console": "integratedTerminal",
+            "args": [
+                "--help"
+            ],
+            "justMyCode": false
+        },
+        {
+            "name": "Python: Analyze File",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "nexus.cli",
+            "console": "integratedTerminal",
+            "args": [
+                "analyze",
+                "${input:mediaFile}"
+            ],
+            "justMyCode": false
+        },
+        {
+            "name": "Python: Extract Tracks",
+            "type": "debugpy",
+            "request": "launch",
+            "module": "nexus.cli",
+            "console": "integratedTerminal",
+            "args": [
+                "extract",
+                "${input:mediaFile}",
+                "--languages",
+                "${input:languages}"
+            ],
+            "justMyCode": false
+        },
+        {
+            "name": "Python: Debug Tests",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "purpose": [
+                "debug-test"
+            ],
+            "console": "integratedTerminal",
+            "justMyCode": false
+        }
+    ],
+    "inputs": [
+        {
+            "id": "mediaFile",
+            "type": "promptString",
+            "description": "Enter the path to a media file"
+        },
+        {
+            "id": "languages",
+            "type": "promptString",
+            "description": "Enter comma-separated language codes (e.g., eng,jpn)",
+            "default": "eng"
+        }
+    ]
+}
