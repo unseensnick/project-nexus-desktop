@@ -13,6 +13,7 @@ from typing import Any, Callable, Dict, List, Optional, Union
 from core.media_analyzer import MediaAnalyzer, Track
 from exceptions import TrackExtractionError
 from utils.ffmpeg import extract_track
+from utils.progress import ProgressReporter
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +73,7 @@ class BaseExtractor(ABC):
         input_file: Union[str, Path],
         output_dir: Union[str, Path],
         track_id: int,
-        progress_callback: Optional[Callable[[int], None]] = None,
+        progress_callback: Optional[Union[Callable[[int], None], ProgressReporter]] = None,
         **kwargs,
     ) -> Path:
         """
@@ -82,7 +83,7 @@ class BaseExtractor(ABC):
             input_file: Path to the input media file
             output_dir: Directory where the extracted track will be saved
             track_id: ID of the track to extract
-            progress_callback: Optional function to call with progress updates (0-100)
+            progress_callback: Either a ProgressReporter instance or a callback function
             **kwargs: Additional extractor-specific parameters
 
         Returns:
@@ -105,15 +106,18 @@ class BaseExtractor(ABC):
             # Validate track exists and get track info
             track = self._get_and_validate_track(track_id)
 
+            # Handle progress callback - support both ProgressReporter and legacy callbacks
+            actual_callback = self._prepare_progress_callback(progress_callback, track)
+
             # Allow subclasses to perform specialized extraction
             if hasattr(self, "_extract_specialized_track"):
                 return self._extract_specialized_track(
-                    input_path, output_dir, track_id, track, progress_callback, **kwargs
+                    input_path, output_dir, track_id, track, actual_callback, **kwargs
                 )
 
             # Standard extraction for most track types
             return self._perform_standard_extraction(
-                input_path, output_dir, track_id, track, progress_callback
+                input_path, output_dir, track_id, track, actual_callback
             )
 
         except Exception as e:
@@ -123,6 +127,35 @@ class BaseExtractor(ABC):
                 logger.error(error_msg)
                 e = self.error_class(str(e), track_id, self._module_name)
             raise e
+
+    def _prepare_progress_callback(
+        self, 
+        progress_input: Optional[Union[Callable, ProgressReporter]], 
+        track: Track
+    ) -> Optional[Callable]:
+        """
+        Prepare the progress callback based on input type.
+        
+        Handles both ProgressReporter instances and legacy callback functions.
+        
+        Args:
+            progress_input: Either a ProgressReporter instance or callback function
+            track: The track being extracted
+            
+        Returns:
+            A standardized callback function or None
+        """
+        if progress_input is None:
+            return None
+            
+        # If it's a ProgressReporter instance, create a track-specific callback
+        if isinstance(progress_input, ProgressReporter):
+            return progress_input.create_track_callback(
+                self.track_type, track.id, track.language
+            )
+        
+        # Otherwise, assume it's a legacy callback function and return it directly
+        return progress_input
 
     def _ensure_media_analyzed(self, input_path: Path) -> None:
         """Ensure the media file has been analyzed."""
@@ -186,7 +219,7 @@ class BaseExtractor(ABC):
         input_file: Union[str, Path],
         output_dir: Union[str, Path],
         languages: List[str],
-        progress_callback: Optional[Callable[[int, int, Optional[float]], None]] = None,
+        progress_reporter: Optional[Union[Callable, ProgressReporter]] = None,
         **kwargs,
     ) -> List[Path]:
         """
@@ -195,8 +228,8 @@ class BaseExtractor(ABC):
         Args:
             input_file: Path to the input media file
             output_dir: Directory where the extracted tracks will be saved
-            languages: List of language codes to extract
-            progress_callback: Optional function to call with track progress (current_track, total_tracks, track_progress)
+            languages: List of language codes to extract (ignored for video tracks)
+            progress_reporter: Either a ProgressReporter instance or legacy callback function
             **kwargs: Additional extractor-specific parameters
 
         Returns:
@@ -209,20 +242,42 @@ class BaseExtractor(ABC):
             # Analyze the file to get track information
             self.media_analyzer.analyze_file(input_file)
 
-            # Filter tracks by language and type
-            tracks = self.media_analyzer.filter_tracks_by_language(
-                languages, self.track_type
-            )
+            # Get tracks based on type
+            tracks = []
+            
+            # For video tracks, don't filter by language since they often lack language metadata
+            if self.track_type == "video":
+                tracks = self.media_analyzer.video_tracks
+                if tracks:
+                    logger.info(f"Found {len(tracks)} video tracks to extract")
+            else:
+                # For audio and subtitle tracks, apply language filtering
+                tracks = self.media_analyzer.filter_tracks_by_language(
+                    languages, self.track_type
+                )
+                if tracks:
+                    logger.info(f"Found {len(tracks)} {self.track_type} tracks matching languages: {', '.join(languages)}")
 
             if not tracks:
-                logger.warning(
-                    f"No {self.track_type} tracks found with languages: {', '.join(languages)}"
-                )
+                # Provide different warning messages based on track type
+                if self.track_type == "video":
+                    logger.warning(f"No video tracks found in the file")
+                else:
+                    logger.warning(
+                        f"No {self.track_type} tracks found with languages: {', '.join(languages)}"
+                    )
                 return []
 
-            return self._extract_multiple_tracks(
-                input_file, output_dir, tracks, progress_callback, **kwargs
-            )
+            # Extract the tracks using the appropriate method based on progress_reporter type
+            if isinstance(progress_reporter, ProgressReporter):
+                return self._extract_multiple_tracks_with_reporter(
+                    input_file, output_dir, tracks, progress_reporter, **kwargs
+                )
+            else:
+                # Legacy callback support
+                return self._extract_multiple_tracks(
+                    input_file, output_dir, tracks, progress_reporter, **kwargs
+                )
 
         except Exception as e:
             error_msg = f"Failed to extract {self.track_type} tracks by language: {e}"
@@ -239,7 +294,11 @@ class BaseExtractor(ABC):
         progress_callback: Optional[Callable[[int, int, Optional[float]], None]] = None,
         **kwargs,
     ) -> List[Path]:
-        """Extract multiple tracks and handle progress reporting."""
+        """
+        Extract multiple tracks using legacy callback.
+        
+        Legacy method to support older callback pattern.
+        """
         extracted_paths = []
         total_tracks = len(tracks)
 
@@ -247,13 +306,13 @@ class BaseExtractor(ABC):
             try:
                 # Report the start of this track's extraction
                 if progress_callback:
-                    progress_callback(idx + 1, total_tracks)
+                    progress_callback(idx, total_tracks)
 
                 # Create a track-specific progress callback
                 track_progress_callback = None
                 if progress_callback:
                     def track_progress(percent):
-                        progress_callback(idx + 1, total_tracks, percent)
+                        progress_callback(idx, total_tracks, percent)
                     track_progress_callback = track_progress
 
                 # Extract this track
@@ -262,6 +321,47 @@ class BaseExtractor(ABC):
                     output_dir,
                     track.id,
                     track_progress_callback,
+                    **kwargs,
+                )
+                
+                extracted_paths.append(output_path)
+                logger.info(f"Extracted {track.display_name} to {output_path}")
+                
+            except TrackExtractionError as e:
+                # Log but continue with other tracks
+                logger.error(f"Failed to extract {track.display_name}: {e}")
+
+        return extracted_paths
+
+    def _extract_multiple_tracks_with_reporter(
+        self,
+        input_file: Union[str, Path],
+        output_dir: Union[str, Path],
+        tracks: List[Track],
+        progress_reporter: ProgressReporter,
+        **kwargs,
+    ) -> List[Path]:
+        """
+        Extract multiple tracks using the modern ProgressReporter.
+        
+        Optimized method for the new ProgressReporter pattern.
+        """
+        extracted_paths = []
+        total_tracks = len(tracks)
+
+        for idx, track in enumerate(tracks):
+            try:
+                # Create a track-specific callback using the progress reporter
+                track_callback = progress_reporter.create_track_callback(
+                    track.type, track.id, track.language
+                )
+
+                # Extract this track
+                output_path = self.extract_track(
+                    input_file,
+                    output_dir,
+                    track.id,
+                    track_callback,
                     **kwargs,
                 )
                 
