@@ -7,8 +7,8 @@ This module handles the extraction of audio tracks from media files.
 import logging
 from typing import Dict
 
-from exceptions import AudioExtractionError
 from extractors.base import BaseExtractor
+from utils.error_handler import AudioExtractionError
 
 logger = logging.getLogger(__name__)
 

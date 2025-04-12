@@ -7,7 +7,7 @@ This module handles the extraction of subtitle tracks from media files.
 import logging
 from typing import Dict
 
-from exceptions import SubtitleExtractionError
+from utils.error_handler import SubtitleExtractionError
 from extractors.base import BaseExtractor
 
 logger = logging.getLogger(__name__)

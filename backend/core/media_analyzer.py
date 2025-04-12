@@ -11,13 +11,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Union
 
-from exceptions import MediaAnalysisError
+from utils.error_handler import MediaAnalysisError, handle_error, log_exception, safe_execute
 from utils.ffmpeg import analyze_media_file
-from utils.language import (
-    enhance_language_detection,
-    get_language_name,
-    normalize_language_code,
-)
+from utils.language import enhance_language_detection, get_language_name, normalize_language_code
 
 logger = logging.getLogger(__name__)
 
@@ -108,7 +104,21 @@ class MediaAnalyzer:
 
         try:
             logger.info(f"Analyzing media file: {file_path}")
-            media_info = self._get_media_info(file_path)
+            
+            # Use safe_execute to get media info
+            media_info = safe_execute(
+                self._get_media_info,
+                file_path,
+                module_name=MODULE_NAME,
+                error_map={
+                    Exception: lambda msg, **kwargs: MediaAnalysisError(
+                        f"FFprobe analysis failed: {msg}", 
+                        file_path, 
+                        MODULE_NAME
+                    )
+                },
+                raise_error=True
+            )
 
             # Extract tracks from the media info
             stream_index_mapping = self._create_stream_index_mapping(media_info)
@@ -120,16 +130,23 @@ class MediaAnalyzer:
             return self._tracks
 
         except Exception as e:
-            self._handle_analysis_error(e, file_path)
+            # Handle error properly
+            log_exception(e, module_name=MODULE_NAME)
+            # Re-raise the error with proper context
+            handle_error(
+                e,
+                module_name=MODULE_NAME,
+                error_map={
+                    Exception: lambda msg, **kwargs: MediaAnalysisError(
+                        str(msg), file_path, MODULE_NAME
+                    )
+                },
+                raise_error=True
+            )
 
     def _get_media_info(self, file_path: Path) -> Dict:
         """Get media information using ffprobe."""
-        try:
-            return analyze_media_file(file_path, MODULE_NAME)
-        except Exception as e:
-            raise MediaAnalysisError(
-                f"FFprobe analysis failed: {e}", file_path, MODULE_NAME
-            ) from e
+        return analyze_media_file(file_path, MODULE_NAME)
 
     def _log_analysis_results(self, file_path: Path):
         """Log information about the analysis results."""
@@ -147,12 +164,6 @@ class MediaAnalyzer:
         if subtitle_langs:
             logger.debug(f"Subtitle languages: {', '.join(subtitle_langs)}")
 
-    def _handle_analysis_error(self, e: Exception, file_path: Path):
-        """Handle errors during media analysis."""
-        error_msg = f"Failed to analyze media file: {e}"
-        logger.error(error_msg)
-        raise MediaAnalysisError(str(e), file_path, MODULE_NAME) from e
-
     def filter_tracks_by_language(
         self, language_codes: Union[str, List[str]], track_type: Optional[str] = None
     ) -> List[Track]:
@@ -166,21 +177,27 @@ class MediaAnalyzer:
         Returns:
             List of tracks matching the language and type criteria
         """
-        # Normalize input to list
-        if isinstance(language_codes, str):
-            language_codes = [language_codes]
+        try:
+            # Normalize input to list
+            if isinstance(language_codes, str):
+                language_codes = [language_codes]
 
-        # Normalize language codes
-        normalized_codes = self._normalize_language_codes(language_codes)
-        logger.debug(f"Filtering tracks by languages: {', '.join(normalized_codes)}")
+            # Normalize language codes
+            normalized_codes = self._normalize_language_codes(language_codes)
+            logger.debug(f"Filtering tracks by languages: {', '.join(normalized_codes)}")
 
-        # Filter tracks
-        filtered_tracks = self._filter_tracks(normalized_codes, track_type)
-        logger.debug(
-            f"Found {len(filtered_tracks)} tracks matching languages: {', '.join(normalized_codes)}"
-        )
+            # Filter tracks
+            filtered_tracks = self._filter_tracks(normalized_codes, track_type)
+            logger.debug(
+                f"Found {len(filtered_tracks)} tracks matching languages: {', '.join(normalized_codes)}"
+            )
 
-        return filtered_tracks
+            return filtered_tracks
+            
+        except Exception as e:
+            log_exception(e, module_name=MODULE_NAME)
+            # Return empty list on error to allow fallback behavior
+            return []
 
     def _normalize_language_codes(self, language_codes: List[str]) -> List[str]:
         """Normalize a list of language codes."""
@@ -229,21 +246,26 @@ class MediaAnalyzer:
         Returns:
             Set of language codes found in the tracks
         """
-        tracks_to_check = self._tracks
-        if track_type:
-            tracks_to_check = [t for t in tracks_to_check if t.type == track_type]
+        try:
+            tracks_to_check = self._tracks
+            if track_type:
+                tracks_to_check = [t for t in tracks_to_check if t.type == track_type]
 
-        # Use normalized language codes
-        languages = set()
-        for track in tracks_to_check:
-            if track.language:
-                normalized = normalize_language_code(track.language)
-                if normalized:
-                    languages.add(normalized)
-                else:
-                    languages.add(track.language.lower())
+            # Use normalized language codes
+            languages = set()
+            for track in tracks_to_check:
+                if track.language:
+                    normalized = normalize_language_code(track.language)
+                    if normalized:
+                        languages.add(normalized)
+                    else:
+                        languages.add(track.language.lower())
 
-        return languages
+            return languages
+            
+        except Exception as e:
+            log_exception(e, module_name=MODULE_NAME, level=logging.WARNING)
+            return set()
 
     def _create_stream_index_mapping(
         self, media_info: Dict
@@ -295,10 +317,17 @@ class MediaAnalyzer:
             if codec_type not in ("audio", "subtitle", "video"):
                 continue
 
-            # Create and add the track
-            track = self._create_track_from_stream(
-                stream, stream_index_mapping, codec_type, filename
+            # Create and add the track using safe_execute
+            track = safe_execute(
+                self._create_track_from_stream,
+                stream, 
+                stream_index_mapping, 
+                codec_type, 
+                filename,
+                module_name=MODULE_NAME,
+                raise_error=False
             )
+            
             if track:
                 tracks.append(track)
 
@@ -339,20 +368,25 @@ class MediaAnalyzer:
         self, stream: Dict, tags: Dict, filename: str, title: Optional[str]
     ) -> Optional[str]:
         """Detect language for a track using multiple methods."""
-        metadata_lang = None
-        if "language" in tags:
-            metadata_lang = tags["language"]
-        elif "lang" in stream:
-            metadata_lang = stream["lang"]
+        try:
+            metadata_lang = None
+            if "language" in tags:
+                metadata_lang = tags["language"]
+            elif "lang" in stream:
+                metadata_lang = stream["lang"]
 
-        language = enhance_language_detection(metadata_lang, filename, title)
+            language = enhance_language_detection(metadata_lang, filename, title)
 
-        # Log language detection results
-        if language:
-            if metadata_lang:
-                if normalize_language_code(metadata_lang) != language:
-                    logger.debug(f"Normalized language: {metadata_lang} -> {language}")
-            else:
-                logger.debug(f"Detected language from filename/title: {language}")
+            # Log language detection results
+            if language:
+                if metadata_lang:
+                    if normalize_language_code(metadata_lang) != language:
+                        logger.debug(f"Normalized language: {metadata_lang} -> {language}")
+                else:
+                    logger.debug(f"Detected language from filename/title: {language}")
 
-        return language
+            return language
+            
+        except Exception as e:
+            log_exception(e, module_name=MODULE_NAME, level=logging.DEBUG)
+            return None

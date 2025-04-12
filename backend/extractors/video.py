@@ -11,8 +11,8 @@ from pathlib import Path
 from typing import Callable, Dict, Optional, Union
 
 from core.media_analyzer import Track
-from exceptions import FFmpegError, VideoExtractionError
 from extractors.base import BaseExtractor
+from utils.error_handler import FFmpegError, VideoExtractionError
 from utils.ffmpeg import extract_track, run_ffmpeg_command, run_ffmpeg_command_with_progress
 
 logger = logging.getLogger(__name__)

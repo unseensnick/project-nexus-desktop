@@ -12,8 +12,15 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
 from core.media_analyzer import MediaAnalyzer
-from exceptions import MediaAnalysisError, NexusError, TrackExtractionError
 from services.extraction_service import ExtractionService
+from utils.error_handler import (
+    MediaAnalysisError,
+    NexusError,
+    TrackExtractionError,
+    create_error_response,
+    log_exception,
+    safe_execute,
+)
 from utils.file_utils import find_media_files
 
 
@@ -60,12 +67,14 @@ class APIHandler:
         Returns:
             Dictionary containing track information
         """
-        try:
-            logger.info(f"Analyzing file: {file_path}")
+        MODULE_NAME = "api_handler.analyze_file"
+        logger.info(f"Analyzing file: {file_path}")
+        
+        def _analyze_file():
             tracks = media_analyzer.analyze_file(Path(file_path))
 
             # Convert track objects to dictionaries for JSON serialization
-            result = {
+            return {
                 "success": True,
                 "tracks": [
                     {
@@ -89,14 +98,20 @@ class APIHandler:
                     "video": list(media_analyzer.get_available_languages("video")),
                 },
             }
-            return result
-
-        except MediaAnalysisError as e:
-            logger.error(f"Error analyzing file: {e}")
-            return {"success": False, "error": str(e)}
+        
+        try:
+            return safe_execute(
+                _analyze_file,
+                module_name=MODULE_NAME,
+                error_map={
+                    MediaAnalysisError: MediaAnalysisError,
+                    Exception: lambda msg, **kwargs: MediaAnalysisError(msg, file_path, MODULE_NAME)
+                },
+                raise_error=True
+            )
         except Exception as e:
-            logger.error(f"Unexpected error analyzing file: {e}")
-            return {"success": False, "error": f"Unexpected error: {str(e)}"}
+            log_exception(e, module_name=MODULE_NAME)
+            return create_error_response(e, module_name=MODULE_NAME)
     
     @staticmethod
     def extract_tracks(
@@ -127,8 +142,10 @@ class APIHandler:
         Returns:
             Dictionary with extraction results
         """
-        try:
-            logger.info(f"Extracting tracks from: {file_path}")
+        MODULE_NAME = "api_handler.extract_tracks"
+        logger.info(f"Extracting tracks from: {file_path}")
+        
+        def _extract_tracks():
             result = extraction_service.extract_tracks(
                 Path(file_path),
                 Path(output_dir),
@@ -142,7 +159,7 @@ class APIHandler:
             )
 
             # Ensure the result is serializable
-            serializable_result = {
+            return {
                 "success": result["success"],
                 "file": result["file"],
                 "extracted_audio": result["extracted_audio"],
@@ -150,15 +167,20 @@ class APIHandler:
                 "extracted_video": result["extracted_video"],
                 "error": result["error"],
             }
-
-            return serializable_result
-
-        except TrackExtractionError as e:
-            logger.error(f"Error extracting tracks: {e}")
-            return {"success": False, "error": str(e)}
+        
+        try:
+            return safe_execute(
+                _extract_tracks,
+                module_name=MODULE_NAME,
+                error_map={
+                    TrackExtractionError: TrackExtractionError,
+                    Exception: lambda msg, **kwargs: TrackExtractionError(msg, module=MODULE_NAME)
+                },
+                raise_error=True
+            )
         except Exception as e:
-            logger.error(f"Unexpected error extracting tracks: {e}")
-            return {"success": False, "error": f"Unexpected error: {str(e)}"}
+            log_exception(e, module_name=MODULE_NAME)
+            return create_error_response(e, module_name=MODULE_NAME)
     
     @staticmethod
     def extract_specific_track(
@@ -183,8 +205,10 @@ class APIHandler:
         Returns:
             Dictionary with extraction result
         """
-        try:
-            logger.info(f"Extracting {track_type} track {track_id} from: {file_path}")
+        MODULE_NAME = "api_handler.extract_specific_track"
+        logger.info(f"Extracting {track_type} track {track_id} from: {file_path}")
+        
+        def _extract_specific_track():
             result = extraction_service.extract_specific_track(
                 Path(file_path),
                 Path(output_dir),
@@ -199,13 +223,22 @@ class APIHandler:
                 result["output_path"] = str(result["output_path"])
 
             return result
-
-        except TrackExtractionError as e:
-            logger.error(f"Error extracting track: {e}")
-            return {"success": False, "error": str(e)}
+        
+        try:
+            return safe_execute(
+                _extract_specific_track,
+                module_name=MODULE_NAME,
+                error_map={
+                    TrackExtractionError: TrackExtractionError,
+                    Exception: lambda msg, **kwargs: TrackExtractionError(
+                        msg, track_type, track_id, MODULE_NAME
+                    )
+                },
+                raise_error=True
+            )
         except Exception as e:
-            logger.error(f"Unexpected error extracting track: {e}")
-            return {"success": False, "error": f"Unexpected error: {str(e)}"}
+            log_exception(e, module_name=MODULE_NAME)
+            return create_error_response(e, module_name=MODULE_NAME)
     
     @staticmethod
     def batch_extract(
@@ -240,8 +273,10 @@ class APIHandler:
         Returns:
             Dictionary with batch extraction results
         """
-        try:
-            logger.info(f"Batch extracting from {len(input_paths)} paths")
+        MODULE_NAME = "api_handler.batch_extract"
+        logger.info(f"Batch extracting from {len(input_paths)} paths")
+        
+        def _batch_extract():
             result = extraction_service.batch_extract(
                 input_paths,
                 Path(output_dir),
@@ -258,7 +293,8 @@ class APIHandler:
 
             # Ensure the result is serializable
             # Convert file paths to strings in failed_files_list
-            serializable_result = {
+            return {
+                "success": True,
                 "total_files": result["total_files"],
                 "processed_files": result["processed_files"],
                 "successful_files": result["successful_files"],
@@ -269,15 +305,20 @@ class APIHandler:
                     for file_path, error in result["failed_files_list"]
                 ],
             }
-
-            return serializable_result
-
-        except NexusError as e:
-            logger.error(f"Error in batch extraction: {e}")
-            return {"success": False, "error": str(e)}
+        
+        try:
+            return safe_execute(
+                _batch_extract,
+                module_name=MODULE_NAME,
+                error_map={
+                    NexusError: NexusError,
+                    Exception: lambda msg, **kwargs: NexusError(msg, MODULE_NAME)
+                },
+                raise_error=True
+            )
         except Exception as e:
-            logger.error(f"Unexpected error in batch extraction: {e}")
-            return {"success": False, "error": f"Unexpected error: {str(e)}"}
+            log_exception(e, module_name=MODULE_NAME)
+            return create_error_response(e, module_name=MODULE_NAME)
     
     @staticmethod
     def find_media_files_in_paths(paths: List[str]) -> Dict:
@@ -290,16 +331,26 @@ class APIHandler:
         Returns:
             Dictionary with list of found media files
         """
-        try:
+        MODULE_NAME = "api_handler.find_media_files"
+        
+        def _find_files():
             files = find_media_files(paths)
             return {
                 "success": True,
                 "files": [str(file) for file in files],
                 "count": len(files),
             }
+            
+        try:
+            return safe_execute(
+                _find_files,
+                module_name=MODULE_NAME,
+                raise_error=False,
+                default_return={"success": False, "error": "Failed to find media files", "count": 0}
+            )
         except Exception as e:
-            logger.error(f"Error finding media files: {e}")
-            return {"success": False, "error": str(e)}
+            log_exception(e, module_name=MODULE_NAME)
+            return create_error_response(e, module_name=MODULE_NAME)
 
 
 # Expose API methods as module-level functions for backward compatibility
@@ -307,4 +358,4 @@ analyze_file = APIHandler.analyze_file
 extract_tracks = APIHandler.extract_tracks
 extract_specific_track = APIHandler.extract_specific_track
 batch_extract = APIHandler.batch_extract
-find_media_files_in_paths = APIHandler.find_media_files_in_pathsfind_media_files_in_paths = APIHandler.find_media_files_in_paths
+find_media_files_in_paths = APIHandler.find_media_files_in_paths

@@ -12,10 +12,10 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional, Union
 
 from core.media_analyzer import MediaAnalyzer
-from exceptions import MediaAnalysisError, NexusError, TrackExtractionError
 from extractors.audio import AudioExtractor
 from extractors.subtitle import SubtitleExtractor
 from extractors.video import VideoExtractor
+from utils.error_handler import MediaAnalysisError, TrackExtractionError
 from utils.extraction_utils import determine_track_types, get_extraction_mode_description
 from utils.file_utils import ensure_directory, find_media_files
 from utils.path_utils import get_output_path_for_file

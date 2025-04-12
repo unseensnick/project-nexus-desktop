@@ -14,9 +14,17 @@ from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple, Union
 
 from config import get_ffmpeg_path, get_ffprobe_path
-from exceptions import DependencyError, FFmpegError, FileHandlingError
+from utils.error_handler import (
+    DependencyError,
+    FFmpegError,
+    FileHandlingError,
+    log_exception,
+    safe_execute,
+)
+from utils.ffmpeg_commands import create_extract_track_command
 
 logger = logging.getLogger(__name__)
+MODULE_NAME = "ffmpeg"
 
 
 class FFmpegManager:
@@ -335,7 +343,7 @@ class FFmpegManager:
             return progress
             
         except Exception as e:
-            logger.debug(f"Error parsing progress: {e}")
+            log_exception(e, module_name=MODULE_NAME, level=logging.DEBUG)
             
         return None
             
@@ -373,12 +381,17 @@ class FFmpegManager:
             str(file_path),
         ]
 
-        try:
+        def _analyze():
             _, stdout, _ = FFmpegManager.run_command(command, module=module)
             return json.loads(stdout)
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse FFprobe JSON output: {e}")
-            raise FFmpegError(f"Failed to parse FFprobe output: {e}", module=module) from e
+            
+        return safe_execute(
+            _analyze,
+            module_name=module or MODULE_NAME,
+            error_map={
+                json.JSONDecodeError: FFmpegError
+            }
+        )
             
     @staticmethod
     def get_media_duration(
@@ -416,7 +429,7 @@ class FFmpegManager:
             duration = data.get("format", {}).get("duration")
             return float(duration) if duration else None
         except Exception as e:
-            logger.warning(f"Could not determine media duration: {e}")
+            log_exception(e, module_name=module or MODULE_NAME, level=logging.WARNING)
             return None
             
     @staticmethod
@@ -450,9 +463,6 @@ class FFmpegManager:
         if track_type not in ("audio", "subtitle", "video"):
             raise ValueError(f"Invalid track type: {track_type}")
 
-        # Import here to avoid circular imports
-        from utils.ffmpeg_commands import create_extract_track_command
-
         # Use the command builder to construct the extraction command
         command = create_extract_track_command(
             input_file, output_file, track_id, track_type, overwrite=True
@@ -466,7 +476,7 @@ class FFmpegManager:
             return True
         except FFmpegError as e:
             # Log the error but don't re-raise - this allows other tracks to continue
-            logger.error(f"Failed to extract {track_type} track {track_id}: {e}")
+            log_exception(e, module_name=module or f"extract_{track_type}")
             return False
 
 
@@ -476,4 +486,4 @@ run_ffmpeg_command = FFmpegManager.run_command
 run_ffmpeg_command_with_progress = FFmpegManager.run_command_with_progress
 analyze_media_file = FFmpegManager.analyze_media_file
 get_media_duration = FFmpegManager.get_media_duration
-extract_track = FFmpegManager.extract_track
+extract_track = FFmpegManager.extract_trackextract_track = FFmpegManager.extract_track

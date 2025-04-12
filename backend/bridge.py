@@ -17,6 +17,27 @@ import sys
 import time
 from typing import Any, Callable, List, Optional
 
+# Import API functions at the module level to avoid import-outside-toplevel
+try:
+    from api import (
+        analyze_file,
+        batch_extract,
+        extract_specific_track,
+        extract_tracks,
+        find_media_files_in_paths,
+    )
+    API_AVAILABLE = True
+except ImportError:
+    API_AVAILABLE = False
+
+from utils.error_handler import (
+    NexusError,
+    handle_error,
+    is_critical_error,
+    log_exception,
+    safe_execute,
+)
+
 
 # Set up logging
 def setup_logging():
@@ -48,16 +69,11 @@ class PythonBridge:
     
     def __init__(self):
         """Initialize the Python bridge."""
-        # Import API functions
-        try:
-            from api import (
-                analyze_file,
-                batch_extract,
-                extract_specific_track,
-                extract_tracks,
-                find_media_files_in_paths,
-            )
-
+        self.MODULE_NAME = "python_bridge"
+        self.api_functions = {}
+        
+        # Setup API functions
+        if API_AVAILABLE:
             self.api_functions = {
                 "analyze_file": analyze_file,
                 "extract_tracks": extract_tracks,
@@ -65,11 +81,11 @@ class PythonBridge:
                 "batch_extract": batch_extract,
                 "find_media_files_in_paths": find_media_files_in_paths,
             }
-            
-            logger.info("Successfully imported API functions")
-        except ImportError as e:
-            logger.error(f"Failed to import API functions: {e}")
-            sys.stderr.write(f"Error: Failed to import API functions: {e}\n")
+            logger.info("Successfully initialized API functions")
+        else:
+            error_msg = "Failed to import API functions - not available"
+            logger.error(error_msg)
+            sys.stderr.write(f"Error: {error_msg}\n")
             sys.exit(1)
     
     def progress_callback_factory(self, operation_id: str) -> Callable:
@@ -139,7 +155,7 @@ class PythonBridge:
                     
             except Exception as e:
                 # Log but don't crash on errors in progress reporting
-                logger.error(f"Error in progress callback: {e}")
+                log_exception(e, module_name="bridge_progress")
 
         return progress_callback
     
@@ -162,7 +178,8 @@ class PythonBridge:
         """
         # Check if the function exists
         if function_name not in self.api_functions:
-            raise ValueError(f"Unknown function: {function_name}")
+            error = ValueError(f"Unknown function: {function_name}")
+            handle_error(error, module_name=self.MODULE_NAME, raise_error=True)
             
         # Get the function
         function = self.api_functions[function_name]
@@ -186,8 +203,24 @@ class PythonBridge:
             else:
                 # For dictionary arguments, just add the callback
                 arguments["progress_callback"] = progress_callback
-                
-        # Call the function with appropriate argument style
+        
+        # Execute the function with error handling
+        return safe_execute(
+            self._call_function,
+            function, 
+            arguments,
+            module_name=self.MODULE_NAME,
+            error_map={
+                Exception: lambda msg, **kwargs: NexusError(
+                    f"Error executing function {function_name}: {msg}", 
+                    self.MODULE_NAME
+                )
+            },
+            raise_error=True
+        )
+    
+    def _call_function(self, function: Callable, arguments: Any) -> Any:
+        """Helper method to call the function with appropriate argument style."""
         if isinstance(arguments, list):
             return function(*arguments)
         else:
@@ -203,7 +236,8 @@ class PythonBridge:
         try:
             # Check if we have the required arguments
             if len(args) < 3:
-                logger.error("Insufficient arguments provided")
+                error_msg = "Insufficient arguments provided"
+                logger.error(error_msg)
                 sys.stderr.write(
                     "Usage: bridge.py <function_name> <arguments_json> [operation_id]\n"
                 )
@@ -221,8 +255,9 @@ class PythonBridge:
                 arguments = json.loads(arguments_json)
                 logger.debug(f"Arguments: {arguments}")
             except json.JSONDecodeError as e:
-                logger.error(f"Failed to parse arguments JSON: {e}")
-                sys.stderr.write(f"Error: Failed to parse arguments JSON: {e}\n")
+                error_msg = f"Failed to parse arguments JSON: {e}"
+                log_exception(e, module_name=self.MODULE_NAME)
+                sys.stderr.write(f"Error: {error_msg}\n")
                 sys.exit(1)
 
             # Execute the function
@@ -233,9 +268,21 @@ class PythonBridge:
             logger.info(f"Function {function_name} completed successfully")
 
         except Exception as e:
-            logger.exception(f"Unhandled exception in bridge: {e}")
+            log_exception(e, module_name="bridge_run")
             sys.stderr.write(f"Error: {str(e)}\n")
-            sys.exit(1)
+            
+            # Check if it's a critical error that should terminate the application
+            if is_critical_error(e):
+                sys.exit(1)
+            else:
+                # For non-critical errors, try to return an error response
+                try:
+                    error_response = {"success": False, "error": str(e), "error_type": e.__class__.__name__}
+                    print(json.dumps(error_response), flush=True)
+                except Exception as json_error:
+                    log_exception(json_error, module_name="bridge_error_response")
+                    sys.stderr.write("Failed to create error response\n")
+                    sys.exit(1)
 
 
 def main():

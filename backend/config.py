@@ -7,6 +7,7 @@ This module provides configuration settings for the application.
 import logging
 import os
 import platform
+import shutil
 import sys
 from pathlib import Path
 from typing import Optional
@@ -96,9 +97,6 @@ def get_ffmpeg_path() -> Optional[str]:
         else:
             return str(APP_DIR / "resources" / "ffmpeg" / "ffmpeg")
     else:
-        # In development, use system FFmpeg
-        import shutil
-
         return shutil.which("ffmpeg")
 
 
@@ -123,9 +121,6 @@ def get_ffprobe_path() -> Optional[str]:
         else:
             return str(APP_DIR / "resources" / "ffmpeg" / "ffprobe")
     else:
-        # In development, use system FFprobe
-        import shutil
-
         return shutil.which("ffprobe")
 
 
