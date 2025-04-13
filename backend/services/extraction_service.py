@@ -891,8 +891,9 @@ class ExtractionService:
             Prepared output directory
         """
         if use_org_structure:
-            output_path = get_output_path_for_file(output_dir, file_path)
-            return ensure_directory(output_path)
+            # FIXED: Use get_output_path_for_file which now properly uses file stem
+            return ensure_directory(get_output_path_for_file(output_dir, file_path))
+        
         return ensure_directory(output_dir)
         
     def _process_files_sequential(
@@ -1078,19 +1079,18 @@ class ExtractionService:
         stats_lock = threading.Lock()
         results = []
         processed_count = 0
+        file_lock = threading.Lock()  # Lock for file-specific operations
+        
+        # Create a dictionary to store file-specific progress reporters
+        file_reporters = {}
 
         # Create a task for each file to be processed in parallel
         def process_file_task(idx: int, file_path: Path):
             try:
                 # Get thread-local extraction service
                 extraction_service = self._get_thread_local_extraction_service(thread_local)
-
-                # Prepare output directory
-                file_output_dir = self._prepare_output_dir(
-                    output_dir, file_path, use_org_structure
-                )
-
-                # Create file context for progress reporting
+                
+                # Create file-specific context
                 file_context = {
                     "file_index": idx,
                     "total_files": len(all_media_files),
@@ -1098,14 +1098,23 @@ class ExtractionService:
                     "file_name": file_path.name,
                     "thread_id": threading.get_ident()
                 }
-
-                # Create a file-specific progress reporter that forwards to the main reporter
-                file_reporter = ProgressReporter(
-                    progress_reporter.parent_callback,
-                    None,
-                    file_context
-                )
                 
+                # Create a file-specific progress reporter
+                with file_lock:
+                    if idx not in file_reporters:
+                        file_reporters[idx] = ProgressReporter(
+                            progress_reporter.parent_callback,
+                            None,
+                            file_context
+                        )
+                
+                file_reporter = file_reporters[idx]
+
+                # FIXED: Use get_output_path_for_file through _prepare_output_dir
+                file_output_dir = self._prepare_output_dir(
+                    output_dir, file_path, use_org_structure
+                )
+
                 # Create a task for this file
                 file_task_key = f"file_{idx}_{file_path.name}"
                 file_reporter.task_started(
@@ -1124,7 +1133,7 @@ class ExtractionService:
                     include_video,
                     video_only,
                     remove_letterbox,
-                    file_reporter,
+                    file_reporter,  # Use the file-specific reporter
                     module_name=f"parallel_extraction_{file_path.name}",
                     raise_error=False,
                     default_return=self._create_error_result(file_path, "Extraction failed with unknown error")
