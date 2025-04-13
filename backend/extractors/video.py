@@ -14,6 +14,7 @@ from core.media_analyzer import Track
 from extractors.base import BaseExtractor
 from utils.error_handler import FFmpegError, VideoExtractionError
 from utils.ffmpeg import extract_track, run_ffmpeg_command, run_ffmpeg_command_with_progress
+from utils.progress import ProgressReporter
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +59,7 @@ class VideoExtractor(BaseExtractor):
         input_file: Union[str, Path],
         output_dir: Union[str, Path],
         track_id: int,
-        progress_callback: Optional[Callable[[int], None]] = None,
+        progress_callback: Optional[Union[Callable[[int], None], ProgressReporter]] = None,
         **kwargs,
     ) -> Path:
         """
@@ -68,7 +69,7 @@ class VideoExtractor(BaseExtractor):
             input_file: Path to the input media file
             output_dir: Directory where the extracted track will be saved
             track_id: ID of the track to extract
-            progress_callback: Optional function to call with progress updates (0-100)
+            progress_callback: Function to call with progress updates or ProgressReporter object
             **kwargs: Additional extractor-specific parameters
 
         Returns:
@@ -123,7 +124,7 @@ class VideoExtractor(BaseExtractor):
         output_dir: Path,
         track_id: int,
         track: Track,
-        progress_callback: Optional[Callable[[int], None]] = None,
+        progress_callback: Optional[Union[Callable[[int], None], ProgressReporter]] = None,
         **kwargs,
     ) -> Path:
         """
@@ -137,7 +138,7 @@ class VideoExtractor(BaseExtractor):
             output_dir: Directory where the extracted track will be saved
             track_id: ID of the video track to extract
             track: Track object for the video track
-            progress_callback: Optional callback function to report progress (0-100)
+            progress_callback: Function to call with progress updates or ProgressReporter object
             **kwargs: Additional parameters (e.g., remove_letterbox)
 
         Returns:
@@ -175,7 +176,7 @@ class VideoExtractor(BaseExtractor):
                 track_id,
                 "video",
                 self._module_name,
-                progress_callback,
+                self._create_progress_callback(progress_callback),
             )
             
             if not success:
@@ -187,13 +188,39 @@ class VideoExtractor(BaseExtractor):
                 
             return output_path
 
+    def _create_progress_callback(self, progress_input):
+        """
+        Create a callback function that can be used with FFmpeg functions.
+        
+        Args:
+            progress_input: Either a callable function or a ProgressReporter object
+            
+        Returns:
+            A callable function that handles progress updates
+        """
+        if progress_input is None:
+            return None
+            
+        if callable(progress_input) and not isinstance(progress_input, ProgressReporter):
+            # It's already a callable function
+            return progress_input
+            
+        if isinstance(progress_input, ProgressReporter):
+            # Create a callback that uses the ProgressReporter
+            def reporter_callback(progress):
+                progress_input.update("video_extraction", 0, progress, None)
+            return reporter_callback
+            
+        # Default case - return None if we can't make sense of the input
+        return None
+
     def _extract_with_letterbox_removal(
         self,
         input_file: Path,
         output_file: Path,
         track_id: int,
         track: Track,
-        progress_callback: Optional[Callable[[int], None]] = None,
+        progress_input: Optional[Union[Callable[[int], None], ProgressReporter]] = None,
     ) -> Path:
         """
         Extract video track with letterbox removal.
@@ -206,13 +233,16 @@ class VideoExtractor(BaseExtractor):
             output_file: Path where the extracted track will be saved
             track_id: ID of the video track to extract
             track: Track object with track information
-            progress_callback: Optional callback function to report progress (0-100)
+            progress_input: Function to call with progress updates or ProgressReporter object
 
         Returns:
             Path to the extracted and cropped video file
         """
         try:
             logger.info(f"Extracting video track {track_id} with letterbox removal")
+
+            # Get a proper progress callback
+            progress_callback = self._create_progress_callback(progress_input)
 
             # First, detect the crop parameters using cropdetect filter
             detect_cmd = [
@@ -230,8 +260,11 @@ class VideoExtractor(BaseExtractor):
                 "-",  # Output to null
             ]
 
+            # Report start of analysis
             if progress_callback:
                 progress_callback(0)  # Signal start of analysis
+            elif isinstance(progress_input, ProgressReporter):
+                progress_input.update("crop_detection", 0, 0, None)
 
             _, _, stderr = run_ffmpeg_command(
                 detect_cmd,
@@ -240,8 +273,11 @@ class VideoExtractor(BaseExtractor):
                 module=self._module_name,
             )
 
+            # Report analysis complete
             if progress_callback:
                 progress_callback(20)  # Analysis complete
+            elif isinstance(progress_input, ProgressReporter):
+                progress_input.update("crop_detection", 0, 100, None)
 
             # Parse crop parameters from output
             crop_params = self._parse_crop_params(stderr)
@@ -253,6 +289,8 @@ class VideoExtractor(BaseExtractor):
                 # Fallback to standard extraction without cropping
                 if progress_callback:
                     progress_callback(25)  # Signal start of extraction
+                elif isinstance(progress_input, ProgressReporter):
+                    progress_input.update("video_extraction", 0, 25, None)
 
                 success = extract_track(
                     input_file,
@@ -264,11 +302,13 @@ class VideoExtractor(BaseExtractor):
                         progress_callback(25 + int(p * 0.75))
                         if progress_callback
                         else None
-                    ),
+                    ) if progress_callback else None,
                 )
 
                 if progress_callback:
                     progress_callback(100)  # Extraction complete
+                elif isinstance(progress_input, ProgressReporter):
+                    progress_input.update("video_extraction", 0, 100, None)
 
                 if not success:
                     raise VideoExtractionError(
@@ -296,16 +336,32 @@ class VideoExtractor(BaseExtractor):
 
             if progress_callback:
                 progress_callback(25)  # Signal start of extraction with crop
-
+                
                 # Use progress tracking for extraction
                 run_ffmpeg_command_with_progress(
                     crop_cmd,
                     lambda p: progress_callback(25 + int(p * 0.75)),
                     self._module_name,
                 )
-
+                
                 progress_callback(100)  # Ensure we reach 100%
+            elif isinstance(progress_input, ProgressReporter):
+                progress_input.update("video_extraction", 0, 25, None)
+                
+                # Create a wrapper callback that uses the ProgressReporter
+                def reporter_wrapper(progress):
+                    progress_input.update("video_extraction", 0, 25 + int(progress * 0.75), None)
+                
+                # Use progress tracking for extraction
+                run_ffmpeg_command_with_progress(
+                    crop_cmd,
+                    reporter_wrapper,
+                    self._module_name,
+                )
+                
+                progress_input.update("video_extraction", 0, 100, None)
             else:
+                # No progress reporting
                 run_ffmpeg_command(crop_cmd, module=self._module_name)
 
             return output_file

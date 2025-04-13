@@ -14,7 +14,6 @@ import json
 import logging
 import os
 import sys
-import time
 from typing import Any, Callable, List, Optional
 
 # Import API functions at the module level to avoid import-outside-toplevel
@@ -37,11 +36,20 @@ from utils.error_handler import (
     log_exception,
     safe_execute,
 )
+from utils.progress import (
+    create_progress_callback_factory,
+    get_progress_reporter,
+    remove_progress_reporter,
+)
 
 
 # Set up logging
-def setup_logging():
-    """Set up logging for the bridge module."""
+def setup_logging() -> logging.Logger:
+    """Set up logging for the bridge module.
+    
+    Returns:
+        Logger instance configured for the bridge module
+    """
     log_dir = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs"
     )
@@ -88,77 +96,6 @@ class PythonBridge:
             sys.stderr.write(f"Error: {error_msg}\n")
             sys.exit(1)
     
-    def progress_callback_factory(self, operation_id: str) -> Callable:
-        """
-        Create a progress callback function that sends progress updates to stdout.
-        
-        Ensures proper formatting of progress data for the frontend.
-
-        Args:
-            operation_id: Unique ID for the operation
-
-        Returns:
-            Callback function that outputs progress data to stdout
-        """
-        # Track the last progress data to avoid duplicate updates
-        last_progress = None
-        last_update_time = 0
-        
-        def progress_callback(*args, **kwargs):
-            nonlocal last_progress, last_update_time
-            
-            try:
-                # Convert args to a list to allow manipulation
-                args_list = list(args) if args else []
-                
-                # Format progress data with consistent structure
-                progress_data = {
-                    "operationId": operation_id,
-                    "args": args_list,
-                    "kwargs": {
-                        k: v
-                        for k, v in kwargs.items()
-                        if isinstance(v, (int, float, str, bool, list, dict, type(None)))
-                    },
-                }
-                
-                # Always ensure args has at least 3 items (for percentage in position 2)
-                while len(progress_data["args"]) < 3:
-                    progress_data["args"].append(None)
-                
-                # Ensure the percentage (args[2]) is always a number
-                try:
-                    if progress_data["args"][2] is not None:
-                        progress_data["args"][2] = int(float(progress_data["args"][2]))
-                    else:
-                        progress_data["args"][2] = 0
-                except (ValueError, TypeError):
-                    progress_data["args"][2] = 0
-                
-                # Skip sending if it's the same as the last update and it's been less than 100ms
-                current_time = time.time()
-                if (
-                    last_progress == progress_data 
-                    and current_time - last_update_time < 0.1
-                ):
-                    return
-                
-                last_progress = progress_data.copy()
-                last_update_time = current_time
-                
-                # Log the progress data we're sending
-                logger.debug(f"Sending progress data: {progress_data}")
-
-                # Send progress update to stdout
-                # The 'PROGRESS:' prefix is used to distinguish progress updates from regular output
-                print(f"PROGRESS:{json.dumps(progress_data)}", flush=True)
-                    
-            except Exception as e:
-                # Log but don't crash on errors in progress reporting
-                log_exception(e, module_name="bridge_progress")
-
-        return progress_callback
-    
     def execute_function(
         self, function_name: str, arguments: Any, operation_id: Optional[str] = None
     ) -> Any:
@@ -184,10 +121,9 @@ class PythonBridge:
         # Get the function
         function = self.api_functions[function_name]
         
-        # Add progress callback if applicable
-        if "progress_callback" in function.__code__.co_varnames and operation_id:
-            progress_callback = self.progress_callback_factory(operation_id)
-            
+        # Set up progress tracking if applicable and operation_id is provided
+        if operation_id and "progress_callback" in function.__code__.co_varnames:
+            # Set up arguments based on type
             if isinstance(arguments, list):
                 # Find the position of progress_callback in function arguments
                 arg_names = function.__code__.co_varnames[:function.__code__.co_argcount]
@@ -198,29 +134,56 @@ class PythonBridge:
                     while len(arguments) <= callback_pos:
                         arguments.append(None)
                         
-                    # Insert progress_callback
+                    # Create and insert progress callback factory
+                    progress_callback = create_progress_callback_factory(operation_id)
                     arguments[callback_pos] = progress_callback
             else:
                 # For dictionary arguments, just add the callback
-                arguments["progress_callback"] = progress_callback
+                arguments["progress_callback"] = create_progress_callback_factory(operation_id)
         
         # Execute the function with error handling
-        return safe_execute(
-            self._call_function,
-            function, 
-            arguments,
-            module_name=self.MODULE_NAME,
-            error_map={
-                Exception: lambda msg, **kwargs: NexusError(
-                    f"Error executing function {function_name}: {msg}", 
-                    self.MODULE_NAME
-                )
-            },
-            raise_error=True
-        )
+        try:
+            result = safe_execute(
+                self._call_function,
+                function, 
+                arguments,
+                module_name=self.MODULE_NAME,
+                error_map={
+                    Exception: lambda msg, **kwargs: NexusError(
+                        f"Error executing function {function_name}: {msg}", 
+                        self.MODULE_NAME
+                    )
+                },
+                raise_error=True
+            )
+            
+            # Clean up progress reporter if used
+            if operation_id:
+                remove_progress_reporter(operation_id)
+            
+            return result
+            
+        except Exception as e:
+            # Clean up progress reporter even on error
+            if operation_id:
+                # Report the error through the progress reporter
+                reporter = get_progress_reporter(operation_id)
+                reporter.error(str(e))
+                remove_progress_reporter(operation_id)
+            
+            # Re-raise the error
+            raise
     
     def _call_function(self, function: Callable, arguments: Any) -> Any:
-        """Helper method to call the function with appropriate argument style."""
+        """Helper method to call the function with appropriate argument style.
+        
+        Args:
+            function: The function to call
+            arguments: Arguments to pass (list or dict)
+            
+        Returns:
+            The result of the function call
+        """
         if isinstance(arguments, list):
             return function(*arguments)
         else:
@@ -285,7 +248,7 @@ class PythonBridge:
                     sys.exit(1)
 
 
-def main():
+def main() -> None:
     """Main entry point for the bridge script."""
     bridge = PythonBridge()
     bridge.run(sys.argv)
