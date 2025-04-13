@@ -7,8 +7,9 @@ This module handles the extraction of subtitle tracks from media files.
 import logging
 from typing import Dict
 
-from utils.error_handler import SubtitleExtractionError
+from config import SUBTITLE_CODEC_TO_EXTENSION
 from extractors.base import BaseExtractor
+from utils.error_handler import SubtitleExtractionError
 
 logger = logging.getLogger(__name__)
 
@@ -28,19 +29,12 @@ class SubtitleExtractor(BaseExtractor):
 
     @property
     def codec_to_extension(self) -> Dict[str, str]:
-        """Return codec to file extension mapping for subtitle tracks."""
-        return {
-            "subrip": "srt",
-            "ass": "ass",
-            "ssa": "ssa",
-            "mov_text": "txt",
-            "dvd_subtitle": "sup",
-            "hdmv_pgs_subtitle": "sup",
-            "dvb_subtitle": "sub",
-            "vtt": "vtt",
-            # Default fallback
-            "default": "srt",
-        }
+        """
+        Return codec to file extension mapping for subtitle tracks.
+        
+        Uses the centralized mapping from config.py
+        """
+        return SUBTITLE_CODEC_TO_EXTENSION
 
     @property
     def error_class(self):

@@ -1,7 +1,9 @@
 """
 Configuration Module for Project Nexus.
 
-This module provides configuration settings for the application.
+This module provides configuration settings for the application,
+including paths, file extensions, FFmpeg settings, and other global
+configuration values needed across different components.
 """
 
 import logging
@@ -29,6 +31,9 @@ LOG_FILE = LOG_DIR / "nexus.log"
 
 # Ensure log directory exists
 LOG_DIR.mkdir(parents=True, exist_ok=True)
+
+# Initialize logger for this module
+logger = logging.getLogger(__name__)
 
 # Default output directory
 DEFAULT_OUTPUT_DIR = APP_DIR / "extracted"
@@ -74,14 +79,64 @@ SUBTITLE_EXTENSIONS = {".srt", ".ass", ".ssa", ".sub", ".idx", ".sup", ".vtt"}
 # Default languages for extraction
 DEFAULT_LANGUAGES = ["eng"]
 
+# Codec to extension mappings
+# These mappings establish the file extensions to use for different media codecs
+# Audio codec to extension mapping
+AUDIO_CODEC_TO_EXTENSION = {
+    "aac": "aac",
+    "ac3": "ac3",
+    "eac3": "eac3",
+    "mp3": "mp3",
+    "opus": "opus",
+    "vorbis": "ogg",
+    "flac": "flac",
+    "dts": "dts",
+    "truehd": "thd",
+    "pcm_s16le": "wav",
+    "pcm_s24le": "wav",
+    "pcm_s32le": "wav",
+    # Default fallback - set to mka as required
+    "default": "mka",
+}
+
+# Subtitle codec to extension mapping
+SUBTITLE_CODEC_TO_EXTENSION = {
+    "subrip": "srt",
+    "ass": "ass",
+    "ssa": "ssa",
+    "mov_text": "txt",
+    "dvd_subtitle": "sup",
+    "hdmv_pgs_subtitle": "sup",
+    "dvb_subtitle": "sub",
+    "vtt": "vtt",
+    # Default fallback - set to ass as required
+    "default": "ass",
+}
+
+# Video codec to extension mapping
+VIDEO_CODEC_TO_EXTENSION = {
+    "h264": "mp4",
+    "hevc": "mp4",
+    "mpeg4": "mp4",
+    "mpeg2video": "mpg",
+    "vp9": "webm",
+    "vp8": "webm",
+    "av1": "mp4",
+    "theora": "ogv",
+    # Default fallback - set to mkv as required
+    "default": "mkv",
+}
+
 
 # FFmpeg settings
 def get_ffmpeg_path() -> Optional[str]:
     """
     Get the path to FFmpeg executable.
 
-    For bundled applications, use the bundled FFmpeg.
-    For development, use the system FFmpeg.
+    Priority order:
+    1. Bundled FFmpeg in resources (frozen mode)
+    2. Project's ffmpeg-bin directory
+    3. System-installed FFmpeg
 
     Returns:
         Path to FFmpeg executable or None if not found
@@ -97,15 +152,40 @@ def get_ffmpeg_path() -> Optional[str]:
         else:
             return str(APP_DIR / "resources" / "ffmpeg" / "ffmpeg")
     else:
-        return shutil.which("ffmpeg")
+        # Check for project's ffmpeg-bin directory first
+        if system == "windows":
+            ffmpeg_bin_path = APP_DIR / "ffmpeg-bin" / "win" / "ffmpeg.exe"
+            if ffmpeg_bin_path.exists():
+                logger.debug(f"Using bundled FFmpeg from: {ffmpeg_bin_path}")
+                return str(ffmpeg_bin_path)
+        elif system == "darwin":
+            ffmpeg_bin_path = APP_DIR / "ffmpeg-bin" / "mac" / "ffmpeg"
+            if ffmpeg_bin_path.exists():
+                logger.debug(f"Using bundled FFmpeg from: {ffmpeg_bin_path}")
+                return str(ffmpeg_bin_path)
+        elif system == "linux":
+            ffmpeg_bin_path = APP_DIR / "ffmpeg-bin" / "linux" / "ffmpeg"
+            if ffmpeg_bin_path.exists():
+                logger.debug(f"Using bundled FFmpeg from: {ffmpeg_bin_path}")
+                return str(ffmpeg_bin_path)
+                
+        # Fall back to system FFmpeg as last resort
+        system_ffmpeg = shutil.which("ffmpeg")
+        if system_ffmpeg:
+            logger.debug(f"Using system FFmpeg from: {system_ffmpeg}")
+        else:
+            logger.warning("FFmpeg not found in system PATH")
+        return system_ffmpeg
 
 
 def get_ffprobe_path() -> Optional[str]:
     """
     Get the path to FFprobe executable.
 
-    For bundled applications, use the bundled FFprobe.
-    For development, use the system FFprobe.
+    Priority order:
+    1. Bundled FFprobe in resources (frozen mode)
+    2. Project's ffmpeg-bin directory
+    3. System-installed FFprobe
 
     Returns:
         Path to FFprobe executable or None if not found
@@ -121,7 +201,30 @@ def get_ffprobe_path() -> Optional[str]:
         else:
             return str(APP_DIR / "resources" / "ffmpeg" / "ffprobe")
     else:
-        return shutil.which("ffprobe")
+        # Check for project's ffmpeg-bin directory first
+        if system == "windows":
+            ffprobe_bin_path = APP_DIR / "ffmpeg-bin" / "win" / "ffprobe.exe"
+            if ffprobe_bin_path.exists():
+                logger.debug(f"Using bundled FFprobe from: {ffprobe_bin_path}")
+                return str(ffprobe_bin_path)
+        elif system == "darwin":
+            ffprobe_bin_path = APP_DIR / "ffmpeg-bin" / "mac" / "ffprobe"
+            if ffprobe_bin_path.exists():
+                logger.debug(f"Using bundled FFprobe from: {ffprobe_bin_path}")
+                return str(ffprobe_bin_path)
+        elif system == "linux":
+            ffprobe_bin_path = APP_DIR / "ffmpeg-bin" / "linux" / "ffprobe"
+            if ffprobe_bin_path.exists():
+                logger.debug(f"Using bundled FFprobe from: {ffprobe_bin_path}")
+                return str(ffprobe_bin_path)
+                
+        # Fall back to system FFprobe as last resort
+        system_ffprobe = shutil.which("ffprobe")
+        if system_ffprobe:
+            logger.debug(f"Using system FFprobe from: {system_ffprobe}")
+        else:
+            logger.warning("FFprobe not found in system PATH")
+        return system_ffprobe
 
 
 # Configuration for track extraction
@@ -132,21 +235,13 @@ EXTRACTION_CONFIG = {
     ),  # Limit concurrent extractions
     "use_org_structure": True,  # Organize output by parsed filenames
     "default_formats": {
-        "audio": {
-            "aac": "aac",
-            "ac3": "ac3",
-            "mp3": "mp3",
-            "default": "mka",
-        },
-        "subtitle": {
-            "subrip": "srt",
-            "ass": "ass",
-            "default": "srt",
-        },
-        "video": {
-            "h264": "mp4",
-            "hevc": "mp4",
-            "default": "mkv",
-        },
+        "audio": AUDIO_CODEC_TO_EXTENSION,
+        "subtitle": SUBTITLE_CODEC_TO_EXTENSION,
+        "video": VIDEO_CODEC_TO_EXTENSION,
     },
 }
+
+# Log the loaded configurations
+logger.debug(f"Audio codec mappings: {AUDIO_CODEC_TO_EXTENSION}")
+logger.debug(f"Subtitle codec mappings: {SUBTITLE_CODEC_TO_EXTENSION}")
+logger.debug(f"Video codec mappings: {VIDEO_CODEC_TO_EXTENSION}")

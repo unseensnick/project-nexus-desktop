@@ -10,6 +10,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Callable, Dict, Optional, Union
 
+from config import VIDEO_CODEC_TO_EXTENSION
 from core.media_analyzer import Track
 from extractors.base import BaseExtractor
 from utils.error_handler import FFmpegError, VideoExtractionError
@@ -35,19 +36,12 @@ class VideoExtractor(BaseExtractor):
 
     @property
     def codec_to_extension(self) -> Dict[str, str]:
-        """Return codec to file extension mapping for video tracks."""
-        return {
-            "h264": "mp4",
-            "hevc": "mp4",
-            "mpeg4": "mp4",
-            "mpeg2video": "mpg",
-            "vp9": "webm",
-            "vp8": "webm",
-            "av1": "mp4",
-            "theora": "ogv",
-            # Default fallback
-            "default": "mkv",
-        }
+        """
+        Return codec to file extension mapping for video tracks.
+        
+        Uses the centralized mapping from config.py
+        """
+        return VIDEO_CODEC_TO_EXTENSION
 
     @property
     def error_class(self):

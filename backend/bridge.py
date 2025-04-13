@@ -3,18 +3,31 @@
 Python Bridge Script for Project Nexus.
 
 This script serves as the bridge between the Electron application and
-the Python backend. It receives function calls from the JavaScript side,
-executes them, and returns the results as JSON.
+the Python backend. It provides a standardized mechanism for receiving
+function calls from JavaScript, executing them in the Python environment,
+and returning the results as JSON.
+
+The bridge handles:
+- Command-line argument parsing
+- Function discovery and execution
+- Progress reporting
+- Comprehensive error handling
+- Result serialization
 
 Usage:
   bridge.py <function_name> <arguments_json> [operation_id]
+
+Arguments:
+  function_name:   Name of the Python API function to execute
+  arguments_json:  JSON string containing arguments for the function
+  operation_id:    Optional unique identifier for tracking progress
 """
 
 import json
 import logging
 import os
 import sys
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional
 
 # Import API functions at the module level to avoid import-outside-toplevel
 try:
@@ -29,6 +42,7 @@ try:
 except ImportError:
     API_AVAILABLE = False
 
+from utils.argument_handler import ArgumentHandler, convert_js_to_python_params
 from utils.error_handler import (
     NexusError,
     handle_error,
@@ -36,16 +50,16 @@ from utils.error_handler import (
     log_exception,
     safe_execute,
 )
-from utils.progress import (
-    create_progress_callback_factory,
-    get_progress_reporter,
-    remove_progress_reporter,
-)
+from utils.progress import get_progress_reporter, remove_progress_reporter
 
 
 # Set up logging
 def setup_logging() -> logging.Logger:
-    """Set up logging for the bridge module.
+    """
+    Set up logging for the bridge module.
+    
+    Configures logging to write to a file in the 'logs' directory
+    with the appropriate format and log level.
     
     Returns:
         Logger instance configured for the bridge module
@@ -67,138 +81,38 @@ def setup_logging() -> logging.Logger:
 logger = setup_logging()
 
 
-class ArgumentHandler:
-    """Handle preparation and parsing of function arguments."""
-    
-    @staticmethod
-    def parse_command_line_args(args: List[str]) -> Tuple[str, str, Optional[str]]:
-        """
-        Parse command line arguments.
-        
-        Args:
-            args: Command line arguments
-            
-        Returns:
-            Tuple of (function_name, arguments_json, operation_id)
-            
-        Raises:
-            ValueError: If insufficient arguments are provided
-        """
-        # Check if we have the required arguments
-        if len(args) < 3:
-            error_msg = "Insufficient arguments provided"
-            logger.error(error_msg)
-            sys.stderr.write(
-                "Usage: bridge.py <function_name> <arguments_json> [operation_id]\n"
-            )
-            sys.exit(1)
-
-        # Extract arguments
-        function_name = args[1]
-        arguments_json = args[2]
-        operation_id = args[3] if len(args) > 3 else None
-        
-        return function_name, arguments_json, operation_id
-    
-    @staticmethod
-    def parse_arguments_json(arguments_json: str) -> Any:
-        """
-        Parse JSON arguments.
-        
-        Args:
-            arguments_json: JSON string to parse
-            
-        Returns:
-            Parsed arguments
-            
-        Raises:
-            json.JSONDecodeError: If the JSON is invalid
-        """
-        try:
-            arguments = json.loads(arguments_json)
-            logger.debug(f"Arguments: {arguments}")
-            return arguments
-        except json.JSONDecodeError as e:
-            error_msg = f"Failed to parse arguments JSON: {e}"
-            log_exception(e, module_name="ArgumentHandler")
-            sys.stderr.write(f"Error: {error_msg}\n")
-            sys.exit(1)
-    
-    @staticmethod
-    def prepare_arguments(
-        function: Callable, 
-        arguments: Any, 
-        operation_id: Optional[str]
-    ) -> Any:
-        """
-        Prepare arguments for function execution, including progress tracking.
-        
-        Args:
-            function: The function to be called
-            arguments: Arguments to pass to the function
-            operation_id: Optional operation ID for progress tracking
-            
-        Returns:
-            Prepared arguments for the function call
-        """
-        # If no operation_id or function doesn't accept progress_callback, return arguments as-is
-        if not operation_id or "progress_callback" not in function.__code__.co_varnames:
-            return arguments
-        
-        # Create a progress callback factory
-        progress_callback = create_progress_callback_factory(operation_id)
-        
-        # Add progress_callback to the arguments based on type
-        if isinstance(arguments, list):
-            return ArgumentHandler._add_callback_to_list_args(function, arguments, progress_callback)
-        else:
-            # For dictionary arguments, just add the callback
-            arguments["progress_callback"] = progress_callback
-            return arguments
-    
-    @staticmethod
-    def _add_callback_to_list_args(
-        function: Callable, 
-        arguments: List, 
-        progress_callback: Callable
-    ) -> List:
-        """
-        Add progress callback to list-style arguments.
-        
-        Args:
-            function: The function to be called
-            arguments: List of arguments to modify
-            progress_callback: Progress callback function to add
-            
-        Returns:
-            Modified list of arguments with the progress callback
-        """
-        # Find the position of progress_callback in function arguments
-        arg_names = function.__code__.co_varnames[:function.__code__.co_argcount]
-        if "progress_callback" in arg_names:
-            callback_pos = arg_names.index("progress_callback")
-            
-            # Make a copy of the arguments to avoid modifying the original
-            args_copy = list(arguments)
-            
-            # Extend arguments list if necessary
-            while len(args_copy) <= callback_pos:
-                args_copy.append(None)
-                
-            # Insert progress callback
-            args_copy[callback_pos] = progress_callback
-            return args_copy
-        
-        return arguments
-
-
 class ErrorHandler:
-    """Handle errors in bridge execution."""
+    """
+    Handle errors in bridge execution.
+    
+    This class provides static methods for handling errors that occur during
+    bridge execution, ensuring consistent error reporting and recovery.
+    """
+    
+    @staticmethod
+    def create_error_response(error: Exception) -> Dict[str, Any]:
+        """
+        Create a standardized error response dictionary.
+        
+        Args:
+            error: The exception that occurred
+            
+        Returns:
+            A dictionary with error information suitable for JSON serialization
+        """
+        return {
+            "success": False, 
+            "error": str(error), 
+            "error_type": error.__class__.__name__
+        }
     
     @staticmethod
     def handle_bridge_error(error: Exception) -> None:
         """
         Handle errors that occur during bridge operation.
+        
+        Logs the error, writes to stderr, and either terminates the application
+        for critical errors or returns a JSON error response.
         
         Args:
             error: The exception that occurred
@@ -208,15 +122,12 @@ class ErrorHandler:
         
         # Check if it's a critical error that should terminate the application
         if is_critical_error(error):
+            logger.critical(f"Critical error: {error}. Terminating process.")
             sys.exit(1)
         else:
             # For non-critical errors, try to return an error response
             try:
-                error_response = {
-                    "success": False, 
-                    "error": str(error), 
-                    "error_type": error.__class__.__name__
-                }
+                error_response = ErrorHandler.create_error_response(error)
                 print(json.dumps(error_response), flush=True)
             except Exception as json_error:
                 log_exception(json_error, module_name="bridge_error_response")
@@ -227,6 +138,9 @@ class ErrorHandler:
     def handle_execution_error(error: Exception, operation_id: Optional[str]) -> None:
         """
         Handle errors that occur during function execution.
+        
+        Reports the error through the progress reporter if an operation_id is provided,
+        and cleans up any progress reporters to prevent resource leaks.
         
         Args:
             error: The exception that occurred
@@ -240,15 +154,20 @@ class ErrorHandler:
 
 
 class FunctionExecutor:
-    """Execute API functions with proper error handling and progress tracking."""
+    """
+    Execute API functions with proper error handling and progress tracking.
+    
+    This class provides methods for validating function names, preparing arguments,
+    and executing functions with comprehensive error handling and progress tracking.
+    """
     
     def __init__(self, api_functions: Dict[str, Callable], module_name: str = "function_executor"):
         """
         Initialize the function executor.
         
         Args:
-            api_functions: Dictionary mapping function names to callables
-            module_name: Module name for error reporting
+            api_functions: Dictionary mapping function names to callable objects
+            module_name: Module name for error reporting and logging
         """
         self.api_functions = api_functions
         self.module_name = module_name
@@ -271,6 +190,8 @@ class FunctionExecutor:
         """
         Call the function with appropriate argument style.
         
+        Handles both positional (list) and keyword (dict) argument styles.
+        
         Args:
             function: The function to call
             arguments: Arguments to pass (list or dict)
@@ -292,6 +213,9 @@ class FunctionExecutor:
         """
         Execute an API function with the provided arguments.
         
+        Validates the function name, prepares arguments with progress tracking,
+        and executes the function with comprehensive error handling.
+        
         Args:
             function_name: Name of the function to execute
             arguments: Arguments to pass to the function
@@ -302,12 +226,18 @@ class FunctionExecutor:
             
         Raises:
             ValueError: If the function name is not recognized
+            NexusError: If an error occurs during execution
         """
         # Check if the function exists
         self.validate_function_name(function_name)
             
         # Get the function
         function = self.api_functions[function_name]
+        
+        # Convert camelCase JavaScript arguments to snake_case Python arguments
+        if isinstance(arguments, dict):
+            arguments = convert_js_to_python_params(arguments)
+            logger.debug(f"Converted arguments to snake_case: {arguments}")
         
         # Set up progress tracking and prepare arguments
         prepared_arguments = ArgumentHandler.prepare_arguments(function, arguments, operation_id)
@@ -371,11 +301,17 @@ class PythonBridge:
     Bridge between Electron's JavaScript and Python code.
     
     This class handles the communication between the frontend and backend,
-    processing function calls, and returning results.
+    processing function calls, and returning results. It acts as the main entry
+    point for the bridge script.
     """
     
     def __init__(self):
-        """Initialize the Python bridge."""
+        """
+        Initialize the Python bridge.
+        
+        Sets up logging, loads API functions, and initializes the function executor.
+        Raises SystemExit if API functions are not available.
+        """
         self.module_name = "python_bridge"
         self._api_functions = self._load_api_functions()
         self.function_executor = FunctionExecutor(self._api_functions, self.module_name)
@@ -385,7 +321,7 @@ class PythonBridge:
         Load API functions from the API module.
         
         Returns:
-            Dictionary mapping function names to callables
+            Dictionary mapping function names to callable objects
             
         Raises:
             SystemExit: If API functions are not available
@@ -404,7 +340,7 @@ class PythonBridge:
             "find_media_files_in_paths": find_media_files_in_paths,
         }
         
-        logger.info("Successfully initialized API functions")
+        logger.info(f"Successfully initialized {len(api_functions)} API functions")
         return api_functions
     
     def execute_function(
@@ -430,16 +366,19 @@ class PythonBridge:
         """
         Run the bridge with command line arguments.
         
+        This is the main entry point for the bridge script. It parses command-line
+        arguments, executes the requested function, and returns the result as JSON.
+        
         Args:
-            args: Command line arguments
+            args: Command line arguments (sys.argv)
         """
         try:
-            # Parse command line arguments
+            # Parse command line arguments using ArgumentHandler
             function_name, arguments_json, operation_id = ArgumentHandler.parse_command_line_args(args)
             
-            logger.info(f"Function called: {function_name}, Operation ID: {operation_id}")
+            logger.info(f"Function called: {function_name}, Operation ID: {operation_id or 'None'}")
 
-            # Parse arguments
+            # Parse arguments using ArgumentHandler
             arguments = ArgumentHandler.parse_arguments_json(arguments_json)
 
             # Execute the function

@@ -7,6 +7,7 @@ This module handles the extraction of audio tracks from media files.
 import logging
 from typing import Dict
 
+from config import AUDIO_CODEC_TO_EXTENSION
 from extractors.base import BaseExtractor
 from utils.error_handler import AudioExtractionError
 
@@ -28,23 +29,12 @@ class AudioExtractor(BaseExtractor):
 
     @property
     def codec_to_extension(self) -> Dict[str, str]:
-        """Return codec to file extension mapping for audio tracks."""
-        return {
-            "aac": "aac",
-            "ac3": "ac3",
-            "eac3": "eac3",
-            "mp3": "mp3",
-            "opus": "opus",
-            "vorbis": "ogg",
-            "flac": "flac",
-            "dts": "dts",
-            "truehd": "thd",
-            "pcm_s16le": "wav",
-            "pcm_s24le": "wav",
-            "pcm_s32le": "wav",
-            # Default fallback
-            "default": "mka",
-        }
+        """
+        Return codec to file extension mapping for audio tracks.
+        
+        Uses the centralized mapping from config.py
+        """
+        return AUDIO_CODEC_TO_EXTENSION
 
     @property
     def error_class(self):
