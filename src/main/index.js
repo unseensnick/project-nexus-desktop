@@ -9,7 +9,7 @@ function createWindow() {
 	// Create the browser window.
 	const mainWindow = new BrowserWindow({
 		width: 1024, // Increased width for better UI experience
-		height: 768, // Increased height for better UI experience
+		height: 1220, // Increased height for better UI experience
 		show: false,
 		autoHideMenuBar: true,
 		...(process.platform === "linux" ? { icon } : {}),

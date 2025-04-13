@@ -17,9 +17,7 @@ function useFileSelection() {
 			// Check if electronAPI is available
 			if (!window.electronAPI || typeof window.electronAPI.openFileDialog !== "function") {
 				console.error("electronAPI.openFileDialog is not available")
-				// Use a mock for development
-				setFilePath("/mock/path/to/video.mkv")
-				return
+				throw new Error("File selection dialog not available")
 			}
 
 			const result = await window.electronAPI.openFileDialog({
@@ -39,8 +37,6 @@ function useFileSelection() {
 		} catch (err) {
 			console.error("Error in file selection:", err)
 			setError(`Error selecting file: ${err.message}`)
-			// Use mock data for development
-			setFilePath("/mock/path/to/video.mkv")
 		}
 		return null
 	}
@@ -56,9 +52,7 @@ function useFileSelection() {
 				typeof window.electronAPI.openDirectoryDialog !== "function"
 			) {
 				console.error("electronAPI.openDirectoryDialog is not available")
-				// Use a mock for development
-				setOutputPath("/mock/output/dir")
-				return
+				throw new Error("Directory selection dialog not available")
 			}
 
 			const result = await window.electronAPI.openDirectoryDialog({
@@ -74,8 +68,6 @@ function useFileSelection() {
 		} catch (err) {
 			console.error("Error in directory selection:", err)
 			setError(`Error selecting output directory: ${err.message}`)
-			// Use mock data for development
-			setOutputPath("/mock/output/dir")
 		}
 		return null
 	}

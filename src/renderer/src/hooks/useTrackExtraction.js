@@ -151,36 +151,11 @@ function useTrackExtraction(filePath, outputPath, analyzed) {
 
 		try {
 			// Generate a unique operation ID
-			const operationId = Date.now().toString()
+			const operationId = uuidv4()
 
 			// Check if pythonApi is available
 			if (!window.pythonApi || typeof window.pythonApi.extractTracks !== "function") {
-				console.warn("pythonApi.extractTracks is not available, using mock data")
-
-				// Simulate extraction with progress updates
-				const progressSteps = [20, 40, 60, 80, 100]
-				for (const progress of progressSteps) {
-					await new Promise((resolve) => setTimeout(resolve, 500))
-
-					// Update progress
-					handleProgressUpdate({
-						operationId,
-						args: ["audio", 1, progress, "eng"],
-						kwargs: { track_type: progress < 50 ? "audio" : "subtitle" }
-					})
-				}
-
-				const mockResult = {
-					success: true,
-					file: filePath,
-					extracted_audio: 2,
-					extracted_subtitles: 1,
-					extracted_video: extractionOptions.includeVideo ? 1 : 0,
-					error: null
-				}
-
-				setExtractionResult(mockResult)
-				return mockResult
+				throw new Error("Python API is not available")
 			}
 
 			// Setup progress tracking

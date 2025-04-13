@@ -51,57 +51,7 @@ function useMediaAnalysis(filePath) {
 		try {
 			// Check if pythonApi is available
 			if (!window.pythonApi || typeof window.pythonApi.analyzeFile !== "function") {
-				console.warn("pythonApi.analyzeFile is not available, using mock data")
-				// Simulate analysis with mock data
-				await new Promise((resolve) => setTimeout(resolve, 1000))
-
-				const mockResult = {
-					success: true,
-					tracks: [
-						{
-							id: 0,
-							type: "audio",
-							codec: "aac",
-							language: "eng",
-							title: "English 5.1",
-							default: true,
-							forced: false,
-							display_name: "Audio Track 0 [English]: English 5.1 (default) - aac"
-						},
-						{
-							id: 1,
-							type: "audio",
-							codec: "ac3",
-							language: "jpn",
-							title: "Japanese",
-							default: false,
-							forced: false,
-							display_name: "Audio Track 1 [Japanese]: Japanese - ac3"
-						},
-						{
-							id: 0,
-							type: "subtitle",
-							codec: "subrip",
-							language: "eng",
-							title: "English",
-							default: true,
-							forced: false,
-							display_name: "Subtitle Track 0 [English]: English (default) - subrip"
-						}
-					],
-					audio_tracks: 2,
-					subtitle_tracks: 1,
-					video_tracks: 1,
-					languages: {
-						audio: ["eng", "jpn"],
-						subtitle: ["eng"],
-						video: []
-					}
-				}
-
-				setAnalyzed(mockResult)
-				updateAvailableLanguages(mockResult)
-				return mockResult
+				throw new Error("Python API is not available")
 			}
 
 			// Use the real Python API

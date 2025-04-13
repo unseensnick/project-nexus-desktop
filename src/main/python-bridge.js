@@ -22,7 +22,6 @@ class PythonBridge {
 	constructor() {
 		this.processManager = new PythonProcessManager()
 		this._module = "PythonBridge"
-		this.useMockHandlers = false
 	}
 
 	/**
@@ -41,7 +40,7 @@ class PythonBridge {
 			console.error(
 				`${this._module}: Python bridge script not found at: ${this.bridgeScriptPath}`
 			)
-			this.useMockHandlers = true
+			throw new Error(`Python bridge script not found at: ${this.bridgeScriptPath}`)
 		}
 
 		// Set up IPC handlers
@@ -49,7 +48,6 @@ class PythonBridge {
 
 		console.log(`${this._module}: Initialized with Python: ${this.pythonPath}`)
 		console.log(`${this._module}: Bridge script: ${this.bridgeScriptPath}`)
-		console.log(`${this._module}: Using mock handlers: ${this.useMockHandlers}`)
 
 		return this
 	}
@@ -98,12 +96,7 @@ class PythonBridge {
 	 * Set up IPC handlers for Python communication
 	 */
 	setupHandlers() {
-		// Use mock handlers if needed, otherwise use real handlers
-		if (this.useMockHandlers) {
-			this._setupMockHandlers()
-		} else {
-			this._setupRealHandlers()
-		}
+		this._setupRealHandlers()
 	}
 
 	/**
@@ -353,96 +346,6 @@ class PythonBridge {
 			} catch (err) {
 				console.error(`${this._module}: Error finding media files:`, err)
 				return { success: false, error: err.message }
-			}
-		})
-	}
-
-	/**
-	 * Set up mock handlers for when Python is not available
-	 */
-	_setupMockHandlers() {
-		console.warn(
-			`${this._module}: Using mock Python handlers - no actual extraction will occur`
-		)
-
-		// Mock analyzer
-		ipcMain.handle("python:analyze-file", async (_, filePath) => {
-			console.log(`${this._module}: Mock analyzing file: ${filePath}`)
-
-			return {
-				success: true,
-				tracks: [
-					{
-						id: 0,
-						type: "audio",
-						codec: "aac",
-						language: "eng",
-						title: "English 5.1",
-						default: true,
-						forced: false,
-						display_name: "Audio Track 0 [English]: English 5.1 (default) - aac"
-					},
-					{
-						id: 1,
-						type: "audio",
-						codec: "ac3",
-						language: "jpn",
-						title: "Japanese",
-						default: false,
-						forced: false,
-						display_name: "Audio Track 1 [Japanese]: Japanese - ac3"
-					},
-					{
-						id: 0,
-						type: "subtitle",
-						codec: "subrip",
-						language: "eng",
-						title: "English",
-						default: true,
-						forced: false,
-						display_name: "Subtitle Track 0 [English]: English (default) - subrip"
-					}
-				],
-				audio_tracks: 2,
-				subtitle_tracks: 1,
-				video_tracks: 1,
-				languages: {
-					audio: ["eng", "jpn"],
-					subtitle: ["eng"],
-					video: []
-				}
-			}
-		})
-
-		// Other mock handlers follow a similar pattern...
-		// Mock extract tracks
-		ipcMain.handle("python:extract-tracks", async (_, options) => {
-			console.log(`${this._module}: Mock extracting tracks:`, options)
-
-			// Simulate progress updates
-			if (options.operationId && this.mainWindow) {
-				const progressUpdates = [20, 40, 60, 80, 100]
-
-				for (const progress of progressUpdates) {
-					// Simulate some processing time
-					await new Promise((resolve) => setTimeout(resolve, 500))
-
-					// Send progress update
-					this.mainWindow.webContents.send(`python:progress:${options.operationId}`, {
-						operationId: options.operationId,
-						args: ["audio", 0, progress, "eng"],
-						kwargs: { track_type: progress < 50 ? "audio" : "subtitle" }
-					})
-				}
-			}
-
-			return {
-				success: true,
-				file: options.filePath,
-				extracted_audio: 2,
-				extracted_subtitles: 1,
-				extracted_video: options.includeVideo ? 1 : 0,
-				error: null
 			}
 		})
 	}
