@@ -1,5 +1,3 @@
-// hooks/useMediaAnalysis.js - Fixed version
-
 import { useCallback, useEffect, useState } from "react"
 
 /**
@@ -8,6 +6,7 @@ import { useCallback, useEffect, useState } from "react"
  * @returns {Object} Analysis related states and handlers
  */
 function useMediaAnalysis(filePath) {
+	// State declarations for tracking analysis status
 	const [analyzed, setAnalyzed] = useState(null)
 	const [isAnalyzing, setIsAnalyzing] = useState(false)
 	const [error, setError] = useState(null)
@@ -36,13 +35,16 @@ function useMediaAnalysis(filePath) {
 
 	/**
 	 * Analyze the selected media file
+	 * @returns {Promise<Object|null>} Analysis result or null on error
 	 */
 	const handleAnalyzeFile = useCallback(async () => {
+		// Validate input
 		if (!filePath) {
 			setError("Please select a file first")
 			return null
 		}
 
+		// Set loading state
 		setIsAnalyzing(true)
 		setError(null)
 
@@ -102,6 +104,7 @@ function useMediaAnalysis(filePath) {
 				return mockResult
 			}
 
+			// Use the real Python API
 			const result = await window.pythonApi.analyzeFile(filePath)
 
 			if (result.success) {
@@ -115,12 +118,12 @@ function useMediaAnalysis(filePath) {
 			}
 		} catch (err) {
 			console.error("Error analyzing file:", err)
-			setError(`Error analyzing file: ${err.message}`)
+			setError(`Error analyzing file: ${err.message || "Unknown error"}`)
 			return null
 		} finally {
 			setIsAnalyzing(false)
 		}
-	}, [filePath, updateAvailableLanguages]) // Now updateAvailableLanguages is properly defined before being used here
+	}, [filePath, updateAvailableLanguages])
 
 	/**
 	 * Reset analysis state
@@ -132,6 +135,7 @@ function useMediaAnalysis(filePath) {
 		setAvailableLanguages([])
 	}, [])
 
+	// Export hook API
 	return {
 		analyzed,
 		isAnalyzing,

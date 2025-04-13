@@ -6,7 +6,7 @@ based on user-provided options and other extraction-related helpers.
 """
 
 import logging
-from typing import List, Tuple
+from typing import Dict, List, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -33,16 +33,17 @@ def determine_track_types(
     if video_only:
         return False, False, True
 
-    # Determine which types to extract
-    extract_audio = not subtitle_only
-    extract_subtitles = not audio_only
-    extract_video = include_video
-
-    # If both audio_only and subtitle_only are set, warn in calling code
+    # Check for contradictory settings
     if audio_only and subtitle_only:
         logger.warning(
             "Both audio_only and subtitle_only flags are set, no tracks will be extracted"
         )
+        return False, False, include_video
+
+    # Determine which types to extract
+    extract_audio = not subtitle_only
+    extract_subtitles = not audio_only
+    extract_video = include_video
 
     return extract_audio, extract_subtitles, extract_video
 
@@ -65,18 +66,24 @@ def get_extraction_mode_description(
     Returns:
         Human-readable description of the extraction mode
     """
-    if video_only:
-        return "Video only"
-    elif audio_only and subtitle_only:
-        return "No tracks (conflicting flags)"
-    elif audio_only:
-        return "Audio only"
-    elif subtitle_only:
-        return "Subtitle only"
-    elif include_video:
-        return "Audio, Subtitles, and Video"
-    else:
-        return "Audio and Subtitles (default)"
+    # Use a dictionary mapping for cleaner code
+    extraction_modes = {
+        (True, False, False, False): "Audio only",
+        (False, True, False, False): "Subtitle only",
+        (False, False, True, False): "Video only",
+        (True, True, False, False): "No tracks (conflicting flags)",
+        (False, False, False, True): "Audio, Subtitles, and Video",
+        (False, False, False, False): "Audio and Subtitles (default)",
+    }
+    
+    # Create a tuple of the extraction settings
+    mode_key = (audio_only, subtitle_only, video_only, include_video)
+    
+    # Return the description or a default if combination not found
+    return extraction_modes.get(
+        mode_key, 
+        "Custom extraction mode"
+    )
 
 
 def count_extractable_tracks(
@@ -116,3 +123,39 @@ def count_extractable_tracks(
         total_tracks += len(video_tracks)
 
     return total_tracks
+
+
+def build_extraction_summary(
+    extraction_results: Dict,
+    languages: List[str],
+    extraction_mode: str
+) -> Dict:
+    """
+    Build a summary of extraction results for reporting.
+    
+    Args:
+        extraction_results: Dictionary with extraction statistics
+        languages: List of language codes that were extracted
+        extraction_mode: Human-readable description of extraction mode
+        
+    Returns:
+        Dictionary with formatted summary information
+    """
+    total_extracted = (
+        extraction_results.get("extracted_audio", 0) +
+        extraction_results.get("extracted_subtitles", 0) +
+        extraction_results.get("extracted_video", 0)
+    )
+    
+    language_text = ", ".join(languages) if languages else "None specified"
+    
+    return {
+        "total_extracted": total_extracted,
+        "mode": extraction_mode,
+        "languages": language_text,
+        "details": {
+            "audio": extraction_results.get("extracted_audio", 0),
+            "subtitles": extraction_results.get("extracted_subtitles", 0),
+            "video": extraction_results.get("extracted_video", 0)
+        }
+    }

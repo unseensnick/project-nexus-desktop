@@ -486,4 +486,4 @@ run_ffmpeg_command = FFmpegManager.run_command
 run_ffmpeg_command_with_progress = FFmpegManager.run_command_with_progress
 analyze_media_file = FFmpegManager.analyze_media_file
 get_media_duration = FFmpegManager.get_media_duration
-extract_track = FFmpegManager.extract_trackextract_track = FFmpegManager.extract_track
+extract_track = FFmpegManager.extract_track

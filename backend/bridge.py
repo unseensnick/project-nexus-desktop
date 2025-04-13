@@ -14,7 +14,7 @@ import json
 import logging
 import os
 import sys
-from typing import Any, Callable, List, Optional
+from typing import Any, Callable, List, Optional, Tuple
 
 # Import API functions at the module level to avoid import-outside-toplevel
 try:
@@ -114,34 +114,110 @@ class PythonBridge:
             ValueError: If the function name is not recognized
         """
         # Check if the function exists
-        if function_name not in self.api_functions:
-            error = ValueError(f"Unknown function: {function_name}")
-            handle_error(error, module_name=self.MODULE_NAME, raise_error=True)
+        self._validate_function_name(function_name)
             
         # Get the function
         function = self.api_functions[function_name]
         
-        # Set up progress tracking if applicable and operation_id is provided
-        if operation_id and "progress_callback" in function.__code__.co_varnames:
-            # Set up arguments based on type
-            if isinstance(arguments, list):
-                # Find the position of progress_callback in function arguments
-                arg_names = function.__code__.co_varnames[:function.__code__.co_argcount]
-                if "progress_callback" in arg_names:
-                    callback_pos = arg_names.index("progress_callback")
-                    
-                    # Extend arguments list if necessary
-                    while len(arguments) <= callback_pos:
-                        arguments.append(None)
-                        
-                    # Create and insert progress callback factory
-                    progress_callback = create_progress_callback_factory(operation_id)
-                    arguments[callback_pos] = progress_callback
-            else:
-                # For dictionary arguments, just add the callback
-                arguments["progress_callback"] = create_progress_callback_factory(operation_id)
+        # Set up progress tracking and prepare arguments
+        prepared_arguments = self._prepare_arguments(function, arguments, operation_id)
         
         # Execute the function with error handling
+        return self._execute_function_safely(function, function_name, prepared_arguments, operation_id)
+    
+    def _validate_function_name(self, function_name: str) -> None:
+        """
+        Validate that the requested function exists.
+        
+        Args:
+            function_name: Name of the function to validate
+            
+        Raises:
+            ValueError: If the function name is not recognized
+        """
+        if function_name not in self.api_functions:
+            error = ValueError(f"Unknown function: {function_name}")
+            handle_error(error, module_name=self.MODULE_NAME, raise_error=True)
+    
+    def _prepare_arguments(
+        self, function: Callable, arguments: Any, operation_id: Optional[str]
+    ) -> Any:
+        """
+        Prepare arguments for function execution, including progress tracking.
+        
+        Args:
+            function: The function to be called
+            arguments: Arguments to pass to the function
+            operation_id: Optional operation ID for progress tracking
+            
+        Returns:
+            Prepared arguments for the function call
+        """
+        # If no operation_id or function doesn't accept progress_callback, return arguments as-is
+        if not operation_id or "progress_callback" not in function.__code__.co_varnames:
+            return arguments
+        
+        # Create a progress callback factory
+        progress_callback = create_progress_callback_factory(operation_id)
+        
+        # Add progress_callback to the arguments based on type
+        if isinstance(arguments, list):
+            return self._add_callback_to_list_args(function, arguments, progress_callback)
+        else:
+            # For dictionary arguments, just add the callback
+            arguments["progress_callback"] = progress_callback
+            return arguments
+    
+    def _add_callback_to_list_args(
+        self, function: Callable, arguments: List, progress_callback: Callable
+    ) -> List:
+        """
+        Add progress callback to list-style arguments.
+        
+        Args:
+            function: The function to be called
+            arguments: List of arguments to modify
+            progress_callback: Progress callback function to add
+            
+        Returns:
+            Modified list of arguments with the progress callback
+        """
+        # Find the position of progress_callback in function arguments
+        arg_names = function.__code__.co_varnames[:function.__code__.co_argcount]
+        if "progress_callback" in arg_names:
+            callback_pos = arg_names.index("progress_callback")
+            
+            # Make a copy of the arguments to avoid modifying the original
+            args_copy = list(arguments)
+            
+            # Extend arguments list if necessary
+            while len(args_copy) <= callback_pos:
+                args_copy.append(None)
+                
+            # Insert progress callback
+            args_copy[callback_pos] = progress_callback
+            return args_copy
+        
+        return arguments
+    
+    def _execute_function_safely(
+        self, function: Callable, function_name: str, arguments: Any, operation_id: Optional[str]
+    ) -> Any:
+        """
+        Execute the function with comprehensive error handling.
+        
+        Args:
+            function: The function to execute
+            function_name: Name of the function (for error reporting)
+            arguments: Prepared arguments for the function
+            operation_id: Operation ID for progress tracking
+            
+        Returns:
+            Result of the function execution
+            
+        Raises:
+            NexusError: If an error occurs during execution
+        """
         try:
             result = safe_execute(
                 self._call_function,
@@ -165,17 +241,28 @@ class PythonBridge:
             
         except Exception as e:
             # Clean up progress reporter even on error
-            if operation_id:
-                # Report the error through the progress reporter
-                reporter = get_progress_reporter(operation_id)
-                reporter.error(str(e))
-                remove_progress_reporter(operation_id)
+            self._handle_execution_error(e, operation_id)
             
             # Re-raise the error
             raise
     
+    def _handle_execution_error(self, error: Exception, operation_id: Optional[str]) -> None:
+        """
+        Handle errors that occur during function execution.
+        
+        Args:
+            error: The exception that occurred
+            operation_id: Operation ID for progress tracking
+        """
+        if operation_id:
+            # Report the error through the progress reporter
+            reporter = get_progress_reporter(operation_id)
+            reporter.error(str(error))
+            remove_progress_reporter(operation_id)
+    
     def _call_function(self, function: Callable, arguments: Any) -> Any:
-        """Helper method to call the function with appropriate argument style.
+        """
+        Call the function with appropriate argument style.
         
         Args:
             function: The function to call
@@ -197,31 +284,13 @@ class PythonBridge:
             args: Command line arguments
         """
         try:
-            # Check if we have the required arguments
-            if len(args) < 3:
-                error_msg = "Insufficient arguments provided"
-                logger.error(error_msg)
-                sys.stderr.write(
-                    "Usage: bridge.py <function_name> <arguments_json> [operation_id]\n"
-                )
-                sys.exit(1)
-
-            # Extract arguments
-            function_name = args[1]
-            arguments_json = args[2]
-            operation_id = args[3] if len(args) > 3 else None
-
+            # Parse command line arguments
+            function_name, arguments_json, operation_id = self._parse_command_line_args(args)
+            
             logger.info(f"Function called: {function_name}, Operation ID: {operation_id}")
 
             # Parse arguments
-            try:
-                arguments = json.loads(arguments_json)
-                logger.debug(f"Arguments: {arguments}")
-            except json.JSONDecodeError as e:
-                error_msg = f"Failed to parse arguments JSON: {e}"
-                log_exception(e, module_name=self.MODULE_NAME)
-                sys.stderr.write(f"Error: {error_msg}\n")
-                sys.exit(1)
+            arguments = self._parse_arguments_json(arguments_json)
 
             # Execute the function
             result = self.execute_function(function_name, arguments, operation_id)
@@ -231,21 +300,86 @@ class PythonBridge:
             logger.info(f"Function {function_name} completed successfully")
 
         except Exception as e:
-            log_exception(e, module_name="bridge_run")
-            sys.stderr.write(f"Error: {str(e)}\n")
+            self._handle_bridge_error(e)
+    
+    def _parse_command_line_args(self, args: List[str]) -> Tuple[str, str, Optional[str]]:
+        """
+        Parse command line arguments.
+        
+        Args:
+            args: Command line arguments
             
-            # Check if it's a critical error that should terminate the application
-            if is_critical_error(e):
+        Returns:
+            Tuple of (function_name, arguments_json, operation_id)
+            
+        Raises:
+            ValueError: If insufficient arguments are provided
+        """
+        # Check if we have the required arguments
+        if len(args) < 3:
+            error_msg = "Insufficient arguments provided"
+            logger.error(error_msg)
+            sys.stderr.write(
+                "Usage: bridge.py <function_name> <arguments_json> [operation_id]\n"
+            )
+            sys.exit(1)
+
+        # Extract arguments
+        function_name = args[1]
+        arguments_json = args[2]
+        operation_id = args[3] if len(args) > 3 else None
+        
+        return function_name, arguments_json, operation_id
+    
+    def _parse_arguments_json(self, arguments_json: str) -> Any:
+        """
+        Parse JSON arguments.
+        
+        Args:
+            arguments_json: JSON string to parse
+            
+        Returns:
+            Parsed arguments
+            
+        Raises:
+            json.JSONDecodeError: If the JSON is invalid
+        """
+        try:
+            arguments = json.loads(arguments_json)
+            logger.debug(f"Arguments: {arguments}")
+            return arguments
+        except json.JSONDecodeError as e:
+            error_msg = f"Failed to parse arguments JSON: {e}"
+            log_exception(e, module_name=self.MODULE_NAME)
+            sys.stderr.write(f"Error: {error_msg}\n")
+            sys.exit(1)
+    
+    def _handle_bridge_error(self, error: Exception) -> None:
+        """
+        Handle errors that occur during bridge operation.
+        
+        Args:
+            error: The exception that occurred
+        """
+        log_exception(error, module_name="bridge_run")
+        sys.stderr.write(f"Error: {str(error)}\n")
+        
+        # Check if it's a critical error that should terminate the application
+        if is_critical_error(error):
+            sys.exit(1)
+        else:
+            # For non-critical errors, try to return an error response
+            try:
+                error_response = {
+                    "success": False, 
+                    "error": str(error), 
+                    "error_type": error.__class__.__name__
+                }
+                print(json.dumps(error_response), flush=True)
+            except Exception as json_error:
+                log_exception(json_error, module_name="bridge_error_response")
+                sys.stderr.write("Failed to create error response\n")
                 sys.exit(1)
-            else:
-                # For non-critical errors, try to return an error response
-                try:
-                    error_response = {"success": False, "error": str(e), "error_type": e.__class__.__name__}
-                    print(json.dumps(error_response), flush=True)
-                except Exception as json_error:
-                    log_exception(json_error, module_name="bridge_error_response")
-                    sys.stderr.write("Failed to create error response\n")
-                    sys.exit(1)
 
 
 def main() -> None:
