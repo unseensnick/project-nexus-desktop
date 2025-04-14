@@ -10,9 +10,11 @@ import {
 } from "@/components/ui/card"
 import {
 	Check,
+	ChevronLeft,
 	FileText,
 	FileX,
 	Folder,
+	FolderOpen,
 	Headphones,
 	Layers,
 	RefreshCw,
@@ -38,7 +40,7 @@ function ResultsTab({
 	// If still extracting, show progress through the ProgressCard component
 	if (isExtracting) {
 		return (
-			<Card>
+			<Card className="shadow-lg">
 				<CardHeader>
 					<CardTitle className="flex items-center gap-2">
 						<RefreshCw className="h-5 w-5 animate-spin" />
@@ -61,7 +63,7 @@ function ResultsTab({
 	// Show appropriate results based on mode
 	if (batchMode) {
 		return (
-			<Card>
+			<Card className="shadow-lg">
 				<CardHeader>
 					<CardTitle className="flex items-center gap-2">
 						<Check className="h-5 w-5 text-green-500" />
@@ -71,7 +73,7 @@ function ResultsTab({
 				</CardHeader>
 				<CardContent className="space-y-6">
 					<div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-						<Card>
+						<Card className="border-none">
 							<CardHeader className="p-3 pb-0">
 								<CardTitle className="text-lg flex items-center gap-1">
 									<Layers className="h-4 w-4" />
@@ -84,9 +86,9 @@ function ResultsTab({
 								</span>
 							</CardContent>
 						</Card>
-						<Card>
+						<Card className="border-none bg-green-50 dark:bg-green-950">
 							<CardHeader className="p-3 pb-0">
-								<CardTitle className="text-lg text-green-600 flex items-center gap-1">
+								<CardTitle className="text-lg text-green-600 dark:text-green-400 flex items-center gap-1">
 									<Check className="h-4 w-4" />
 									Successful
 								</CardTitle>
@@ -97,9 +99,9 @@ function ResultsTab({
 								</span>
 							</CardContent>
 						</Card>
-						<Card>
+						<Card className="border-none bg-red-50 dark:bg-red-950">
 							<CardHeader className="p-3 pb-0">
-								<CardTitle className="text-lg text-red-600 flex items-center gap-1">
+								<CardTitle className="text-lg text-red-600 dark:text-red-400 flex items-center gap-1">
 									<FileX className="h-4 w-4" />
 									Failed
 								</CardTitle>
@@ -110,9 +112,9 @@ function ResultsTab({
 								</span>
 							</CardContent>
 						</Card>
-						<Card>
+						<Card className="border-none bg-blue-50 dark:bg-blue-950">
 							<CardHeader className="p-3 pb-0">
-								<CardTitle className="text-lg text-blue-600">
+								<CardTitle className="text-lg text-blue-600 dark:text-blue-400">
 									Tracks Extracted
 								</CardTitle>
 							</CardHeader>
@@ -126,7 +128,7 @@ function ResultsTab({
 
 					<div className="p-4 bg-muted rounded-lg">
 						<div className="flex items-start gap-2">
-							<Folder className="h-5 w-5 mt-0.5 flex-shrink-0" />
+							<FolderOpen className="h-5 w-5 mt-0.5 flex-shrink-0" />
 							<div>
 								<div className="font-medium">Output Location</div>
 								<div className="text-sm break-all">{outputPath}</div>
@@ -136,7 +138,7 @@ function ResultsTab({
 
 					{extractionResult.failed_files_list &&
 						extractionResult.failed_files_list.length > 0 && (
-							<div className="p-4 bg-red-50 text-red-800 rounded-lg">
+							<div className="p-4 bg-red-50 text-red-800 rounded-lg dark:bg-red-950 dark:text-red-100">
 								<div className="flex items-center gap-2 mb-2">
 									<FileX className="h-5 w-5" />
 									<h3 className="font-semibold">Failed Files</h3>
@@ -159,10 +161,14 @@ function ResultsTab({
 						onClick={() => setActiveTab("select")}
 						className="flex items-center gap-2"
 					>
+						<ChevronLeft className="h-4 w-4" />
 						Back to File Selection
 					</Button>
 
-					<Button onClick={handleReset} className="flex items-center gap-2">
+					<Button
+						onClick={handleReset}
+						className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700"
+					>
 						Start New Extraction
 					</Button>
 				</CardFooter>
@@ -171,7 +177,7 @@ function ResultsTab({
 	} else {
 		// Single file results
 		return (
-			<Card>
+			<Card className="shadow-lg">
 				<CardHeader>
 					<CardTitle className="flex items-center gap-2">
 						<Check className="h-5 w-5 text-green-500" />
@@ -181,9 +187,9 @@ function ResultsTab({
 				</CardHeader>
 				<CardContent className="space-y-6">
 					<div className="grid grid-cols-3 gap-4">
-						<Card>
+						<Card className="border-none bg-blue-50 dark:bg-blue-950">
 							<CardHeader className="p-3 pb-0">
-								<CardTitle className="text-lg text-blue-600 flex items-center gap-2">
+								<CardTitle className="text-lg text-blue-600 dark:text-blue-400 flex items-center gap-2">
 									<Headphones className="h-4 w-4" />
 									Audio Tracks
 								</CardTitle>
@@ -194,9 +200,10 @@ function ResultsTab({
 								</span>
 							</CardContent>
 						</Card>
-						<Card>
+
+						<Card className="border-none bg-green-50 dark:bg-green-950">
 							<CardHeader className="p-3 pb-0">
-								<CardTitle className="text-lg text-green-600 flex items-center gap-2">
+								<CardTitle className="text-lg text-green-600 dark:text-green-400 flex items-center gap-2">
 									<Subtitles className="h-4 w-4" />
 									Subtitle Tracks
 								</CardTitle>
@@ -207,9 +214,10 @@ function ResultsTab({
 								</span>
 							</CardContent>
 						</Card>
-						<Card>
+
+						<Card className="border-none bg-amber-50 dark:bg-amber-950">
 							<CardHeader className="p-3 pb-0">
-								<CardTitle className="text-lg text-amber-600 flex items-center gap-2">
+								<CardTitle className="text-lg text-amber-600 dark:text-amber-400 flex items-center gap-2">
 									<Video className="h-4 w-4" />
 									Video Tracks
 								</CardTitle>
@@ -232,15 +240,17 @@ function ResultsTab({
 						</div>
 					</div>
 
-					<div className="p-4 bg-green-50 text-green-800 rounded-lg">
+					<div className="p-4 bg-green-50 text-green-800 rounded-lg dark:bg-green-950 dark:text-green-300">
 						<div className="flex items-center gap-2">
 							<Check className="h-5 w-5" />
 							<span className="font-medium">Extraction completed successfully!</span>
 						</div>
-						<p className="mt-1 text-sm text-green-700">
+						<p className="mt-1 text-sm">
 							All tracks have been extracted according to your specifications.
 						</p>
 					</div>
+
+					{/* We could add a list of extracted files here if that information is available in the extraction result */}
 				</CardContent>
 				<CardFooter className="flex justify-between">
 					<Button
@@ -248,10 +258,14 @@ function ResultsTab({
 						onClick={() => setActiveTab("analyze")}
 						className="flex items-center gap-2"
 					>
+						<ChevronLeft className="h-4 w-4" />
 						Back to Analysis
 					</Button>
 
-					<Button onClick={handleReset} className="flex items-center gap-2">
+					<Button
+						onClick={handleReset}
+						className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700"
+					>
 						<FileText className="h-4 w-4" />
 						Start New Extraction
 					</Button>

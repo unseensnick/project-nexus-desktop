@@ -1,3 +1,4 @@
+import { Button } from "@/components/ui/button"
 import {
 	Card,
 	CardContent,
@@ -6,12 +7,9 @@ import {
 	CardHeader,
 	CardTitle
 } from "@/components/ui/card"
-import { File, FilesIcon, Folder, FolderOpen, Info, Layers, RefreshCw } from "lucide-react"
+import { Label } from "@/components/ui/label"
+import { File, FilesIcon, Folder, FolderOpen, Info, Layers, RefreshCw, Upload } from "lucide-react"
 import React from "react"
-import { Button } from "./ui/button"
-import { Label } from "./ui/label"
-import { Separator } from "./ui/separator"
-import { Switch } from "./ui/switch"
 
 /**
  * Enhanced file selection tab component
@@ -22,7 +20,6 @@ function FileSelectionTab({
 	isAnalyzing,
 	isBatchAnalyzing,
 	batchMode,
-	toggleBatchMode,
 	inputPaths,
 	handleSelectFile,
 	handleSelectOutputDir,
@@ -32,19 +29,9 @@ function FileSelectionTab({
 	handleAnalyzeBatch
 }) {
 	return (
-		<Card>
+		<Card className="shadow-lg">
 			<CardHeader>
-				<CardTitle className="flex items-center justify-between">
-					<span>Select Files</span>
-					<div className="flex items-center gap-2">
-						<span className="text-sm font-normal">Batch Mode</span>
-						<Switch
-							checked={batchMode}
-							onCheckedChange={toggleBatchMode}
-							id="batch-mode"
-						/>
-					</div>
-				</CardTitle>
+				<CardTitle>Select Files</CardTitle>
 				<CardDescription>
 					{batchMode
 						? "Select multiple files or folders to process in a batch"
@@ -58,14 +45,14 @@ function FileSelectionTab({
 						<Label htmlFor="media-file">Media File</Label>
 						<div className="flex items-center gap-2">
 							<Button
-								variant="outline"
+								variant="default"
 								onClick={handleSelectFile}
-								className="flex items-center gap-2"
+								className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700"
 							>
 								<File className="h-4 w-4" />
 								Select File
 							</Button>
-							<div className="flex-1 p-2 bg-muted rounded truncate">
+							<div className="flex-1 p-3 bg-gray-100 rounded truncate dark:bg-gray-800">
 								{filePath ? (
 									<div className="flex items-center gap-2">
 										<File className="h-4 w-4 flex-shrink-0" />
@@ -84,23 +71,23 @@ function FileSelectionTab({
 						<div className="flex flex-col gap-2">
 							<div className="flex items-center gap-2">
 								<Button
-									variant="outline"
+									variant="default"
 									onClick={handleSelectInputFiles}
-									className="flex items-center gap-2"
+									className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700"
 								>
 									<FilesIcon className="h-4 w-4" />
 									Select Files
 								</Button>
 								<Button
-									variant="outline"
+									variant="default"
 									onClick={handleSelectInputDirectory}
-									className="flex items-center gap-2"
+									className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700"
 								>
 									<FolderOpen className="h-4 w-4" />
 									Select Directory
 								</Button>
 							</div>
-							<div className="p-2 bg-muted rounded">
+							<div className="p-3 bg-gray-100 rounded dark:bg-gray-800">
 								{inputPaths.length > 0 ? (
 									<div className="flex items-center">
 										<Layers className="h-4 w-4 mr-2 flex-shrink-0" />
@@ -118,14 +105,14 @@ function FileSelectionTab({
 					<Label htmlFor="output-dir">Output Directory</Label>
 					<div className="flex items-center gap-2">
 						<Button
-							variant="outline"
+							variant="default"
 							onClick={handleSelectOutputDir}
-							className="flex items-center gap-2"
+							className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700"
 						>
 							<Folder className="h-4 w-4" />
 							Select Folder
 						</Button>
-						<div className="flex-1 p-2 bg-muted rounded truncate">
+						<div className="flex-1 p-3 bg-gray-100 rounded truncate dark:bg-gray-800">
 							{outputPath ? (
 								<div className="flex items-center gap-2">
 									<Folder className="h-4 w-4 flex-shrink-0" />
@@ -135,6 +122,22 @@ function FileSelectionTab({
 								<span className="text-muted-foreground">No directory selected</span>
 							)}
 						</div>
+					</div>
+				</div>
+
+				{/* Drag and drop area */}
+				<div className="border-2 border-dashed border-gray-300 rounded-lg p-8 mb-6 dark:border-gray-700">
+					<div className="text-center">
+						<Upload className="h-10 w-10 mx-auto text-gray-400 mb-2" />
+						<p className="font-medium mb-1">Drag and drop files here</p>
+						<p className="text-sm text-gray-500 mb-4 dark:text-gray-400">or</p>
+						<Button
+							variant="default"
+							onClick={batchMode ? handleSelectInputFiles : handleSelectFile}
+							className="bg-indigo-600 hover:bg-indigo-700"
+						>
+							Browse Files
+						</Button>
 					</div>
 				</div>
 			</CardContent>
@@ -150,7 +153,7 @@ function FileSelectionTab({
 					<Button
 						onClick={handleAnalyzeBatch}
 						disabled={!outputPath || inputPaths.length === 0 || isBatchAnalyzing}
-						className="flex items-center gap-2"
+						className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700"
 					>
 						{isBatchAnalyzing ? (
 							<RefreshCw className="h-4 w-4 animate-spin" />
@@ -163,7 +166,7 @@ function FileSelectionTab({
 					<Button
 						onClick={handleAnalyzeFile}
 						disabled={!filePath || isAnalyzing}
-						className="flex items-center gap-2"
+						className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700"
 					>
 						{isAnalyzing ? (
 							<RefreshCw className="h-4 w-4 animate-spin" />
