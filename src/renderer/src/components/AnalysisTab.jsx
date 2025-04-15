@@ -1,4 +1,5 @@
 import ProgressCard from "@/components/ProgressCard"
+import TrackSummaryCard from "@/components/TrackSummaryCard"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -10,7 +11,7 @@ import {
 	CardTitle
 } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
-import { ToggleSwitch } from "@/components/ui/toggle-switch"
+import { Switch } from "@/components/ui/switch"
 import {
 	Check,
 	ChevronLeft,
@@ -32,6 +33,7 @@ import React from "react"
 
 /**
  * Media file analysis and configuration tab
+ * Refactored to use shadcn UI components directly
  */
 function AnalysisTab({
 	fileName,
@@ -109,49 +111,11 @@ function AnalysisTab({
 					</CardDescription>
 				</CardHeader>
 				<CardContent className="space-y-6">
-					{/* Track summary cards - horizontal layout with compact design */}
+					{/* Track summary cards - using shadcn Card component */}
 					<div className="grid grid-cols-3 gap-4 mb-6">
-						<div className="bg-blue-50 dark:bg-blue-950/50 rounded-lg overflow-hidden shadow-sm border border-blue-100 dark:border-blue-900/50">
-							<div className="p-2 flex items-center gap-2 border-b border-blue-100 dark:border-blue-900/50">
-								<Headphones className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-								<span className="text-blue-700 dark:text-blue-300 text-sm font-medium">
-									Audio Tracks
-								</span>
-							</div>
-							<div className="p-4 text-center">
-								<span className="text-3xl font-bold text-blue-800 dark:text-blue-200">
-									{analysisResult.audio_tracks}
-								</span>
-							</div>
-						</div>
-
-						<div className="bg-green-50 dark:bg-green-950/50 rounded-lg overflow-hidden shadow-sm border border-green-100 dark:border-green-900/50">
-							<div className="p-2 flex items-center gap-2 border-b border-green-100 dark:border-green-900/50">
-								<Subtitles className="h-4 w-4 text-green-600 dark:text-green-400" />
-								<span className="text-green-700 dark:text-green-300 text-sm font-medium">
-									Subtitle Tracks
-								</span>
-							</div>
-							<div className="p-4 text-center">
-								<span className="text-3xl font-bold text-green-800 dark:text-green-200">
-									{analysisResult.subtitle_tracks}
-								</span>
-							</div>
-						</div>
-
-						<div className="bg-amber-50 dark:bg-amber-950/50 rounded-lg overflow-hidden shadow-sm border border-amber-100 dark:border-amber-900/50">
-							<div className="p-2 flex items-center gap-2 border-b border-amber-100 dark:border-amber-900/50">
-								<Video className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-								<span className="text-amber-700 dark:text-amber-300 text-sm font-medium">
-									Video Tracks
-								</span>
-							</div>
-							<div className="p-4 text-center">
-								<span className="text-3xl font-bold text-amber-800 dark:text-blue-200">
-									{analysisResult.video_tracks}
-								</span>
-							</div>
-						</div>
+						<TrackSummaryCard type="audio" count={analysisResult.audio_tracks} />
+						<TrackSummaryCard type="subtitle" count={analysisResult.subtitle_tracks} />
+						<TrackSummaryCard type="video" count={analysisResult.video_tracks} />
 					</div>
 
 					{!batchMode && (
@@ -315,9 +279,9 @@ function AnalysisTab({
 													Audio Only
 												</span>
 											</div>
-											<ToggleSwitch
-												isOn={extractionOptions.audioOnly}
-												onToggle={() => toggleOption("audioOnly")}
+											<Switch
+												checked={extractionOptions.audioOnly}
+												onCheckedChange={() => toggleOption("audioOnly")}
 												disabled={extractionOptions.videoOnly}
 											/>
 										</div>
@@ -329,9 +293,9 @@ function AnalysisTab({
 													Subtitle Only
 												</span>
 											</div>
-											<ToggleSwitch
-												isOn={extractionOptions.subtitleOnly}
-												onToggle={() => toggleOption("subtitleOnly")}
+											<Switch
+												checked={extractionOptions.subtitleOnly}
+												onCheckedChange={() => toggleOption("subtitleOnly")}
 												disabled={extractionOptions.videoOnly}
 											/>
 										</div>
@@ -343,9 +307,9 @@ function AnalysisTab({
 													Video Only
 												</span>
 											</div>
-											<ToggleSwitch
-												isOn={extractionOptions.videoOnly}
-												onToggle={() => toggleOption("videoOnly")}
+											<Switch
+												checked={extractionOptions.videoOnly}
+												onCheckedChange={() => toggleOption("videoOnly")}
 											/>
 										</div>
 									</div>
@@ -363,9 +327,9 @@ function AnalysisTab({
 													Include Video
 												</span>
 											</div>
-											<ToggleSwitch
-												isOn={extractionOptions.includeVideo}
-												onToggle={() => toggleOption("includeVideo")}
+											<Switch
+												checked={extractionOptions.includeVideo}
+												onCheckedChange={() => toggleOption("includeVideo")}
 												disabled={extractionOptions.videoOnly}
 											/>
 										</div>
@@ -377,9 +341,11 @@ function AnalysisTab({
 													Remove Letterbox
 												</span>
 											</div>
-											<ToggleSwitch
-												isOn={extractionOptions.removeLetterbox}
-												onToggle={() => toggleOption("removeLetterbox")}
+											<Switch
+												checked={extractionOptions.removeLetterbox}
+												onCheckedChange={() =>
+													toggleOption("removeLetterbox")
+												}
 											/>
 										</div>
 									</div>

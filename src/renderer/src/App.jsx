@@ -3,6 +3,8 @@ import "./assets/main.css"
 
 // Import Shadcn/UI components
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Button } from "@/components/ui/button"
+import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 // Import Lucide icons
@@ -20,6 +22,9 @@ import FileSelectionTab from "@/components/FileSelectionTab"
 import ResultsTab from "@/components/ResultsTab"
 import { ThemeProvider } from "@/components/ThemeProvider"
 
+/**
+ * Main application component using shadcn UI components
+ */
 function App() {
 	// Sidebar state
 	const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
@@ -115,23 +120,22 @@ function App() {
 	return (
 		<ThemeProvider>
 			<div className="flex h-screen bg-gray-50 text-gray-900 overflow-hidden dark:bg-gray-900 dark:text-gray-100">
-				{/* Sidebar */}
-				<AppSidebar
-					collapsed={sidebarCollapsed}
-					onToggleCollapse={() => setSidebarCollapsed(!sidebarCollapsed)}
-				/>
+				{/* Sidebar - using the refactored shadcn Sidebar component */}
+				<AppSidebar collapsed={sidebarCollapsed} />
 
 				{/* Main content */}
 				<main className="flex-1 flex flex-col overflow-hidden">
 					{/* Main content header */}
 					<header className="bg-white shadow-sm p-4 flex items-center justify-between dark:bg-gray-800 dark:border-b dark:border-gray-700">
 						<div className="flex items-center gap-2">
-							<button
-								className="p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
+							<Button
+								variant="ghost"
+								size="icon"
+								className="rounded-md hover:bg-gray-100 dark:hover:bg-gray-700"
 								onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
 							>
 								<Menu className="h-5 w-5" />
-							</button>
+							</Button>
 							<h2 className="text-xl font-medium flex items-center gap-2">
 								<FileText className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
 								Track Extraction
@@ -142,14 +146,12 @@ function App() {
 							<span className="text-sm text-gray-500 dark:text-gray-400">
 								Batch Mode
 							</span>
-							<div
-								className="w-10 h-6 rounded-full relative transition-colors duration-200 ease-in-out cursor-pointer bg-gray-200 dark:bg-gray-700"
-								onClick={toggleBatchMode}
-							>
-								<div
-									className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow-sm transform transition-transform duration-200 ease-in-out ${batchMode ? "translate-x-5 bg-indigo-600" : "translate-x-1"}`}
-								></div>
-							</div>
+							<Switch
+								checked={batchMode}
+								onCheckedChange={toggleBatchMode}
+								className="w-10 h-5 data-[state=checked]:bg-indigo-600"
+								thumbClassName="size-4"
+							/>
 						</div>
 					</header>
 
@@ -174,7 +176,6 @@ function App() {
 									isAnalyzing={isAnalyzing}
 									isBatchAnalyzing={isBatchAnalyzing}
 									batchMode={batchMode}
-									toggleBatchMode={toggleBatchMode}
 									inputPaths={inputPaths}
 									handleSelectFile={handleSelectFile}
 									handleSelectOutputDir={handleSelectOutputDir}

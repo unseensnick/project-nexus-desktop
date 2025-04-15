@@ -1,9 +1,15 @@
 import { HelpCircle, Layers, Monitor, Scissors, Settings, Subtitles } from "lucide-react"
 
-import { ModeToggle } from "@/components/ModeToggle"
+import { ModeToggle } from "@/components/ThemeToggle"
 import { Button } from "@/components/ui/button"
+import { Toggle } from "@/components/ui/toggle"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
+/**
+ * AppSidebar component using direct styling to match original design
+ * Rather than using shadcn sidebar, we're preserving the original structure
+ * while using shadcn Button and Toggle components
+ */
 export function AppSidebar({ collapsed }) {
 	// Define sidebar navigation items
 	const navItems = [
@@ -32,7 +38,7 @@ export function AppSidebar({ collapsed }) {
 		}
 	]
 
-	// Render the sidebar component
+	// Render the sidebar component with original styling
 	return (
 		<aside
 			className={`${
@@ -43,11 +49,11 @@ export function AppSidebar({ collapsed }) {
 			<div className="p-4 border-b border-gray-800 flex items-center justify-between">
 				{!collapsed && (
 					<div className="flex items-center gap-2">
-						<Monitor className="h-6 w-6" />
+						<Monitor className="size-4" />
 						<h1 className="text-xl font-medium">Project Nexus</h1>
 					</div>
 				)}
-				{collapsed && <Monitor className="h-6 w-6 mx-auto" />}
+				{collapsed && <Monitor className="size-4 mx-auto" />}
 			</div>
 
 			{/* Navigation menu */}
@@ -58,21 +64,24 @@ export function AppSidebar({ collapsed }) {
 							<TooltipProvider delayDuration={300}>
 								<Tooltip>
 									<TooltipTrigger asChild>
-										<button
-											className={`w-full px-3 py-2 rounded-md flex items-center ${
-												collapsed ? "justify-center" : "gap-2"
-											} 
-											${item.isActive ? "bg-indigo-600" : "hover:bg-gray-800"} ${
+										<Toggle
+											pressed={item.isActive}
+											className={`w-full ${
+												collapsed
+													? "justify-center px-0"
+													: "justify-start px-3"
+											} ${
 												item.comingSoon
 													? "opacity-60 cursor-not-allowed"
 													: ""
 											}`}
 											disabled={item.comingSoon}
+											variant={item.isActive ? "default" : "ghost"}
 										>
-											<item.icon className="h-5 w-5" />
+											<item.icon className="size-4" />
 											{!collapsed && (
 												<>
-													<span>{item.title}</span>
+													<span className="ml-2">{item.title}</span>
 													{item.comingSoon && (
 														<span className="px-2 py-0.5 text-xs bg-amber-100 text-amber-800 rounded ml-auto">
 															Coming Soon
@@ -80,7 +89,7 @@ export function AppSidebar({ collapsed }) {
 													)}
 												</>
 											)}
-										</button>
+										</Toggle>
 									</TooltipTrigger>
 									{collapsed && (
 										<TooltipContent side="right">
@@ -96,15 +105,52 @@ export function AppSidebar({ collapsed }) {
 			</nav>
 
 			{/* Bottom actions */}
-			<div className="p-4 border-t border-gray-800">
-				<div className={`flex ${collapsed ? "flex-col gap-4" : "justify-between"}`}>
+			<div className="p-2 border-t border-gray-800">
+				<div
+					className={`flex ${collapsed ? "flex-col gap-4 items-center" : "justify-between"}`}
+				>
 					<ModeToggle />
-					<button className="p-2 rounded-full hover:bg-gray-800" title="Settings">
-						<Settings className="h-5 w-5" />
-					</button>
-					<button className="p-2 rounded-full hover:bg-gray-800" title="Help">
-						<HelpCircle className="h-5 w-5" />
-					</button>
+					{collapsed ? (
+						<>
+							{/* When collapsed, stack buttons vertically */}
+							<Button
+								variant="ghost"
+								size="icon"
+								className="rounded-full"
+								title="Settings"
+							>
+								<Settings className="size-4" />
+							</Button>
+							<Button
+								variant="ghost"
+								size="icon"
+								className="rounded-full"
+								title="Help"
+							>
+								<HelpCircle className="size-4" />
+							</Button>
+						</>
+					) : (
+						/* When expanded, group settings and help buttons */
+						<div className="flex gap-2">
+							<Button
+								variant="ghost"
+								size="icon"
+								className="rounded-full"
+								title="Settings"
+							>
+								<Settings className="size-4" />
+							</Button>
+							<Button
+								variant="ghost"
+								size="icon"
+								className="rounded-full"
+								title="Help"
+							>
+								<HelpCircle className="size-4" />
+							</Button>
+						</div>
+					)}
 				</div>
 			</div>
 		</aside>

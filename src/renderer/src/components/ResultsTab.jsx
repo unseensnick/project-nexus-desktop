@@ -1,4 +1,5 @@
 import ProgressCard from "@/components/ProgressCard"
+import TrackSummaryCard from "@/components/TrackSummaryCard"
 import { Button } from "@/components/ui/button"
 import {
 	Card,
@@ -15,16 +16,14 @@ import {
 	FileX,
 	Folder,
 	FolderOpen,
-	Headphones,
 	Layers,
-	RefreshCw,
-	Subtitles,
-	Video
+	RefreshCw
 } from "lucide-react"
 import React from "react"
 
 /**
- *  Results tab that handles both single file and batch extraction results
+ * Results tab that handles both single file and batch extraction results
+ * Refactored to use shadcn UI components directly
  */
 function ResultsTab({
 	extractionResult,
@@ -73,57 +72,57 @@ function ResultsTab({
 				</CardHeader>
 				<CardContent className="space-y-6">
 					<div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-						<Card className="border-none">
-							<CardHeader className="p-3 pb-0">
-								<CardTitle className="text-lg flex items-center gap-1">
-									<Layers className="h-4 w-4" />
-									Total Files
-								</CardTitle>
-							</CardHeader>
-							<CardContent className="p-3 text-center">
+						{/* Use consistent styling similar to TrackSummaryCard for these result cards */}
+						<div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg overflow-hidden shadow-sm border border-gray-200 dark:border-gray-700/50">
+							<div className="p-2 flex items-center gap-1 border-b border-gray-200 dark:border-gray-700/50 bg-gray-100 dark:bg-gray-700/50">
+								<Layers className="h-4 w-4" />
+								<span className="text-sm font-medium">Total Files</span>
+							</div>
+							<div className="p-3 text-center">
 								<span className="text-3xl font-bold">
 									{extractionResult.total_files}
 								</span>
-							</CardContent>
-						</Card>
-						<Card className="border-none bg-green-50 dark:bg-green-950">
-							<CardHeader className="p-3 pb-0">
-								<CardTitle className="text-lg text-green-600 dark:text-green-400 flex items-center gap-1">
-									<Check className="h-4 w-4" />
+							</div>
+						</div>
+						<div className="bg-green-50 dark:bg-green-950/50 rounded-lg overflow-hidden shadow-sm border border-green-100 dark:border-green-900/50">
+							<div className="p-2 flex items-center gap-1 border-b border-green-100 dark:border-green-900/50 bg-green-100 dark:bg-green-900/50">
+								<Check className="h-4 w-4 text-green-600 dark:text-green-400" />
+								<span className="text-sm font-medium text-green-700 dark:text-green-300">
 									Successful
-								</CardTitle>
-							</CardHeader>
-							<CardContent className="p-3 text-center">
-								<span className="text-3xl font-bold">
+								</span>
+							</div>
+							<div className="p-3 text-center">
+								<span className="text-3xl font-bold text-green-800 dark:text-green-200">
 									{extractionResult.successful_files}
 								</span>
-							</CardContent>
-						</Card>
-						<Card className="border-none bg-red-50 dark:bg-red-950">
-							<CardHeader className="p-3 pb-0">
-								<CardTitle className="text-lg text-red-600 dark:text-red-400 flex items-center gap-1">
-									<FileX className="h-4 w-4" />
+							</div>
+						</div>
+						<div className="bg-red-50 dark:bg-red-950/50 rounded-lg overflow-hidden shadow-sm border border-red-100 dark:border-red-900/50">
+							<div className="p-2 flex items-center gap-1 border-b border-red-100 dark:border-red-900/50 bg-red-100 dark:bg-red-900/50">
+								<FileX className="h-4 w-4 text-red-600 dark:text-red-400" />
+								<span className="text-sm font-medium text-red-700 dark:text-red-300">
 									Failed
-								</CardTitle>
-							</CardHeader>
-							<CardContent className="p-3 text-center">
-								<span className="text-3xl font-bold">
+								</span>
+							</div>
+							<div className="p-3 text-center">
+								<span className="text-3xl font-bold text-red-800 dark:text-red-200">
 									{extractionResult.failed_files}
 								</span>
-							</CardContent>
-						</Card>
-						<Card className="border-none bg-blue-50 dark:bg-blue-950">
-							<CardHeader className="p-3 pb-0">
-								<CardTitle className="text-lg text-blue-600 dark:text-blue-400">
+							</div>
+						</div>
+						<div className="bg-blue-50 dark:bg-blue-950/50 rounded-lg overflow-hidden shadow-sm border border-blue-100 dark:border-blue-900/50">
+							<div className="p-2 flex items-center gap-1 border-b border-blue-100 dark:border-blue-900/50 bg-blue-100 dark:bg-blue-900/50">
+								<Layers className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+								<span className="text-sm font-medium text-blue-700 dark:text-blue-300">
 									Tracks Extracted
-								</CardTitle>
-							</CardHeader>
-							<CardContent className="p-3 text-center">
-								<span className="text-3xl font-bold">
+								</span>
+							</div>
+							<div className="p-3 text-center">
+								<span className="text-3xl font-bold text-blue-800 dark:text-blue-200">
 									{extractionResult.extracted_tracks}
 								</span>
-							</CardContent>
-						</Card>
+							</div>
+						</div>
 					</div>
 
 					<div className="p-4 bg-muted rounded-lg">
@@ -187,47 +186,13 @@ function ResultsTab({
 				</CardHeader>
 				<CardContent className="space-y-6">
 					<div className="grid grid-cols-3 gap-4">
-						<Card className="border-none bg-blue-50 dark:bg-blue-950">
-							<CardHeader className="p-3 pb-0">
-								<CardTitle className="text-lg text-blue-600 dark:text-blue-400 flex items-center gap-2">
-									<Headphones className="h-4 w-4" />
-									Audio Tracks
-								</CardTitle>
-							</CardHeader>
-							<CardContent className="p-3 text-center">
-								<span className="text-3xl font-bold">
-									{extractionResult.extracted_audio}
-								</span>
-							</CardContent>
-						</Card>
-
-						<Card className="border-none bg-green-50 dark:bg-green-950">
-							<CardHeader className="p-3 pb-0">
-								<CardTitle className="text-lg text-green-600 dark:text-green-400 flex items-center gap-2">
-									<Subtitles className="h-4 w-4" />
-									Subtitle Tracks
-								</CardTitle>
-							</CardHeader>
-							<CardContent className="p-3 text-center">
-								<span className="text-3xl font-bold">
-									{extractionResult.extracted_subtitles}
-								</span>
-							</CardContent>
-						</Card>
-
-						<Card className="border-none bg-amber-50 dark:bg-amber-950">
-							<CardHeader className="p-3 pb-0">
-								<CardTitle className="text-lg text-amber-600 dark:text-amber-400 flex items-center gap-2">
-									<Video className="h-4 w-4" />
-									Video Tracks
-								</CardTitle>
-							</CardHeader>
-							<CardContent className="p-3 text-center">
-								<span className="text-3xl font-bold">
-									{extractionResult.extracted_video}
-								</span>
-							</CardContent>
-						</Card>
+						{/* Using the improved TrackSummaryCard component that matches the original design */}
+						<TrackSummaryCard type="audio" count={extractionResult.extracted_audio} />
+						<TrackSummaryCard
+							type="subtitle"
+							count={extractionResult.extracted_subtitles}
+						/>
+						<TrackSummaryCard type="video" count={extractionResult.extracted_video} />
 					</div>
 
 					<div className="p-4 bg-muted rounded-lg">
@@ -249,8 +214,6 @@ function ResultsTab({
 							All tracks have been extracted according to your specifications.
 						</p>
 					</div>
-
-					{/* We could add a list of extracted files here if that information is available in the extraction result */}
 				</CardContent>
 				<CardFooter className="flex justify-between">
 					<Button
