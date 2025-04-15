@@ -8,7 +8,7 @@ import {
 	CardTitle
 } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
-import { File, FilesIcon, Folder, FolderOpen, Info, Layers, RefreshCw, Upload } from "lucide-react"
+import { File, FilesIcon, Folder, FolderOpen, Info, Layers, RefreshCw } from "lucide-react"
 import React from "react"
 
 /**
@@ -122,22 +122,6 @@ function FileSelectionTab({
 								<span className="text-muted-foreground">No directory selected</span>
 							)}
 						</div>
-					</div>
-				</div>
-
-				{/* Drag and drop area */}
-				<div className="border-2 border-dashed border-gray-300 rounded-lg p-8 mb-6 dark:border-gray-700">
-					<div className="text-center">
-						<Upload className="h-10 w-10 mx-auto text-gray-400 mb-2" />
-						<p className="font-medium mb-1">Drag and drop files here</p>
-						<p className="text-sm text-gray-500 mb-4 dark:text-gray-400">or</p>
-						<Button
-							variant="default"
-							onClick={batchMode ? handleSelectInputFiles : handleSelectFile}
-							className="bg-indigo-600 hover:bg-indigo-700"
-						>
-							Browse Files
-						</Button>
 					</div>
 				</div>
 			</CardContent>

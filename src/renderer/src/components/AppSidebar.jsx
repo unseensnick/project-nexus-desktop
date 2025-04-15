@@ -45,8 +45,8 @@ export function AppSidebar({ collapsed }) {
 				collapsed ? "w-16" : "w-64"
 			} bg-gray-900 text-white flex flex-col transition-all duration-300 ease-in-out h-screen dark:bg-gray-950`}
 		>
-			{/* App title */}
-			<div className="p-4 border-b border-gray-800 flex items-center justify-between">
+			{/* App title - height adjusted to match main header */}
+			<div className="p-4 border-b border-gray-800 flex items-center h-[69px]">
 				{!collapsed && (
 					<div className="flex items-center gap-2">
 						<Monitor className="size-4" />
