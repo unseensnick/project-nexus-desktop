@@ -1,7 +1,15 @@
 """
-Video Track Extractor.
+Video Track Extractor Module.
 
-This module handles the extraction of video tracks from media files.
+This module provides specialized functionality for extracting video tracks from media files,
+with advanced capabilities like letterbox removal. It implements the extraction logic
+specific to video tracks while following the common interface defined by BaseExtractor.
+
+Key capabilities:
+- Extract video tracks with appropriate container formats
+- Detect and remove letterboxing (black bars) from videos 
+- Maintain video quality during extraction process
+- Track progress for UI feedback during lengthy operations
 """
 
 import logging
@@ -22,30 +30,49 @@ logger = logging.getLogger(__name__)
 
 class VideoExtractor(BaseExtractor):
     """
-    Extractor for video tracks from media files.
+    Specialized extractor for video tracks from media files.
 
-    This class handles the extraction of video tracks, determining
-    appropriate output formats based on codec information, and provides
-    options for video processing like letterbox removal.
+    This class extends the BaseExtractor to handle video-specific extraction needs,
+    including letterbox removal (cropping black bars from video edges). It determines
+    appropriate output container formats based on codec information and provides
+    real-time progress reporting for UI feedback during extraction.
+    
+    The letterbox removal feature analyzes the video to detect black bars using
+    FFmpeg's cropdetect filter and then applies optimal cropping parameters to
+    create a cleaner output without the black borders.
     """
 
     @property
     def track_type(self) -> str:
-        """Return the track type this extractor handles."""
+        """
+        Identify the track type this extractor handles.
+        
+        Returns:
+            String constant "video" identifying this extractor type
+        """
         return "video"
 
     @property
     def codec_to_extension(self) -> Dict[str, str]:
         """
-        Return codec to file extension mapping for video tracks.
+        Provide the codec to file extension mapping for video tracks.
         
-        Uses the centralized mapping from config.py
+        This mapping determines the appropriate container format based on
+        the video codec to ensure compatibility and optimal quality.
+        
+        Returns:
+            Dictionary mapping video codec names to file extensions
         """
         return VIDEO_CODEC_TO_EXTENSION
 
     @property
     def error_class(self):
-        """Return the error class for video extraction."""
+        """
+        Specify the error class for video extraction failures.
+        
+        Returns:
+            VideoExtractionError class for consistent error reporting
+        """
         return VideoExtractionError
 
     def extract_track(
@@ -57,48 +84,52 @@ class VideoExtractor(BaseExtractor):
         **kwargs,
     ) -> Path:
         """
-        Extract a specific track from a media file.
+        Extract a specific video track from a media file.
+
+        This method serves as the main entry point for video track extraction. It
+        validates inputs, ensures the media file has been analyzed, and delegates
+        to specialized extraction methods based on options like letterbox removal.
 
         Args:
             input_file: Path to the input media file
             output_dir: Directory where the extracted track will be saved
-            track_id: ID of the track to extract
-            progress_callback: Function to call with progress updates or ProgressReporter object
-            **kwargs: Additional extractor-specific parameters
+            track_id: ID of the video track to extract (0-based index)
+            progress_callback: Function or ProgressReporter for progress updates
+            **kwargs: Additional options, including:
+                      - remove_letterbox: Boolean flag to enable letterbox removal
 
         Returns:
-            Path to the extracted track file
+            Path to the extracted video file
 
         Raises:
-            TrackExtractionError: If extraction fails
+            VideoExtractionError: If the track doesn't exist or extraction fails
         """
         try:
-            # Make sure we're working with Path objects
+            # Convert to Path objects for consistent handling
             input_path = Path(input_file)
             output_dir = Path(output_dir)
             output_dir.mkdir(parents=True, exist_ok=True)
             
-            # Log the extraction attempt
+            # Log extraction attempt for debugging
             logger.info(f"VideoExtractor: Extracting track {track_id} from {input_path}")
             
-            # Extract remove_letterbox from kwargs
+            # Get letterbox removal option
             remove_letterbox = kwargs.get("remove_letterbox", False)
             
-            # Ensure the media_analyzer has been initialized
+            # Analyze file if not already done
             if not self.media_analyzer.tracks:
                 logger.info(f"Analyzing file first: {input_path}")
                 self.media_analyzer.analyze_file(input_path)
             
-            # Make sure track exists
+            # Validate track exists in the file
             if track_id >= len(self.media_analyzer.video_tracks):
                 error_msg = f"Video track {track_id} not found. Available tracks: 0-{len(self.media_analyzer.video_tracks)-1 if self.media_analyzer.video_tracks else 'none'}"
                 logger.error(error_msg)
                 raise VideoExtractionError(error_msg, track_id, self._module_name)
             
-            # Get the track information
+            # Get the track information and delegate to specialized method
             track = self.media_analyzer.video_tracks[track_id]
             
-            # Call _extract_specialized_track for video tracks
             return self._extract_specialized_track(
                 input_path, 
                 output_dir, 
@@ -108,6 +139,7 @@ class VideoExtractor(BaseExtractor):
                 remove_letterbox=remove_letterbox
             )
         except Exception as e:
+            # Wrap in VideoExtractionError for consistent error handling
             error_msg = f"Failed to extract video track {track_id}: {e}"
             logger.error(error_msg)
             raise VideoExtractionError(error_msg, track_id, self._module_name) from e
@@ -122,29 +154,32 @@ class VideoExtractor(BaseExtractor):
         **kwargs,
     ) -> Path:
         """
-        Specialized extraction logic for video tracks.
+        Implement video-specific extraction logic.
 
-        This extends the base extraction functionality to support video-specific
-        features like letterbox removal.
+        This method extends the base extraction functionality with video-specific
+        features, particularly letterbox removal. It determines the appropriate
+        output format and delegates to either standard extraction or letterbox
+        removal based on the options.
 
         Args:
             input_path: Path to the input media file
             output_dir: Directory where the extracted track will be saved
             track_id: ID of the video track to extract
-            track: Track object for the video track
-            progress_callback: Function to call with progress updates or ProgressReporter object
-            **kwargs: Additional parameters (e.g., remove_letterbox)
+            track: Track object containing metadata about the video track
+            progress_callback: Function or ProgressReporter for progress updates
+            **kwargs: Additional parameters including:
+                     - remove_letterbox: Boolean flag to enable letterbox removal
 
         Returns:
             Path to the extracted video file
         """
-        # Extract remove_letterbox from kwargs
+        # Get letterbox removal option
         remove_letterbox = kwargs.get("remove_letterbox", False)
 
-        # Preserve original container format where possible
-        # First try to use the original extension
+        # Determine appropriate output format:
+        # 1. Try to preserve original container format if suitable
+        # 2. Fall back to codec-specific format if original isn't video-friendly
         orig_extension = input_path.suffix.lstrip(".")
-        # If original extension is empty or not typical for video, fall back to codec-based extension
         if not orig_extension or orig_extension in ("txt", "nfo", "jpg", "png"):
             extension = self.codec_to_extension.get(
                 track.codec, self.codec_to_extension["default"]
@@ -152,10 +187,11 @@ class VideoExtractor(BaseExtractor):
         else:
             extension = orig_extension
 
+        # Generate output filename and path
         output_filename = self.get_output_filename(input_path, track, extension)
         output_path = output_dir / output_filename
 
-        # Check if letterbox removal is requested
+        # Choose extraction method based on letterbox removal option
         if remove_letterbox:
             return self._extract_with_letterbox_removal(
                 input_path, output_path, track_id, track, progress_callback
@@ -163,7 +199,7 @@ class VideoExtractor(BaseExtractor):
         else:
             logger.info(f"Extracting video track without letterbox removal to {output_path}")
             
-            # Use FFmpeg to extract the track directly
+            # Use standard extraction for non-letterbox case
             success = extract_track(
                 input_path,
                 output_path,
@@ -184,28 +220,32 @@ class VideoExtractor(BaseExtractor):
 
     def _create_progress_callback(self, progress_input):
         """
-        Create a callback function that can be used with FFmpeg functions.
+        Create a standardized callback function for FFmpeg progress tracking.
+        
+        Handles different types of progress input (direct callback or ProgressReporter)
+        and creates a callback that FFmpeg functions can use.
         
         Args:
             progress_input: Either a callable function or a ProgressReporter object
             
         Returns:
-            A callable function that handles progress updates
+            A callable function for progress updates or None if no progress tracking
         """
+        # No progress tracking if input is None
         if progress_input is None:
             return None
             
+        # Use the function directly if it's callable but not a ProgressReporter
         if callable(progress_input) and not isinstance(progress_input, ProgressReporter):
-            # It's already a callable function
             return progress_input
             
+        # Create a wrapper for ProgressReporter objects
         if isinstance(progress_input, ProgressReporter):
-            # Create a callback that uses the ProgressReporter
             def reporter_callback(progress):
                 progress_input.update("video_extraction", 0, progress, None)
             return reporter_callback
             
-        # Default case - return None if we can't make sense of the input
+        # Default case - no progress tracking
         return None
 
     def _extract_with_letterbox_removal(
@@ -217,28 +257,36 @@ class VideoExtractor(BaseExtractor):
         progress_input: Optional[Union[Callable[[int], None], ProgressReporter]] = None,
     ) -> Path:
         """
-        Extract video track with letterbox removal.
+        Extract video track while removing letterbox black bars.
 
-        This method uses FFmpeg's cropdetect filter to find black bars
-        and then applies the crop filter to remove them.
+        This method implements a two-step process:
+        1. Analyze the video to detect letterbox dimensions using FFmpeg's cropdetect
+        2. Extract the video with the detected crop parameters to remove black bars
+
+        This produces a cleaner video by removing the black bars that often appear
+        at the top/bottom (letterbox) or sides (pillarbox) of videos.
 
         Args:
             input_file: Path to the input media file
             output_file: Path where the extracted track will be saved
             track_id: ID of the video track to extract
-            track: Track object with track information
-            progress_input: Function to call with progress updates or ProgressReporter object
+            track: Track object with metadata about the video track
+            progress_input: Function or ProgressReporter for progress updates
 
         Returns:
             Path to the extracted and cropped video file
+
+        Raises:
+            VideoExtractionError: If the extraction or crop detection fails
         """
         try:
             logger.info(f"Extracting video track {track_id} with letterbox removal")
 
-            # Get a proper progress callback
+            # Set up progress tracking
             progress_callback = self._create_progress_callback(progress_input)
 
-            # First, detect the crop parameters using cropdetect filter
+            # Step 1: Detect crop parameters using cropdetect filter
+            # This analyzes a sample of the video to find black bars
             detect_cmd = [
                 "ffmpeg",
                 "-i",
@@ -246,7 +294,7 @@ class VideoExtractor(BaseExtractor):
                 "-map",
                 f"0:v:{track_id}",
                 "-vf",
-                "cropdetect=24:16:0",
+                "cropdetect=24:16:0",  # threshold:round:skip values for detection
                 "-f",
                 "null",
                 "-t",
@@ -260,6 +308,7 @@ class VideoExtractor(BaseExtractor):
             elif isinstance(progress_input, ProgressReporter):
                 progress_input.update("crop_detection", 0, 0, None)
 
+            # Run crop detection
             _, _, stderr = run_ffmpeg_command(
                 detect_cmd,
                 check=False,  # Don't raise exception on non-zero exit
@@ -276,16 +325,19 @@ class VideoExtractor(BaseExtractor):
             # Parse crop parameters from output
             crop_params = self._parse_crop_params(stderr)
 
+            # If no crop parameters detected, fall back to standard extraction
             if not crop_params:
                 logger.warning(
                     "Could not detect crop parameters, using original dimensions"
                 )
-                # Fallback to standard extraction without cropping
+                
+                # Report fallback to standard extraction
                 if progress_callback:
                     progress_callback(25)  # Signal start of extraction
                 elif isinstance(progress_input, ProgressReporter):
                     progress_input.update("video_extraction", 0, 25, None)
 
+                # Use standard extraction with progress scaling
                 success = extract_track(
                     input_file,
                     output_file,
@@ -299,6 +351,7 @@ class VideoExtractor(BaseExtractor):
                     ) if progress_callback else None,
                 )
 
+                # Report completion
                 if progress_callback:
                     progress_callback(100)  # Extraction complete
                 elif isinstance(progress_input, ProgressReporter):
@@ -313,7 +366,7 @@ class VideoExtractor(BaseExtractor):
 
                 return output_file
 
-            # Extract and crop the video
+            # Step 2: Extract and crop the video using detected parameters
             logger.info(f"Applying crop filter: {crop_params}")
             crop_cmd = [
                 "ffmpeg",
@@ -324,25 +377,30 @@ class VideoExtractor(BaseExtractor):
                 "-vf",
                 f"crop={crop_params}",
                 "-c:v",
+                # Use libx264 for h264/mpeg4 to ensure compatibility after cropping
                 "libx264" if track.codec in ("h264", "mpeg4") else "copy",
                 str(output_file),
             ]
 
+            # Handle progress reporting based on callback type
             if progress_callback:
-                progress_callback(25)  # Signal start of extraction with crop
+                # Report extraction starting at 25%
+                progress_callback(25)
                 
-                # Use progress tracking for extraction
+                # Use progress tracking for extraction (remaining 75%)
                 run_ffmpeg_command_with_progress(
                     crop_cmd,
                     lambda p: progress_callback(25 + int(p * 0.75)),
                     self._module_name,
                 )
                 
-                progress_callback(100)  # Ensure we reach 100%
+                # Ensure we reach 100% at completion
+                progress_callback(100)
             elif isinstance(progress_input, ProgressReporter):
+                # Report extraction starting
                 progress_input.update("video_extraction", 0, 25, None)
                 
-                # Create a wrapper callback that uses the ProgressReporter
+                # Create a progress wrapper that scales values to 25-100%
                 def reporter_wrapper(progress):
                     progress_input.update("video_extraction", 0, 25 + int(progress * 0.75), None)
                 
@@ -353,6 +411,7 @@ class VideoExtractor(BaseExtractor):
                     self._module_name,
                 )
                 
+                # Report completion
                 progress_input.update("video_extraction", 0, 100, None)
             else:
                 # No progress reporting
@@ -367,23 +426,29 @@ class VideoExtractor(BaseExtractor):
 
     def _parse_crop_params(self, ffmpeg_output: str) -> str:
         """
-        Parse crop parameters from FFmpeg cropdetect output.
+        Parse and select optimal crop parameters from FFmpeg cropdetect output.
+
+        Analyzes the output from FFmpeg's cropdetect filter to determine the
+        most frequently suggested crop dimensions. This handles variations in
+        letterboxing throughout the video by selecting the most common values.
 
         Args:
-            ffmpeg_output: FFmpeg stderr output containing cropdetect info
+            ffmpeg_output: FFmpeg stderr output containing cropdetect data
 
         Returns:
-            String with crop parameters (e.g., "1920:1080:0:0")
-            or empty string if no parameters found
+            String with crop parameters in format "width:height:x:y"
+            (e.g., "1920:1080:0:0") or empty string if no parameters found
         """
-        # Find crop parameters in output
-        # Example: [Parsed_cropdetect_0 @ 0x55f5c3b0f640] x1:0 x2:1919 y1:136 y2:943 w:1920 h:808 x:0 y:136 pts:156 t:0.156000 crop=1920:808:0:136
+        # Extract crop parameters using regex
+        # Example FFmpeg output line:
+        # [Parsed_cropdetect_0 @ 0x55f5c3b0f640] x1:0 x2:1919 y1:136 y2:943 w:1920 h:808 x:0 y:136 pts:156 t:0.156000 crop=1920:808:0:136
         crop_matches = re.findall(r"crop=([0-9]+:[0-9]+:[0-9]+:[0-9]+)", ffmpeg_output)
 
         if not crop_matches:
             return ""
 
-        # Count occurrences of each crop parameter to find the most common one
+        # Use Counter to find the most frequently suggested crop value
+        # This handles variations in different scenes
         crop_counter = Counter(crop_matches)
 
         # Get the most common crop parameter

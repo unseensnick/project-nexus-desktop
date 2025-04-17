@@ -1,8 +1,18 @@
 """
 FFmpeg Command Builder Module.
 
-This module provides a builder pattern for creating FFmpeg commands,
-ensuring consistency and reducing duplication in command construction.
+Provides a structured approach to generating FFmpeg command-line arguments through 
+a builder pattern implementation. This design offers several advantages:
+
+- Enforces properly structured FFmpeg commands
+- Eliminates common command construction errors
+- Simplifies complex parameter combinations
+- Enables fluent method chaining
+- Provides type safety for command arguments
+
+The module consists of two main components:
+1. FFmpegCommandBuilder class - Core builder with chainable methods
+2. Factory functions - Pre-configured command generators for common operations
 """
 
 import logging
@@ -16,18 +26,27 @@ logger = logging.getLogger(__name__)
 
 class FFmpegCommandBuilder:
     """
-    Builder for FFmpeg commands.
-
-    This class provides a fluent interface for constructing FFmpeg commands,
-    ensuring consistent command structure and reducing duplication.
+    Command builder implementing the builder pattern for FFmpeg operations.
+    
+    Provides a fluent interface (method chaining) for constructing FFmpeg commands
+    that helps avoid syntax errors and parameter ordering issues common in shell
+    command construction. The builder handles details like proper flag formatting,
+    path conversion, and ensures required parameters are included.
+    
+    Example:
+        builder = FFmpegCommandBuilder("input.mp4")
+        builder.add_codec("a", "copy").set_output("output.mp3").build()
     """
 
     def __init__(self, input_file: Union[str, Path]):
         """
-        Initialize the command builder with an input file.
+        Initialize builder with primary input file.
+        
+        Sets up initial command structure with the first input file,
+        which is required for all FFmpeg operations.
 
         Args:
-            input_file: Path to the input media file
+            input_file: Path to primary input media file
         """
         self.command = ["ffmpeg"]
         self.input_file = str(input_file)
@@ -36,13 +55,15 @@ class FFmpegCommandBuilder:
 
     def add_input(self, input_file: Union[str, Path]) -> "FFmpegCommandBuilder":
         """
-        Add another input file to the command.
+        Add secondary input file for operations requiring multiple inputs.
+        
+        Useful for operations like concatenation, overlay, or mixing.
 
         Args:
-            input_file: Path to an additional input file
+            input_file: Path to additional input file
 
         Returns:
-            Self for chaining
+            Self for method chaining
         """
         self.command.extend(["-i", str(input_file)])
         return self
@@ -51,14 +72,16 @@ class FFmpegCommandBuilder:
         self, option: str, value: Optional[str] = None
     ) -> "FFmpegCommandBuilder":
         """
-        Add a simple option to the command.
+        Add generic FFmpeg option with optional value.
+        
+        For options that aren't covered by specialized methods.
 
         Args:
-            option: FFmpeg option name (including the dash)
-            value: Optional option value
+            option: FFmpeg option with dash prefix (e.g., "-b:v")
+            value: Option value if required (e.g., "1M")
 
         Returns:
-            Self for chaining
+            Self for method chaining
         """
         self.command.append(option)
         if value is not None:
@@ -67,26 +90,30 @@ class FFmpegCommandBuilder:
 
     def add_flag(self, flag: str) -> "FFmpegCommandBuilder":
         """
-        Add a simple flag (option without value) to the command.
+        Add boolean flag option without a value.
+        
+        For simple switches that don't take parameters (e.g., "-shortest").
 
         Args:
-            flag: FFmpeg flag name (including the dash)
+            flag: FFmpeg flag with dash prefix
 
         Returns:
-            Self for chaining
+            Self for method chaining
         """
         self.command.append(flag)
         return self
 
     def add_mapping(self, stream_specifier: str) -> "FFmpegCommandBuilder":
         """
-        Add a stream mapping option.
+        Map specific stream using FFmpeg stream specifier syntax.
+        
+        Provides direct control for advanced mapping scenarios.
 
         Args:
-            stream_specifier: Stream specifier (e.g., "0:a:0", "0:s:1")
+            stream_specifier: Stream identifier (e.g., "0:a:0", "0:s:1")
 
         Returns:
-            Self for chaining
+            Self for method chaining
         """
         self.command.extend(["-map", stream_specifier])
         return self
@@ -95,68 +122,78 @@ class FFmpegCommandBuilder:
         self, stream_type: str, track_id: int, input_index: int = 0
     ) -> "FFmpegCommandBuilder":
         """
-        Add a stream mapping option using type and ID.
+        Map specific track by type and ID (more user-friendly than raw mapping).
+        
+        Constructs the proper mapping syntax for common track selection scenarios.
 
         Args:
-            stream_type: One of 'a' (audio), 's' (subtitle), 'v' (video)
-            track_id: Track ID to map
-            input_index: Input file index (default: 0)
+            stream_type: Track type: 'a' (audio), 's' (subtitle), 'v' (video)
+            track_id: Zero-based track ID within type
+            input_index: Input file index for multi-input commands (default: 0)
 
         Returns:
-            Self for chaining
+            Self for method chaining
         """
         self.command.extend(["-map", f"{input_index}:{stream_type}:{track_id}"])
         return self
 
     def add_codec(self, stream_type: str, codec: str) -> "FFmpegCommandBuilder":
         """
-        Add a codec option.
+        Specify codec for specific stream type.
+        
+        Controls encoding method for output streams.
 
         Args:
-            stream_type: One of 'a' (audio), 's' (subtitle), 'v' (video)
-            codec: Codec name or 'copy' for stream copying
+            stream_type: Track type: 'a' (audio), 's' (subtitle), 'v' (video)
+            codec: Codec name or 'copy' for stream copying without re-encoding
 
         Returns:
-            Self for chaining
+            Self for method chaining
         """
         self.command.extend([f"-c:{stream_type}", codec])
         return self
 
     def add_video_filter(self, filter_str: str) -> "FFmpegCommandBuilder":
         """
-        Add a video filter.
+        Add video filtering operation.
+        
+        For operations like scaling, cropping, or other video modifications.
 
         Args:
-            filter_str: Filter string
+            filter_str: FFmpeg filter syntax string (e.g., "scale=1280:720")
 
         Returns:
-            Self for chaining
+            Self for method chaining
         """
         self.command.extend(["-vf", filter_str])
         return self
 
     def add_audio_filter(self, filter_str: str) -> "FFmpegCommandBuilder":
         """
-        Add an audio filter.
+        Add audio filtering operation.
+        
+        For operations like volume adjustment, normalization, or channel mapping.
 
         Args:
-            filter_str: Filter string
+            filter_str: FFmpeg audio filter syntax (e.g., "volume=0.5")
 
         Returns:
-            Self for chaining
+            Self for method chaining
         """
         self.command.extend(["-af", filter_str])
         return self
 
     def add_complex_filter(self, filter_str: str) -> "FFmpegCommandBuilder":
         """
-        Add a complex filter.
+        Add complex filtergraph for advanced multi-stream operations.
+        
+        For operations involving multiple inputs/outputs or stream interactions.
 
         Args:
-            filter_str: Filter string
+            filter_str: Complex filtergraph syntax
 
         Returns:
-            Self for chaining
+            Self for method chaining
         """
         self.command.extend(["-filter_complex", filter_str])
         return self
@@ -165,15 +202,17 @@ class FFmpegCommandBuilder:
         self, key: str, value: str, stream_specifier: Optional[str] = None
     ) -> "FFmpegCommandBuilder":
         """
-        Add metadata to the output file.
+        Add metadata tag to output file or specific stream.
+        
+        For embedding title, artist, language, or other metadata.
 
         Args:
-            key: Metadata key
-            value: Metadata value
-            stream_specifier: Optional stream specifier (e.g., "a:0", "s:0")
+            key: Metadata field name
+            value: Metadata content
+            stream_specifier: Target specific stream (e.g., "a:0" for first audio)
 
         Returns:
-            Self for chaining
+            Self for method chaining
         """
         metadata_opt = "-metadata"
         if stream_specifier:
@@ -184,13 +223,15 @@ class FFmpegCommandBuilder:
 
     def set_duration(self, duration: Union[int, float, str]) -> "FFmpegCommandBuilder":
         """
-        Set the duration of the output.
+        Limit output duration to specified length.
+        
+        Useful for extracting clips or segments.
 
         Args:
-            duration: Duration in seconds or as a time string (e.g., "00:01:30")
+            duration: Length in seconds or time format (e.g., "00:01:30")
 
         Returns:
-            Self for chaining
+            Self for method chaining
         """
         self.command.extend(["-t", str(duration)])
         return self
@@ -199,39 +240,45 @@ class FFmpegCommandBuilder:
         self, start_time: Union[int, float, str]
     ) -> "FFmpegCommandBuilder":
         """
-        Set the start time of the input.
+        Set input starting timestamp for processing.
+        
+        For skipping to a specific position in the input file.
 
         Args:
-            start_time: Start time in seconds or as a time string (e.g., "00:01:30")
+            start_time: Timestamp in seconds or time format (e.g., "00:01:30")
 
         Returns:
-            Self for chaining
+            Self for method chaining
         """
         self.command.extend(["-ss", str(start_time)])
         return self
 
     def set_output(self, output_file: Union[str, Path]) -> "FFmpegCommandBuilder":
         """
-        Set the output file for the command.
+        Specify output destination file.
+        
+        Required for all FFmpeg operations.
 
         Args:
-            output_file: Path to the output file
+            output_file: Target file path
 
         Returns:
-            Self for chaining
+            Self for method chaining
         """
         self.output_file = str(output_file)
         return self
 
     def set_overwrite(self, overwrite: bool = True) -> "FFmpegCommandBuilder":
         """
-        Set whether to overwrite the output file if it exists.
+        Control overwrite behavior for existing files.
+        
+        Determines whether to overwrite or skip if output exists.
 
         Args:
-            overwrite: Whether to overwrite (default: True)
+            overwrite: True to force overwrite, False to abort if file exists
 
         Returns:
-            Self for chaining
+            Self for method chaining
         """
         if overwrite:
             self.command.append("-y")
@@ -241,10 +288,15 @@ class FFmpegCommandBuilder:
 
     def build(self) -> List[str]:
         """
-        Build the final FFmpeg command.
+        Finalize and return complete FFmpeg command.
+        
+        Validates requirements and returns command array ready for execution.
 
         Returns:
-            List of command arguments
+            List of command arguments for subprocess execution
+
+        Raises:
+            ValueError: If output file is not set
         """
         if self.output_file is None:
             raise ValueError("Output file must be set before building the command")
@@ -268,17 +320,23 @@ def create_extract_track_command(
     overwrite: bool = True,
 ) -> List[str]:
     """
-    Create a command for extracting a specific track.
+    Create command to extract a single track without re-encoding.
+    
+    Simplifies the common task of extracting audio, subtitle,
+    or video tracks from container formats like MKV.
 
     Args:
-        input_file: Path to the input media file
-        output_file: Path where the extracted track will be saved
-        track_id: ID of the track to extract
-        track_type: Type of track ('audio', 'subtitle', 'video')
+        input_file: Source media file
+        output_file: Destination file path
+        track_id: Zero-based index of track to extract
+        track_type: Track category ('audio', 'subtitle', 'video')
         overwrite: Whether to overwrite existing files (default: True)
 
     Returns:
-        FFmpeg command as a list of strings
+        Ready-to-execute FFmpeg command list
+
+    Raises:
+        ValueError: If track_type is invalid
     """
     stream_type = {"audio": "a", "subtitle": "s", "video": "v"}.get(track_type)
 
@@ -306,18 +364,20 @@ def create_crop_video_command(
     overwrite: bool = True,
 ) -> List[str]:
     """
-    Create a command for cropping a video track.
+    Create command to crop video by removing borders or margins.
+    
+    Commonly used to remove letterboxing or adjust aspect ratio.
 
     Args:
-        input_file: Path to the input media file
-        output_file: Path where the cropped video will be saved
-        track_id: ID of the video track
-        crop_params: Crop parameters string (e.g., "1920:1080:0:0")
-        codec: Video codec to use (default: determined based on input)
+        input_file: Source media file
+        output_file: Destination for cropped video
+        track_id: Video track ID to process
+        crop_params: Crop dimensions "width:height:x:y"
+        codec: Video codec for output (None to auto-select)
         overwrite: Whether to overwrite existing files (default: True)
 
     Returns:
-        FFmpeg command as a list of strings
+        Ready-to-execute FFmpeg command list
     """
     builder = FFmpegCommandBuilder(input_file)
     builder.add_typed_mapping("v", track_id)
@@ -341,14 +401,18 @@ def create_analyze_command(
     input_file: Union[str, Path], duration: int = 60
 ) -> List[str]:
     """
-    Create a command for analyzing a media file using cropdetect.
+    Create command to detect optimal crop parameters for a video.
+    
+    Analyzes video to determine letterboxing or pillarboxing dimensions
+    that can later be used with create_crop_video_command.
 
     Args:
-        input_file: Path to the input media file
-        duration: Duration to analyze in seconds (default: 60)
+        input_file: Video file to analyze
+        duration: Analysis duration in seconds (default: 60)
+                 Lower values are faster but may be less accurate
 
     Returns:
-        FFmpeg command as a list of strings
+        Ready-to-execute FFmpeg command list that outputs crop info
     """
     builder = FFmpegCommandBuilder(input_file)
     builder.add_video_filter("cropdetect=24:16:0")
@@ -368,17 +432,20 @@ def create_extract_audio_command(
     overwrite: bool = True,
 ) -> List[str]:
     """
-    Create a command for extracting an audio track with optional normalization.
+    Create command to extract audio with optional volume normalization.
+    
+    Specialized extraction for audio tracks with quality enhancement options.
 
     Args:
-        input_file: Path to the input media file
-        output_file: Path where the audio will be saved
-        track_id: ID of the audio track
-        normalize: Whether to normalize audio levels (default: False)
+        input_file: Source media file
+        output_file: Destination audio file
+        track_id: Audio track ID to extract
+        normalize: Apply EBU R128 loudness normalization (default: False)
+                  Recommended for audio with inconsistent volume levels
         overwrite: Whether to overwrite existing files (default: True)
 
     Returns:
-        FFmpeg command as a list of strings
+        Ready-to-execute FFmpeg command list
     """
     builder = FFmpegCommandBuilder(input_file)
     builder.add_typed_mapping("a", track_id)
@@ -404,17 +471,21 @@ def create_extract_subtitle_command(
     overwrite: bool = True,
 ) -> List[str]:
     """
-    Create a command for extracting a subtitle track with optional format conversion.
+    Create command to extract subtitle track with optional format conversion.
+    
+    Extracts subtitles with the option to convert between formats based on
+    output file extension (e.g., .srt, .ass, .vtt).
 
     Args:
-        input_file: Path to the input media file
-        output_file: Path where the subtitle will be saved
-        track_id: ID of the subtitle track
-        convert_format: Whether to convert format based on output extension (default: False)
+        input_file: Source media file
+        output_file: Destination subtitle file
+        track_id: Subtitle track ID to extract
+        convert_format: Convert format based on output extension (default: False)
+                        When False, uses stream copy for maximum accuracy
         overwrite: Whether to overwrite existing files (default: True)
 
     Returns:
-        FFmpeg command as a list of strings
+        Ready-to-execute FFmpeg command list
     """
     builder = FFmpegCommandBuilder(input_file)
     builder.add_typed_mapping("s", track_id)

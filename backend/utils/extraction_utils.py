@@ -1,8 +1,14 @@
 """
 Extraction Utilities Module.
 
-This module provides utility functions for determining which track types to extract
-based on user-provided options and other extraction-related helpers.
+Provides decision logic and reporting tools to determine which media track types
+should be extracted based on user preferences. This module helps translate user-facing
+options into concrete extraction instructions for the extraction service.
+
+Core responsibilities:
+- Resolving conflicts between extraction options
+- Generating human-readable descriptions of extraction settings
+- Counting and summarizing track extraction operations
 """
 
 import logging
@@ -18,16 +24,20 @@ def determine_track_types(
     include_video: bool = False,
 ) -> Tuple[bool, bool, bool]:
     """
-    Determine which track types to extract based on flag combinations.
+    Resolve extraction flags into specific track type decisions.
+    
+    Handles precedence rules and conflict resolution between different
+    extraction options. For example, video_only overrides all other options,
+    while audio_only and subtitle_only are mutually exclusive.
 
     Args:
-        audio_only: Extract only audio tracks
-        subtitle_only: Extract only subtitle tracks
-        video_only: Extract only video tracks (takes precedence)
-        include_video: Include video tracks in extraction
+        audio_only: Extract audio tracks exclusively
+        subtitle_only: Extract subtitle tracks exclusively
+        video_only: Extract video tracks exclusively (highest precedence)
+        include_video: Include video alongside other tracks
 
     Returns:
-        Tuple of (extract_audio, extract_subtitles, extract_video)
+        Tuple of (extract_audio, extract_subtitles, extract_video) boolean flags
     """
     # Handle exclusive flags - video_only takes precedence
     if video_only:
@@ -55,16 +65,19 @@ def get_extraction_mode_description(
     include_video: bool = False,
 ) -> str:
     """
-    Get a human-readable description of the extraction mode.
+    Generate user-friendly description of current extraction settings.
+    
+    Creates a concise text description of which track types will be extracted
+    based on the current flag configuration, useful for UI display and logging.
 
     Args:
-        audio_only: Extract only audio tracks
-        subtitle_only: Extract only subtitle tracks
-        video_only: Extract only video tracks
-        include_video: Include video tracks in extraction
+        audio_only: Extract audio tracks exclusively
+        subtitle_only: Extract subtitle tracks exclusively 
+        video_only: Extract video tracks exclusively
+        include_video: Include video alongside other tracks
 
     Returns:
-        Human-readable description of the extraction mode
+        Human-readable description like "Audio only" or "Audio and Subtitles"
     """
     # Use a dictionary mapping for cleaner code
     extraction_modes = {
@@ -94,17 +107,20 @@ def count_extractable_tracks(
     extract_video: bool,
 ) -> int:
     """
-    Count the total number of tracks that will be extracted.
+    Calculate total number of tracks that will be extracted.
+    
+    Used for progress tracking and resource estimation before
+    beginning extraction operations.
 
     Args:
-        media_analyzer: MediaAnalyzer instance with analyzed file
-        languages: List of language codes to extract
-        extract_audio: Extract audio tracks if True
-        extract_subtitles: Extract subtitle tracks if True
-        extract_video: Extract video tracks if True
+        media_analyzer: Analyzer instance containing track information
+        languages: Language codes to filter by (for audio and subtitle tracks)
+        extract_audio: Whether to extract audio tracks
+        extract_subtitles: Whether to extract subtitle tracks
+        extract_video: Whether to extract video tracks
 
     Returns:
-        Total number of tracks to extract
+        Total count of tracks that will be extracted
     """
     total_tracks = 0
 
@@ -131,15 +147,29 @@ def build_extraction_summary(
     extraction_mode: str
 ) -> Dict:
     """
-    Build a summary of extraction results for reporting.
+    Create structured summary of extraction operation results.
+    
+    Aggregates statistics and formats information about an extraction operation
+    for reporting to users or logging. Calculated fields include total tracks
+    extracted and breakdown by track type.
     
     Args:
-        extraction_results: Dictionary with extraction statistics
-        languages: List of language codes that were extracted
-        extraction_mode: Human-readable description of extraction mode
+        extraction_results: Raw extraction statistics dictionary
+        languages: Language codes that were targeted
+        extraction_mode: Human-readable mode description
         
     Returns:
-        Dictionary with formatted summary information
+        Summary dictionary with the following structure:
+        {
+            "total_extracted": int,
+            "mode": str,
+            "languages": str,
+            "details": {
+                "audio": int,
+                "subtitles": int,
+                "video": int
+            }
+        }
     """
     total_extracted = (
         extraction_results.get("extracted_audio", 0) +

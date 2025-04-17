@@ -1,3 +1,12 @@
+/**
+ * A dynamic file selection interface that adapts between single-file and batch processing modes.
+ * Handles file/directory selection through Electron's native dialog APIs and displays
+ * current selection state with appropriate visualizations.
+ *
+ * The component serves as the initial step in the extraction workflow, allowing users
+ * to select input files/directories and specify where extracted content should be saved.
+ */
+
 import { Button } from "@/components/ui/button"
 import {
 	Card,
@@ -12,7 +21,22 @@ import { File, FilesIcon, Folder, FolderOpen, Info, Layers, RefreshCw } from "lu
 import React from "react"
 
 /**
- * Enhanced file selection tab component
+ * Renders the file selection interface for the extraction workflow
+ *
+ * @param {Object} props
+ * @param {string} props.filePath - Path to selected media file (single mode)
+ * @param {string} props.outputPath - Path to output directory for extracted content
+ * @param {boolean} props.isAnalyzing - Whether a single file is currently being analyzed
+ * @param {boolean} props.isBatchAnalyzing - Whether a batch is currently being analyzed
+ * @param {boolean} props.batchMode - Whether in batch processing mode
+ * @param {Array<string>} props.inputPaths - Selected file paths for batch processing
+ * @param {Function} props.handleSelectFile - Handler for selecting a single file
+ * @param {Function} props.handleSelectOutputDir - Handler for selecting output directory
+ * @param {Function} props.handleSelectInputFiles - Handler for selecting multiple input files
+ * @param {Function} props.handleSelectInputDirectory - Handler for selecting input directory
+ * @param {Function} props.handleAnalyzeFile - Handler to analyze a single file
+ * @param {Function} props.handleAnalyzeBatch - Handler to analyze a batch of files
+ * @returns {JSX.Element} The file selection interface
  */
 function FileSelectionTab({
 	filePath,
@@ -39,8 +63,9 @@ function FileSelectionTab({
 				</CardDescription>
 			</CardHeader>
 			<CardContent className="space-y-6">
+				{/* Conditionally render single file or batch selection UI */}
 				{!batchMode ? (
-					// Single file mode
+					// Single file selection mode
 					<div className="space-y-2">
 						<Label htmlFor="media-file">Media File</Label>
 						<div className="flex items-center gap-2">
@@ -65,7 +90,7 @@ function FileSelectionTab({
 						</div>
 					</div>
 				) : (
-					// Batch mode
+					// Batch selection mode with multiple file/directory options
 					<div className="space-y-2">
 						<Label>Input Media Files</Label>
 						<div className="flex flex-col gap-2">
@@ -101,6 +126,7 @@ function FileSelectionTab({
 					</div>
 				)}
 
+				{/* Output directory selection - common to both modes */}
 				<div className="space-y-2">
 					<Label htmlFor="output-dir">Output Directory</Label>
 					<div className="flex items-center gap-2">
@@ -132,7 +158,7 @@ function FileSelectionTab({
 						: "Select the file above to proceed with analysis"}
 				</div>
 
-				{/* Show appropriate analyze button based on mode */}
+				{/* Contextual analyze button that adapts to current mode */}
 				{batchMode ? (
 					<Button
 						onClick={handleAnalyzeBatch}

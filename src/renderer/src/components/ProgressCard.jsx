@@ -1,3 +1,9 @@
+/**
+ * A responsive progress visualization component that displays extraction progress.
+ * Features a primary progress bar for overall status and optional individual progress
+ * indicators for concurrent file operations in batch mode, with real-time worker tracking.
+ */
+
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Cpu, RefreshCw } from "lucide-react"
 import React, { useMemo } from "react"
@@ -5,23 +11,32 @@ import { Badge } from "./ui/badge"
 import { Progress } from "./ui/progress"
 
 /**
- * Progress indicator for track extraction with support for multiple workers
+ * Displays extraction progress with support for both single-file and batch modes
+ *
+ * @param {Object} props
+ * @param {string} props.progressText - Text description of current operation
+ * @param {number} props.progressValue - Current progress percentage (0-100)
+ * @param {Object} props.fileProgressMap - Map of file IDs to individual progress states
+ * @param {boolean} props.batchMode - Whether displaying progress for a batch operation
+ * @returns {JSX.Element} The rendered progress card
  */
 function ProgressCard({ progressText, progressValue, fileProgressMap = {}, batchMode = false }) {
-	// Convert the fileProgressMap object to an array and sort by index
+	// Transform the map object into a sorted array for rendering
+	// This is computed only when fileProgressMap changes to optimize performance
 	const fileProgressArray = useMemo(() => {
 		return (
 			Object.values(fileProgressMap)
 				.sort((a, b) => a.index - b.index)
-				// Filter out any entries with progress at 100% to show only active files
+				// Show only files that are still in progress (< 100%)
 				.filter((item) => item.progress < 100)
 		)
 	}, [fileProgressMap])
 
-	// Determine if we have multiple file progress items to display
+	// Determine if we should show the worker thread section
 	const hasMultipleFiles = batchMode && fileProgressArray.length > 0
 
-	// Count active workers by grouping by threadId
+	// Count unique worker threads actively processing files
+	// Used to show how parallelized the extraction has become
 	const activeWorkers = useMemo(() => {
 		if (!hasMultipleFiles) return 0
 
@@ -52,7 +67,7 @@ function ProgressCard({ progressText, progressValue, fileProgressMap = {}, batch
 				</CardDescription>
 			</CardHeader>
 			<CardContent>
-				{/* Overall progress bar always shown */}
+				{/* Main progress indicator shown for all operation types */}
 				<div className="mb-4">
 					<div className="text-sm font-medium mb-1">Overall Progress</div>
 					<Progress value={progressValue} className="w-full" />
@@ -61,7 +76,7 @@ function ProgressCard({ progressText, progressValue, fileProgressMap = {}, batch
 					</div>
 				</div>
 
-				{/* Only show individual file progress in batch mode with active files */}
+				{/* Worker thread progress section - only shown in batch mode with active files */}
 				{hasMultipleFiles && (
 					<div className="mt-6 space-y-4">
 						<div className="flex items-center gap-2 text-sm font-medium">
@@ -74,7 +89,7 @@ function ProgressCard({ progressText, progressValue, fileProgressMap = {}, batch
 							</span>
 						</div>
 
-						{/* Individual file progress bars */}
+						{/* Individual file progress indicators */}
 						<div className="space-y-3">
 							{fileProgressArray.map((item) => (
 								<div key={item.index} className="space-y-1">

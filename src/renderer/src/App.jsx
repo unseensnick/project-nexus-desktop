@@ -1,3 +1,21 @@
+/**
+ * Main application component that orchestrates the media track extraction workflow.
+ * Implements a multi-step, tab-based interface for file selection, analysis, configuration,
+ * and results viewing, with adaptive support for both single-file and batch operations.
+ *
+ * The component coordinates several specialized hooks for state management:
+ * - useFileSelection: Handles file/directory selection and paths
+ * - useMediaAnalysis: Manages media file analysis state and operations
+ * - useExtraction: Controls the extraction process, options, and results
+ *
+ * Key features:
+ * - Collapsible sidebar navigation
+ * - Automatic tab progression based on workflow state
+ * - Unified error handling across different operation stages
+ * - Dynamic mode switching (single file vs. batch processing)
+ * - Theme support through context provider
+ */
+
 import { useEffect, useState } from "react"
 import "./assets/main.css"
 
@@ -23,13 +41,18 @@ import ResultsTab from "@/components/ResultsTab"
 import { ThemeProvider } from "@/components/ThemeProvider"
 
 /**
- * Main application component using shadcn UI components
+ * Main application component that manages the extraction workflow
+ *
+ * Coordinates state across multiple specialized hooks and provides
+ * a tab-based interface that guides users through the extraction process.
+ *
+ * @returns {JSX.Element} The rendered application
  */
 function App() {
-	// Sidebar state
+	// Collapsible sidebar state
 	const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 
-	// Application state management with custom hooks
+	// File and directory selection state management
 	const {
 		filePath,
 		outputPath,
@@ -39,6 +62,7 @@ function App() {
 		resetFileSelection
 	} = useFileSelection()
 
+	// Media analysis state management
 	const {
 		analyzed,
 		isAnalyzing,
@@ -48,7 +72,7 @@ function App() {
 		resetAnalysis
 	} = useMediaAnalysis(filePath)
 
-	// Unified extraction hook that handles both single file and batch mode
+	// Track extraction state management (handles both single and batch modes)
 	const {
 		isExtracting,
 		extractionResult,
@@ -75,36 +99,42 @@ function App() {
 		resetAll
 	} = useExtraction(filePath, outputPath, analyzed)
 
-	// UI state
+	// Tab management and consolidated error handling
 	const [activeTab, setActiveTab] = useState("select")
 	const [error, setError] = useState(null)
 
-	// Consolidate errors from different hooks
+	// Consolidate errors from different workflow stages
 	useEffect(() => {
 		setError(fileError || analysisError || extractionError)
 	}, [fileError, analysisError, extractionError])
 
-	// Auto advance tabs based on application state
+	// Automatic tab progression based on workflow state
 	useEffect(() => {
-		// Auto advance from file selection to analysis when either single file
-		// or batch is analyzed
+		// Move to analysis tab when file/batch analysis completes
 		if ((analyzed && !batchMode) || (batchAnalyzed && batchMode)) {
 			setActiveTab("analyze")
 		}
 
-		// Auto advance to results when extraction is complete
+		// Move to results tab when extraction completes
 		if (extractionResult) {
 			setActiveTab("results")
 		}
 	}, [analyzed, batchAnalyzed, extractionResult, batchMode])
 
-	// Helper function to get file name from path
+	/**
+	 * Extracts filename from a full path
+	 * @param {string} path - File path to parse
+	 * @returns {string} Extracted filename
+	 */
 	const getFileName = (path) => {
 		if (!path) return ""
 		return path.split(/[\\/]/).pop()
 	}
 
-	// Reset the entire application state
+	/**
+	 * Resets the entire application state to initial values
+	 * Coordinates reset across all state hooks
+	 */
 	const handleReset = () => {
 		resetFileSelection()
 		resetAnalysis()
@@ -112,7 +142,7 @@ function App() {
 		setActiveTab("select")
 	}
 
-	// Get available languages based on current mode
+	// Determine available languages based on current mode
 	const currentAvailableLanguages = batchMode
 		? (batchAnalyzed?.languages?.audio || []).concat(batchAnalyzed?.languages?.subtitle || [])
 		: availableLanguages
@@ -120,12 +150,12 @@ function App() {
 	return (
 		<ThemeProvider>
 			<div className="flex h-screen bg-gray-50 text-gray-900 overflow-hidden dark:bg-gray-900 dark:text-gray-100">
-				{/* Sidebar - using the refactored shadcn Sidebar component */}
+				{/* Navigation sidebar */}
 				<AppSidebar collapsed={sidebarCollapsed} />
 
-				{/* Main content */}
+				{/* Main content area */}
 				<main className="flex-1 flex flex-col overflow-hidden">
-					{/* Main content header */}
+					{/* Application header with sidebar toggle and mode switch */}
 					<header className="bg-white shadow-sm p-4 flex items-center justify-between dark:bg-gray-800 dark:border-b dark:border-gray-700">
 						<div className="flex items-center gap-2">
 							<Button
@@ -142,6 +172,7 @@ function App() {
 							</h2>
 						</div>
 
+						{/* Batch mode toggle switch */}
 						<div className="flex items-center gap-2">
 							<span className="text-sm text-gray-500 dark:text-gray-400">
 								Batch Mode
@@ -155,9 +186,10 @@ function App() {
 						</div>
 					</header>
 
-					{/* Main content area */}
+					{/* Tab-based content area */}
 					<div className="flex-1 overflow-auto p-6">
 						<Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+							{/* Tab navigation - disabled states prevent skipping steps */}
 							<TabsList className="grid w-full grid-cols-3 mb-8">
 								<TabsTrigger value="select">1. Select Files</TabsTrigger>
 								<TabsTrigger value="analyze" disabled={!analyzed && !batchAnalyzed}>
@@ -168,7 +200,7 @@ function App() {
 								</TabsTrigger>
 							</TabsList>
 
-							{/* TAB 1: File Selection */}
+							{/* File/directory selection tab */}
 							<TabsContent value="select">
 								<FileSelectionTab
 									filePath={filePath}
@@ -186,7 +218,7 @@ function App() {
 								/>
 							</TabsContent>
 
-							{/* TAB 2: Analysis Tab - handles both single file and batch */}
+							{/* Analysis and configuration tab - adapts to current mode */}
 							<TabsContent value="analyze">
 								<AnalysisTab
 									fileName={getFileName(filePath)}
@@ -212,7 +244,7 @@ function App() {
 								/>
 							</TabsContent>
 
-							{/* TAB 3: Integrated Results for both single and batch extraction */}
+							{/* Results tab - only rendered when relevant */}
 							<TabsContent value="results">
 								{(extractionResult || isExtracting) && (
 									<ResultsTab
@@ -230,7 +262,7 @@ function App() {
 							</TabsContent>
 						</Tabs>
 
-						{/* Error Display */}
+						{/* Consolidated error display for all workflow stages */}
 						{error && (
 							<Alert variant="destructive" className="mt-6">
 								<AlertCircle className="h-4 w-4" />
@@ -240,10 +272,9 @@ function App() {
 						)}
 					</div>
 
-					{/* Footer */}
+					{/* Application footer */}
 					<footer className="bg-white border-t p-4 text-sm text-gray-500 flex justify-between dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400">
-						<span>Ready for extraction</span>
-						<span>Project Nexus v1.0.1</span>
+						<span>Project Nexus v0.0.1</span>
 					</footer>
 				</main>
 			</div>

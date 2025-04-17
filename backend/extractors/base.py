@@ -1,8 +1,16 @@
 """
 Base Extractor Module.
 
-This module defines the base class for all extractors, establishing
-a common interface and shared functionality.
+This module defines the foundational abstract base class for all track extractors in the system,
+establishing a consistent interface and shared functionality through the Template Method pattern.
+Each extractor type (audio, subtitle, video) inherits from this base while providing
+type-specific implementations.
+
+Key responsibilities:
+- Define the common extraction workflow through template methods
+- Provide standardized error handling across all extractor types
+- Manage progress reporting for user interface feedback
+- Handle common file naming and path operations
 """
 
 import logging
@@ -20,20 +28,34 @@ logger = logging.getLogger(__name__)
 
 class BaseExtractor(ABC):
     """
-    Base class for all media track extractors.
+    Abstract base class for all media track extractors.
 
-    This abstract class defines the interface that all extractor
-    implementations must follow, ensuring consistent behavior
-    across different track types.
+    Implements the Template Method pattern where the extraction workflow is defined
+    in the base class while specific behaviors are customized by subclasses through
+    abstract properties and optional method overrides.
+    
+    The extraction process follows these steps:
+    1. Validate and prepare paths
+    2. Analyze the media file if needed
+    3. Validate the requested track exists
+    4. Set up progress reporting
+    5. Perform the extraction (either standard or specialized)
+    6. Handle errors consistently using type-specific error classes
+    
+    Subclasses must implement the abstract properties to define:
+    - The track type they handle (audio, subtitle, video)
+    - Appropriate codec-to-extension mappings
+    - Type-specific error classes for consistent error reporting
     """
 
     def __init__(self, media_analyzer: Optional[MediaAnalyzer] = None):
         """
-        Initialize the extractor.
+        Initialize an extractor with an optional media analyzer.
 
         Args:
-            media_analyzer: Optional MediaAnalyzer instance. If not provided,
-                           a new one will be created.
+            media_analyzer: MediaAnalyzer instance to use. If None, creates a new one.
+                           Sharing the same analyzer across extractors improves efficiency
+                           by avoiding redundant media analysis.
         """
         self.media_analyzer = media_analyzer or MediaAnalyzer()
         self._module_name = self.__class__.__name__.lower()
@@ -43,8 +65,9 @@ class BaseExtractor(ABC):
     def track_type(self) -> str:
         """
         The type of track this extractor handles.
-
-        Must be implemented by subclasses to return 'audio', 'subtitle', or 'video'.
+        
+        Must return one of: 'audio', 'subtitle', or 'video'.
+        Used to determine which tracks to process and for error reporting.
         """
         raise NotImplementedError("Subclasses must implement track_type")
 
@@ -52,9 +75,12 @@ class BaseExtractor(ABC):
     @abstractmethod
     def codec_to_extension(self) -> Dict[str, str]:
         """
-        A mapping of codec names to file extensions for this track type.
-
-        Must be implemented by subclasses to provide the appropriate mapping.
+        Mapping of codec names to appropriate file extensions.
+        
+        This mapping determines what container format to use for extracted tracks
+        based on their codec, ensuring compatibility and optimal quality.
+        
+        Example: {'aac': 'aac', 'mp3': 'mp3', 'default': 'mka'}
         """
         raise NotImplementedError("Subclasses must implement codec_to_extension")
 
@@ -62,9 +88,10 @@ class BaseExtractor(ABC):
     @abstractmethod
     def error_class(self) -> Type[TrackExtractionError]:
         """
-        The error class to use for this extractor.
-
-        Must be implemented by subclasses to provide the appropriate error class.
+        The specific error class to use for exceptions.
+        
+        Each extractor type provides its own specialized error class (AudioExtractionError,
+        SubtitleExtractionError, etc.) for precise error reporting.
         """
         raise NotImplementedError("Subclasses must implement error_class")
 
@@ -79,20 +106,24 @@ class BaseExtractor(ABC):
         """
         Extract a specific track from a media file.
 
+        This is the main entry point for track extraction and implements the Template Method 
+        pattern. It handles the common extraction workflow while allowing subclasses to customize 
+        the actual extraction through optional _extract_specialized_track method overrides.
+
         Args:
             input_file: Path to the input media file
             output_dir: Directory where the extracted track will be saved
-            track_id: ID of the track to extract
-            progress_callback: Callback function, ProgressReporter instance, or operation_id string
-            **kwargs: Additional extractor-specific parameters
+            track_id: ID of the track to extract (0-based index)
+            progress_callback: Function, ProgressReporter instance, or operation_id string for progress updates
+            **kwargs: Additional parameters for specialized extractors (e.g., remove_letterbox for video)
 
         Returns:
             Path to the extracted track file
 
         Raises:
-            TrackExtractionError: If extraction fails
+            TrackExtractionError: If track is invalid or extraction fails
         """
-        # Define the inner extraction function to use with safe_execute
+        # Define inner extraction function that will be executed with error handling
         def _extract_track():
             # Normalize paths
             input_path = Path(input_file)
@@ -107,16 +138,17 @@ class BaseExtractor(ABC):
             # Validate track exists and get track info
             track = self._get_and_validate_track(track_id)
 
-            # Get a standardized progress reporter
+            # Set up standardized progress reporting
             progress_reporter = self._get_progress_reporter(progress_callback, track)
 
-            # Task started notification
+            # Notify start of extraction
             task_key = f"{self.track_type}_{track_id}"
             progress_reporter.task_started(task_key, f"Extracting {track.display_name}")
 
             try:
-                # Allow subclasses to perform specialized extraction
+                # Delegate to specialized extractor if available, otherwise use standard extraction
                 if hasattr(self, "_extract_specialized_track"):
+                    # Specialized extraction (used by video extractor for letterbox removal)
                     output_path = self._extract_specialized_track(
                         input_path, 
                         output_dir_path, 
@@ -126,7 +158,7 @@ class BaseExtractor(ABC):
                         **kwargs
                     )
                 else:
-                    # Standard extraction for most track types
+                    # Standard extraction (used by most extractors)
                     output_path = self._perform_standard_extraction(
                         input_path, 
                         output_dir_path, 
@@ -135,7 +167,7 @@ class BaseExtractor(ABC):
                         progress_reporter
                     )
                 
-                # Task completed notification
+                # Notify completion
                 progress_reporter.task_completed(
                     task_key, 
                     True, 
@@ -145,18 +177,19 @@ class BaseExtractor(ABC):
                 return output_path
                 
             except Exception as e:
-                # Report extraction error
+                # Report extraction error through progress system
                 error_msg = f"Failed to extract {self.track_type} track {track_id}: {str(e)}"
                 progress_reporter.error(error_msg, task_key)
                 progress_reporter.task_completed(task_key, False, error_msg)
                 raise
                 
-        # Use safe_execute for centralized error handling
+        # Execute with centralized error handling
         try:
             return safe_execute(
                 _extract_track,
                 module_name=self._module_name,
                 error_map={
+                    # Map all exceptions to the appropriate type-specific error class
                     Exception: lambda msg, **kwargs: self.error_class(
                         str(msg), 
                         track_id=track_id, 
@@ -166,10 +199,9 @@ class BaseExtractor(ABC):
                 raise_error=True
             )
         except Exception as e:
-            # Log the error
+            # Log and re-wrap the error in the appropriate type-specific error class
             log_exception(e, module_name=self._module_name)
             
-            # Re-raise using error_class for consistency
             raise self.error_class(
                 f"Failed to extract {self.track_type} track {track_id}: {str(e)}",
                 track_id=track_id,
@@ -182,46 +214,73 @@ class BaseExtractor(ABC):
         track: Track
     ) -> ProgressReporter:
         """
-        Get a standardized progress reporter based on the input type.
+        Convert various progress reporting inputs into a standardized ProgressReporter.
+        
+        Handles three types of progress input:
+        1. None - Creates a no-op reporter
+        2. ProgressReporter instance - Uses as-is
+        3. String - Treats as operation_id for global reporter registry
+        4. Callable function - Wraps in a new reporter
         
         Args:
-            progress_input: Callback function, ProgressReporter instance, or operation_id string
-            track: The track being extracted
+            progress_input: Callback function, ProgressReporter instance, or operation_id
+            track: Track being extracted (for context information)
             
         Returns:
-            A standardized ProgressReporter instance
+            Configured ProgressReporter instance
         """
-        # If no progress input, create a new reporter with no callback
+        # Create track context for all reporters
+        track_context = {
+            "track_type": self.track_type,
+            "track_id": track.id,
+            "language": track.language
+        }
+        
+        # Handle each input type
         if progress_input is None:
-            return ProgressReporter(
-                context={"track_type": self.track_type, "track_id": track.id, "language": track.language}
-            )
+            # No progress tracking - create reporter with no callback
+            return ProgressReporter(context=track_context)
             
-        # If it's already a ProgressReporter, return it
         if isinstance(progress_input, ProgressReporter):
+            # Already a progress reporter - use directly
             return progress_input
             
-        # If it's a string, assume it's an operation_id
         if isinstance(progress_input, str):
-            return get_progress_reporter(
-                progress_input,
-                context={"track_type": self.track_type, "track_id": track.id, "language": track.language}
-            )
+            # Operation ID - get or create from registry
+            return get_progress_reporter(progress_input, context=track_context)
             
-        # If it's a callable, create a new reporter with the callback
-        return ProgressReporter(
-            progress_input,
-            context={"track_type": self.track_type, "track_id": track.id, "language": track.language}
-        )
+        # Callable - create new reporter with the function as callback
+        return ProgressReporter(progress_input, context=track_context)
 
     def _ensure_media_analyzed(self, input_path: Path) -> None:
-        """Ensure the media file has been analyzed."""
+        """
+        Ensure the media file has been analyzed before extraction.
+        
+        Checks if the media analyzer has already processed the file, and
+        if not, triggers analysis to populate track information.
+        
+        Args:
+            input_path: Path to the media file to analyze
+        """
         if not self.media_analyzer.tracks:
-            # Call the analyze_file method but don't reassign it
+            # Call analyze_file but don't reassign its return value
             _ = self.media_analyzer.analyze_file(input_path)
 
     def _get_and_validate_track(self, track_id: int) -> Track:
-        """Get the track and validate it exists."""
+        """
+        Get the track by ID and validate it exists in the file.
+        
+        Ensures the requested track_id is valid for this extractor's track type.
+        
+        Args:
+            track_id: ID of the track to extract (0-based index)
+            
+        Returns:
+            Track object if valid
+            
+        Raises:
+            ValueError: If track_id is invalid (converted to appropriate error type)
+        """
         tracks = getattr(self.media_analyzer, f"{self.track_type}_tracks")
         if track_id >= len(tracks):
             error_msg = (
@@ -250,8 +309,26 @@ class BaseExtractor(ABC):
         track: Track,
         progress_reporter: ProgressReporter,
     ) -> Path:
-        """Perform standard extraction for the track."""
-        # Determine output extension based on codec
+        """
+        Implement standard track extraction using FFmpeg.
+        
+        This is the default extraction implementation used if a subclass doesn't
+        override with _extract_specialized_track.
+        
+        Args:
+            input_path: Path to the input media file
+            output_dir: Directory where the extracted track will be saved
+            track_id: ID of the track to extract
+            track: Track object with metadata
+            progress_reporter: Progress reporter for updates
+            
+        Returns:
+            Path to the extracted file
+            
+        Raises:
+            TrackExtractionError: If FFmpeg extraction fails
+        """
+        # Determine appropriate output format based on track codec
         extension = self.codec_to_extension.get(
             track.codec, self.codec_to_extension["default"]
         )
@@ -260,14 +337,15 @@ class BaseExtractor(ABC):
         output_filename = self.get_output_filename(input_path, track, extension)
         output_path = output_dir / output_filename
 
-        # Extract the track
+        # Extract the track using FFmpeg
         logger.info(
             f"Extracting {self.track_type} track {track_id} to {output_path}"
         )
         
-        # Create a track-specific callback for FFmpeg
+        # Create a track-specific progress callback for FFmpeg
         track_callback = self._create_ffmpeg_callback(progress_reporter, track)
         
+        # Perform the actual extraction
         success = extract_track(
             input_path,
             output_path,
@@ -277,6 +355,7 @@ class BaseExtractor(ABC):
             track_callback,
         )
 
+        # Handle extraction failure
         if not success:
             error_msg = f"FFmpeg failed to extract {self.track_type} track {track_id}"
             handle_error(
@@ -293,9 +372,18 @@ class BaseExtractor(ABC):
             )
 
         return output_path
-
+    
     def _create_ffmpeg_callback(self, progress_reporter: ProgressReporter, track: Track) -> Callable:
-        """Create a callback function for FFmpeg progress updates."""
+        """
+        Create a callback function that forwards FFmpeg progress to the ProgressReporter.
+        
+        Args:
+            progress_reporter: ProgressReporter instance to receive updates
+            track: Track being extracted (for context information)
+            
+        Returns:
+            Callback function compatible with FFmpeg progress reporting
+        """
         def callback(progress):
             progress_reporter.update(
                 track.type, 
@@ -315,38 +403,39 @@ class BaseExtractor(ABC):
         **kwargs,
     ) -> List[Path]:
         """
-        Extract all tracks of this extractor's type with the specified languages.
+        Extract all tracks of this type that match the specified languages.
+
+        This method is used for batch extraction of tracks by language, which is
+        particularly useful for audio and subtitle tracks. For video tracks,
+        it extracts all video tracks since they rarely have language metadata.
 
         Args:
             input_file: Path to the input media file
             output_dir: Directory where the extracted tracks will be saved
-            languages: List of language codes to extract (ignored for video tracks)
-            progress_callback: Callback function, ProgressReporter instance, or operation_id string
-            **kwargs: Additional extractor-specific parameters
+            languages: List of language codes to extract (e.g., ["eng", "jpn"])
+            progress_callback: Function, ProgressReporter, or operation_id for progress updates
+            **kwargs: Additional parameters for specialized extractors
 
         Returns:
-            List of paths to the extracted track files
-
-        Raises:
-            TrackExtractionError: If analysis or extraction fails
+            List of paths to the extracted track files (empty if no matching tracks)
         """
-        # Define inner function for extraction
+        # Define extraction function that will be executed with error handling
         def _extract_tracks_by_language():
             # Analyze the file to get track information
-            # FIXED: Don't reassign analyze_file to its result
             _ = self.media_analyzer.analyze_file(input_file)
 
-            # Get a standardized progress reporter
+            # Set up progress reporting
             progress_reporter = self._get_progress_reporter(
                 progress_callback, 
                 Track(0, self.track_type, "unknown")  # Dummy track for initialization
             )
 
-            # Get tracks based on type
+            # Get tracks that match the specified languages
             tracks = self._get_tracks_by_language(languages)
 
+            # Handle case where no matching tracks are found
             if not tracks:
-                # Provide different warning messages based on track type
+                # Provide helpful message based on track type
                 if self.track_type == "video":
                     warning_msg = "No video tracks found in the file"
                 else:
@@ -355,12 +444,12 @@ class BaseExtractor(ABC):
                 logger.warning(warning_msg)
                 return []
 
-            # Extract the tracks
+            # Extract all matching tracks
             return self._extract_multiple_tracks(
                 input_file, output_dir, tracks, progress_reporter, **kwargs
             )
         
-        # Use safe_execute for centralized error handling
+        # Execute with centralized error handling
         try:
             return safe_execute(
                 _extract_tracks_by_language,
@@ -376,28 +465,31 @@ class BaseExtractor(ABC):
                 raise_error=True
             )
         except Exception as e:
+            # Log but return empty list on failure for graceful degradation
             log_exception(e, module_name=self._module_name)
-            # Return empty list on failure to allow graceful degradation
             return []
             
     def _get_tracks_by_language(self, languages: List[str]) -> List[Track]:
         """
-        Get tracks matching the specified languages.
+        Get tracks that match the specified languages.
+        
+        For video tracks, returns all tracks since they often lack language metadata.
+        For audio and subtitle tracks, filters by the requested languages.
         
         Args:
-            languages: List of language codes to match
+            languages: List of language codes to match (e.g., ["eng", "jpn"])
             
         Returns:
-            List of tracks matching the language criteria
+            List of Track objects matching the criteria
         """
-        # For video tracks, don't filter by language since they often lack language metadata
+        # Special case: video tracks don't typically have language metadata
         if self.track_type == "video":
             tracks = self.media_analyzer.video_tracks
             if tracks:
                 logger.info(f"Found {len(tracks)} video tracks to extract")
             return tracks
         
-        # For audio and subtitle tracks, apply language filtering
+        # For audio and subtitle tracks, filter by language
         tracks = self.media_analyzer.filter_tracks_by_language(
             languages, self.track_type
         )
@@ -419,22 +511,25 @@ class BaseExtractor(ABC):
         **kwargs,
     ) -> List[Path]:
         """
-        Extract multiple tracks using the progress reporter.
+        Extract multiple tracks with aggregated progress reporting.
+        
+        This method handles extracting a batch of tracks while providing
+        composite progress updates that reflect the overall operation.
         
         Args:
-            input_file: Input media file path
-            output_dir: Output directory path
-            tracks: List of tracks to extract
-            progress_reporter: Progress reporter instance
-            **kwargs: Additional extraction parameters
+            input_file: Path to the input media file
+            output_dir: Directory where tracks will be saved
+            tracks: List of Track objects to extract
+            progress_reporter: ProgressReporter for status updates
+            **kwargs: Additional parameters for specialized extractors
             
         Returns:
-            List of paths to extracted tracks
+            List of paths to successfully extracted tracks
         """
         extracted_paths = []
         total_tracks = len(tracks)
         
-        # Set up batch operation context
+        # Create a batch operation for aggregate progress tracking
         batch_operation_id = f"extract_{self.track_type}_tracks"
         batch_callback = progress_reporter.create_operation_callback(
             batch_operation_id, total_tracks
@@ -443,9 +538,10 @@ class BaseExtractor(ABC):
         # Initial progress update
         batch_callback(0)
 
+        # Process each track, continuing even if some fail
         for index, track in enumerate(tracks):
             try:
-                # Update batch progress
+                # Update batch progress based on position
                 batch_callback(index * 100 / total_tracks if total_tracks > 0 else 100)
                 
                 # Extract this track
@@ -453,15 +549,16 @@ class BaseExtractor(ABC):
                     input_file,
                     output_dir,
                     track.id,
-                    progress_reporter,  # Pass the same progress reporter
+                    progress_reporter,  # Reuse the same reporter
                     **kwargs,
                 )
                 
+                # Track successful extractions
                 extracted_paths.append(output_path)
                 logger.info(f"Extracted {track.display_name} to {output_path}")
                 
             except TrackExtractionError as e:
-                # Log but continue with other tracks
+                # Log error but continue with remaining tracks
                 log_exception(e, module_name=self._module_name)
                 progress_reporter.error(
                     f"Failed to extract {track.display_name}: {str(e)}",
@@ -477,19 +574,25 @@ class BaseExtractor(ABC):
         self, input_file: Union[str, Path], track: Track, extension: str
     ) -> str:
         """
-        Generate an output filename for an extracted track.
+        Generate a consistent output filename for an extracted track.
+
+        Creates a filename that preserves the original file name while adding
+        track type, ID, and language information for easy identification.
+        
+        Format: original_name.track_type{id}.{language}.extension
+        Example: movie.audio0.eng.aac
 
         Args:
             input_file: Original input file path
-            track: Track to be extracted
-            extension: File extension for the output file
+            track: Track being extracted
+            extension: File extension for the output (without dot)
 
         Returns:
             Formatted output filename
         """
         try:
             input_path = Path(input_file)
-            stem = input_path.stem
+            stem = input_path.stem  # Original filename without extension
 
             # Add track info to filename
             lang_part = f".{track.language}" if track.language else ""
@@ -497,6 +600,6 @@ class BaseExtractor(ABC):
 
             return f"{stem}{track_part}{lang_part}.{extension}"
         except Exception as e:
-            # Fallback filename in case of error
+            # Fallback filename in case of formatting error
             log_exception(e, module_name=self._module_name, level=logging.WARNING)
             return f"track_{track.type}_{track.id}.{extension}"

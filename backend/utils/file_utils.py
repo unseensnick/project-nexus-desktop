@@ -1,8 +1,13 @@
 """
 File Utilities Module.
 
-This module provides utilities for filesystem operations and finding media files.
-All functions here directly interact with the filesystem.
+Provides functions for direct filesystem operations with robust error handling.
+Unlike path_utils (which handles path string manipulation), these functions
+actually interact with the filesystem to find files, create directories, and
+perform file operations.
+
+All operations use consistent error handling with specific exception types,
+making failures easy to diagnose and handle appropriately.
 """
 
 import logging
@@ -23,13 +28,16 @@ def find_media_files(
     paths: Union[str, Path, List[Union[str, Path]], tuple[str, ...]],
 ) -> List[Path]:
     """
-    Find all media files in the given paths.
+    Find all media files in specified locations.
+    
+    Recursively searches directories and identifies files with recognized media extensions.
+    Accepts single paths, lists of paths, or tuples of paths to search in multiple locations.
 
     Args:
-        paths: File paths or directories to search for media files
+        paths: File path(s) or directory path(s) to search 
 
     Returns:
-        List of paths to media files
+        Sorted list of Path objects to discovered media files, empty if none found
     """
     def _find_files():
         if isinstance(paths, (str, Path)):
@@ -72,13 +80,15 @@ def find_media_files(
 
 def is_media_file(file_path: Union[str, Path]) -> bool:
     """
-    Check if a file is a media file based on its extension.
+    Check if a file has a recognized media file extension.
+    
+    Validates only the extension without analyzing file content.
 
     Args:
-        file_path: Path to the file to check
+        file_path: Path to check
 
     Returns:
-        True if the file is a media file, False otherwise
+        True if extension is in MEDIA_EXTENSIONS list, False otherwise
     """
     try:
         file_path = Path(file_path)
@@ -90,13 +100,15 @@ def is_media_file(file_path: Union[str, Path]) -> bool:
 
 def is_audio_file(file_path: Union[str, Path]) -> bool:
     """
-    Check if a file is an audio file based on its extension.
+    Check if a file has a recognized audio file extension.
+    
+    Validates only the extension without analyzing file content.
 
     Args:
-        file_path: Path to the file to check
+        file_path: Path to check
 
     Returns:
-        True if the file is an audio file, False otherwise
+        True if extension is in AUDIO_EXTENSIONS list, False otherwise
     """
     try:
         file_path = Path(file_path)
@@ -108,13 +120,15 @@ def is_audio_file(file_path: Union[str, Path]) -> bool:
 
 def is_subtitle_file(file_path: Union[str, Path]) -> bool:
     """
-    Check if a file is a subtitle file based on its extension.
+    Check if a file has a recognized subtitle file extension.
+    
+    Validates only the extension without analyzing file content.
 
     Args:
-        file_path: Path to the file to check
+        file_path: Path to check
 
     Returns:
-        True if the file is a subtitle file, False otherwise
+        True if extension is in SUBTITLE_EXTENSIONS list, False otherwise
     """
     try:
         file_path = Path(file_path)
@@ -126,17 +140,19 @@ def is_subtitle_file(file_path: Union[str, Path]) -> bool:
 
 def ensure_directory(directory: Union[str, Path]) -> Path:
     """
-    Ensure that a directory exists, creating it if necessary.
-    This function interacts with the filesystem.
+    Create a directory if it doesn't exist.
+    
+    Creates all parent directories as needed. This is a key filesystem operation
+    used before writing files to ensure the destination exists.
 
     Args:
-        directory: Path to the directory
+        directory: Path to ensure exists
 
     Returns:
-        Path to the directory
+        Path object to the directory
 
     Raises:
-        FileHandlingError: If the directory cannot be created
+        FileHandlingError: If directory creation fails (permissions, disk space, etc.)
     """
     def _ensure_dir():
         dir_path = Path(directory)
@@ -164,10 +180,13 @@ def ensure_directory(directory: Union[str, Path]) -> Path:
 
 def get_project_root() -> Path:
     """
-    Get the project root directory.
+    Determine the project's root directory.
+    
+    Uses the module's own location to identify the project root.
+    Falls back to current working directory if detection fails.
 
     Returns:
-        Path to the project root directory
+        Path to project root directory
     """
     try:
         # Use the current file location to determine the project root
@@ -181,12 +200,12 @@ def get_project_root() -> Path:
 
 def get_default_output_dir() -> Path:
     """
-    Get the default output directory in the project root.
-
-    This function builds the default path and ensures the directory exists.
+    Get and ensure existence of the default output directory.
+    
+    Uses DEFAULT_OUTPUT_DIR from config and creates it if it doesn't exist.
 
     Returns:
-        Path to the default output directory
+        Path to ready-to-use output directory
     """
     # Get the path from config
     output_path = DEFAULT_OUTPUT_DIR
@@ -199,18 +218,21 @@ def safe_copy_file(
     source: Union[str, Path], destination: Union[str, Path], overwrite: bool = False
 ) -> Path:
     """
-    Safely copy a file with proper error handling.
+    Copy a file with robust error handling.
+    
+    Handles source validation, destination creation, and conflict resolution.
+    Preserves file metadata (timestamps, etc.) using shutil.copy2.
 
     Args:
-        source: Source file path
-        destination: Destination file path
-        overwrite: Whether to overwrite existing files
+        source: File to copy
+        destination: Target location
+        overwrite: If False and destination exists, creates unique filename
 
     Returns:
-        Path to the copied file
+        Path to the copied file (may differ from destination if renamed)
 
     Raises:
-        FileHandlingError: If the copy operation fails
+        FileHandlingError: For missing source file or failed copy operation
     """
     def _copy_file():
         src_path = Path(source)
@@ -254,16 +276,18 @@ def safe_copy_file(
 
 def safe_delete_file(file_path: Union[str, Path]) -> bool:
     """
-    Safely delete a file with proper error handling.
+    Delete a file with proper error handling.
+    
+    Safely attempts to delete a file with clear success/failure indication.
 
     Args:
-        file_path: Path to the file to delete
+        file_path: File to delete
 
     Returns:
-        True if the file was deleted, False if it didn't exist
+        True if file was deleted, False if file didn't exist
 
     Raises:
-        FileHandlingError: If the delete operation fails
+        FileHandlingError: If deletion fails (permissions, file in use, etc.)
     """
     def _delete_file():
         path = Path(file_path)

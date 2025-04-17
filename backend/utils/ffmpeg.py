@@ -1,20 +1,20 @@
 """
-FFmpeg interaction utilities.
+FFmpeg Interaction Utilities Module.
 
-This module provides a centralized interface for all interactions with FFmpeg, 
-handling its output, detecting and parsing crop parameters, tracking progress, 
-and ensuring proper error management.
+This module provides a comprehensive interface for interacting with FFmpeg and FFprobe,
+abstracting the complexities of command execution, output parsing, and error handling
+behind a clean API. It serves as the central point for all media processing operations.
 
-The module uses a class-based approach with the FFmpegManager class, while also
-providing standalone functions for backward compatibility. All functions are 
-thin wrappers around the corresponding FFmpegManager methods.
-
-Key functionality includes:
-- Checking FFmpeg availability
-- Running FFmpeg commands with proper error handling
+Key capabilities:
+- Command execution with standardized error handling
 - Real-time progress tracking for long-running operations
-- Media file analysis using FFprobe
+- Media file analysis and metadata extraction
 - Track extraction with customizable parameters
+
+Architecture:
+The module follows a class-based design with FFmpegManager as the primary implementation,
+while also providing function wrappers for backward compatibility. This dual approach
+facilitates gradual migration from function-based to object-oriented usage patterns.
 """
 
 import json
@@ -40,23 +40,29 @@ MODULE_NAME = "ffmpeg"
 
 class FFmpegManager:
     """
-    Manages interactions with FFmpeg and FFprobe.
+    Central manager for FFmpeg and FFprobe operations.
     
-    This class centralizes FFmpeg-related functionality, providing a consistent
-    interface for executing commands, parsing output, and handling errors.
-    All standalone functions in this module are thin wrappers around methods
-    of this class for backward compatibility.
+    This class centralizes all FFmpeg interactions, providing a consistent interface
+    for command execution, output parsing, and error handling. It abstracts away the
+    complexity of dealing with the FFmpeg command-line interface, ensuring reliable
+    media processing across the application.
+    
+    The implementation uses static methods to avoid unnecessary instantiation while
+    maintaining a logical grouping of related functionality. Error handling is
+    standardized to provide clear feedback when operations fail.
     """
     
     @staticmethod
     def check_availability() -> bool:
         """
-        Check if FFmpeg and FFprobe are available.
+        Verify that FFmpeg and FFprobe executables are available and functioning.
 
-        Verifies that both executables can be found and run successfully.
+        Attempts to locate and execute both FFmpeg and FFprobe to confirm they are
+        properly installed and accessible. This is a crucial prerequisite check 
+        before attempting any media operations.
 
         Returns:
-            bool: True if both FFmpeg and FFprobe are available, False otherwise.
+            True if both FFmpeg and FFprobe are available and working, False otherwise
         """
         try:
             ffmpeg_path = get_ffmpeg_path()
@@ -84,11 +90,15 @@ class FFmpegManager:
         """
         Ensure FFmpeg is available, raising an exception if not.
         
+        This method performs a fail-fast check to prevent operations from proceeding
+        when FFmpeg is not properly installed, providing a clear error rather than
+        mysterious failures later.
+        
         Args:
-            module: Optional module name for error reporting
+            module: Optional calling module name for targeted error reporting
             
         Raises:
-            DependencyError: If FFmpeg is not available
+            DependencyError: If FFmpeg is not available or functioning properly
         """
         if not FFmpegManager.check_availability():
             raise DependencyError(
@@ -100,13 +110,17 @@ class FFmpegManager:
     @staticmethod
     def get_executable_path(command: str) -> str:
         """
-        Get the appropriate executable path for FFmpeg or FFprobe.
+        Resolve the full path to FFmpeg or FFprobe executables.
+        
+        Centralizes executable path resolution logic to handle platform differences
+        and installation variations. This enables reliable command execution across
+        different environments.
         
         Args:
-            command: Command name ('ffmpeg' or 'ffprobe')
+            command: Command name, must be 'ffmpeg' or 'ffprobe'
             
         Returns:
-            Path to the executable
+            Absolute path to the requested executable
             
         Raises:
             ValueError: If command is neither 'ffmpeg' nor 'ffprobe'
@@ -126,20 +140,24 @@ class FFmpegManager:
         module: Optional[str] = None,
     ) -> Tuple[int, str, str]:
         """
-        Run an FFmpeg or FFprobe command and handle potential errors.
+        Execute an FFmpeg or FFprobe command with comprehensive error handling.
+
+        This method handles the details of command execution, including path resolution,
+        process management, and error handling. It provides a consistent interface
+        for running FFmpeg commands throughout the application.
 
         Args:
-            command: List of command arguments (including 'ffmpeg' or 'ffprobe' as first element)
-            check: Whether to raise an exception on non-zero exit codes
-            capture_output: Whether to capture and return command output
-            module: Module name for error reporting
+            command: Command line arguments as a list, with 'ffmpeg' or 'ffprobe' first
+            check: If True, raises an exception for non-zero exit codes
+            capture_output: Whether to capture and return stdout/stderr
+            module: Calling module name for contextualized error reporting
 
         Returns:
-            Tuple of (exit_code, stdout, stderr)
+            Tuple containing (exit_code, stdout_content, stderr_content)
 
         Raises:
             FFmpegError: If check=True and command returns non-zero exit code
-            DependencyError: If FFmpeg is not available
+            DependencyError: If FFmpeg is not available on the system
         """
         # Ensure FFmpeg is available
         FFmpegManager.ensure_available(module)
@@ -184,20 +202,22 @@ class FFmpegManager:
         """
         Run an FFmpeg command with real-time progress tracking.
 
-        This method parses FFmpeg output in real-time to provide progress updates.
+        This enhanced command execution method provides real-time progress updates
+        by parsing FFmpeg's output during execution. It enables features like
+        progress bars and responsive UI feedback during long-running operations.
 
         Args:
-            command: List of command arguments (including 'ffmpeg' as first element)
-            progress_callback: Function to call with progress updates (0-100)
-            module: Module name for error reporting
-            capture_output: Whether to capture and return command output
+            command: Command line arguments as a list, with 'ffmpeg' first
+            progress_callback: Function to call with progress percentage (0-100)
+            module: Calling module name for contextualized error reporting
+            capture_output: Whether to capture and return stdout/stderr
 
         Returns:
-            Tuple of (exit_code, stdout, stderr)
+            Tuple containing (exit_code, stdout_content, stderr_content)
 
         Raises:
-            FFmpegError: If command returns non-zero exit code
-            DependencyError: If FFmpeg is not available
+            FFmpegError: If command fails or returns non-zero exit code
+            DependencyError: If FFmpeg is not available on the system
         """
         # Ensure FFmpeg is available
         FFmpegManager.ensure_available(module)
@@ -291,18 +311,24 @@ class FFmpegManager:
     @staticmethod
     def _parse_progress_info(line: str, command: List[str], all_stderr: str = "") -> Optional[int]:
         """
-        Parse progress information from FFmpeg output.
+        Extract and calculate progress percentage from FFmpeg output.
         
-        This method extracts time or file size information from FFmpeg output
-        and converts it to a progress percentage.
+        This method uses multiple strategies to determine progress:
+        1. Extract time information from FFmpeg output
+        2. Find duration from metadata or command parameters
+        3. Calculate percentage based on time/duration ratio
+        4. Fall back to file size or fixed duration estimates when needed
+        
+        The multi-strategy approach ensures reasonable progress reporting across
+        different types of FFmpeg operations and output formats.
         
         Args:
-            line: Line of FFmpeg output containing progress info
-            command: Original command list for reference
+            line: Current line of FFmpeg output to parse
+            command: Original command list (to check for duration parameter)
             all_stderr: All stderr output collected so far (for duration extraction)
             
         Returns:
-            Progress percentage (0-100) or None if unable to determine
+            Progress percentage from 0-100, or None if progress can't be determined
         """
         try:
             # Try multiple time formats that FFmpeg might output
@@ -372,20 +398,22 @@ class FFmpegManager:
         file_path: Union[str, Path], module: Optional[str] = None
     ) -> Dict:
         """
-        Analyze a media file using FFprobe and return structured information.
+        Analyze a media file to extract comprehensive metadata.
 
-        This method runs FFprobe to extract detailed information about media
-        files, including stream information, formats, and metadata.
+        Uses FFprobe to interrogate the media file, extracting detailed information
+        about its format, streams, codecs, metadata, and other properties in a
+        structured JSON format. This provides the foundation for intelligent
+        track extraction and media processing operations.
 
         Args:
-            file_path: Path to the media file
-            module: Module name for error reporting
+            file_path: Path to the media file to analyze
+            module: Calling module name for contextualized error reporting
 
         Returns:
-            Dict containing media file information with streams and format data
+            Dictionary containing detailed media file information with format and streams data
 
         Raises:
-            FFmpegError: If FFprobe command fails
+            FFmpegError: If FFprobe fails to analyze the file
             FileHandlingError: If the file doesn't exist or can't be accessed
         """
         file_path = Path(file_path)
@@ -421,17 +449,21 @@ class FFmpegManager:
         file_path: Union[str, Path], module: Optional[str] = None
     ) -> Optional[float]:
         """
-        Get the duration of a media file in seconds.
+        Get the precise duration of a media file in seconds.
+
+        A specialized analysis function that extracts only the duration information
+        from a media file using a lightweight FFprobe query, providing a faster
+        alternative to full media analysis when only duration is needed.
 
         Args:
             file_path: Path to the media file
-            module: Module name for error reporting
+            module: Calling module name for contextualized error reporting
 
         Returns:
-            Duration in seconds or None if duration could not be determined
+            Duration in seconds as a float, or None if duration couldn't be determined
 
         Raises:
-            FFmpegError: If FFprobe fails
+            FFmpegError: If FFprobe fails to analyze the file
         """
         file_path = Path(file_path)
 
@@ -465,21 +497,23 @@ class FFmpegManager:
         progress_callback: Optional[Callable[[int], None]] = None,
     ) -> bool:
         """
-        Extract a specific track from a media file.
+        Extract a specific track from a media file into its own container.
 
-        This method extracts a single audio, subtitle, or video track from
-        a media file using FFmpeg.
+        This high-level method simplifies track extraction by combining command
+        generation with execution and progress tracking. It handles the details
+        of creating the correct FFmpeg command for the specified track type and
+        monitoring the extraction process.
 
         Args:
             input_file: Path to the input media file
             output_file: Path where the extracted track will be saved
-            track_id: ID of the track to extract
-            track_type: Type of track ('audio', 'subtitle', 'video')
-            module: Module name for error reporting
+            track_id: ID of the track to extract (0-based index)
+            track_type: Type of track ('audio', 'subtitle', or 'video')
+            module: Calling module name for contextualized error reporting
             progress_callback: Optional function to call with progress updates (0-100)
 
         Returns:
-            bool: True if extraction was successful
+            True if extraction was successful, False otherwise (with error logged)
 
         Raises:
             FFmpegError: If FFmpeg command fails
@@ -507,16 +541,18 @@ class FFmpegManager:
 
 
 # The following functions are provided for backward compatibility.
-# They are simple wrappers around the FFmpegManager static methods.
+# They are thin wrappers around the FFmpegManager static methods to maintain
+# the original function-based API while leveraging the improved implementation.
 
 def check_ffmpeg_availability() -> bool:
     """
-    Check if FFmpeg and FFprobe are available.
+    Check if FFmpeg and FFprobe are available on the system.
     
     Backward compatibility wrapper for FFmpegManager.check_availability().
+    This allows existing code to continue using the function-based API.
     
     Returns:
-        bool: True if both FFmpeg and FFprobe are available, False otherwise.
+        True if both FFmpeg and FFprobe are available and working
     """
     return FFmpegManager.check_availability()
 
@@ -527,15 +563,16 @@ def run_ffmpeg_command(
     module: Optional[str] = None,
 ) -> Tuple[int, str, str]:
     """
-    Run an FFmpeg or FFprobe command and handle potential errors.
+    Run an FFmpeg or FFprobe command with error handling.
     
     Backward compatibility wrapper for FFmpegManager.run_command().
+    This maintains the original function-based API for existing code.
     
     Args:
-        command: List of command arguments
-        check: Whether to raise an exception on non-zero exit codes
-        capture_output: Whether to capture and return command output
-        module: Module name for error reporting
+        command: Command line arguments as a list
+        check: Whether to raise an exception for non-zero exit codes
+        capture_output: Whether to capture and return stdout/stderr
+        module: Calling module name for error reporting
         
     Returns:
         Tuple of (exit_code, stdout, stderr)
@@ -551,11 +588,12 @@ def run_ffmpeg_command_with_progress(
     Run an FFmpeg command with real-time progress tracking.
     
     Backward compatibility wrapper for FFmpegManager.run_command_with_progress().
+    This maintains the original function-based API for existing code.
     
     Args:
-        command: List of command arguments
-        progress_callback: Function to call with progress updates
-        module: Module name for error reporting
+        command: Command line arguments as a list
+        progress_callback: Function to call with progress updates (0-100)
+        module: Calling module name for error reporting
         
     Returns:
         Tuple of (exit_code, stdout, stderr)
@@ -566,16 +604,17 @@ def analyze_media_file(
     file_path: Union[str, Path], module: Optional[str] = None
 ) -> Dict:
     """
-    Analyze a media file using FFprobe and return structured information.
+    Analyze a media file to extract detailed metadata.
     
     Backward compatibility wrapper for FFmpegManager.analyze_media_file().
+    This maintains the original function-based API for existing code.
     
     Args:
-        file_path: Path to the media file
-        module: Module name for error reporting
+        file_path: Path to the media file to analyze
+        module: Calling module name for error reporting
         
     Returns:
-        Dict containing media file information
+        Dictionary containing comprehensive media file information
     """
     return FFmpegManager.analyze_media_file(file_path, module)
 
@@ -586,13 +625,14 @@ def get_media_duration(
     Get the duration of a media file in seconds.
     
     Backward compatibility wrapper for FFmpegManager.get_media_duration().
+    This maintains the original function-based API for existing code.
     
     Args:
         file_path: Path to the media file
-        module: Module name for error reporting
+        module: Calling module name for error reporting
         
     Returns:
-        Duration in seconds or None if duration could not be determined
+        Duration in seconds as a float, or None if not determinable
     """
     return FFmpegManager.get_media_duration(file_path, module)
 
@@ -608,17 +648,18 @@ def extract_track(
     Extract a specific track from a media file.
     
     Backward compatibility wrapper for FFmpegManager.extract_track().
+    This maintains the original function-based API for existing code.
     
     Args:
         input_file: Path to the input media file
         output_file: Path where the extracted track will be saved
-        track_id: ID of the track to extract
-        track_type: Type of track ('audio', 'subtitle', 'video')
-        module: Module name for error reporting
-        progress_callback: Optional function to call with progress updates
+        track_id: ID of the track to extract (0-based index)
+        track_type: Type of track ('audio', 'subtitle', or 'video')
+        module: Calling module name for error reporting
+        progress_callback: Function to call with progress updates (0-100)
         
     Returns:
-        bool: True if extraction was successful
+        True if extraction was successful, False otherwise
     """
     return FFmpegManager.extract_track(
         input_file, output_file, track_id, track_type, module, progress_callback

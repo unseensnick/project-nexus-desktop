@@ -1,3 +1,16 @@
+/**
+ * A comprehensive interface for analyzing media files and configuring extraction settings.
+ * Adapts its UI between single-file and batch processing modes, displaying appropriate
+ * options and controls for each context.
+ *
+ * Key responsibilities:
+ * - Displaying media analysis results (track counts, track details)
+ * - Managing language selection for extraction
+ * - Configuring extraction options (track types, processing settings)
+ * - Handling batch processing parameters (worker threads)
+ * - Providing visual feedback during extraction operations
+ */
+
 import ProgressCard from "@/components/ProgressCard"
 import TrackSummaryCard from "@/components/TrackSummaryCard"
 import { Badge } from "@/components/ui/badge"
@@ -32,8 +45,30 @@ import {
 import React from "react"
 
 /**
- * Media file analysis and configuration tab
- * Refactored to use shadcn UI components directly
+ * Displays analysis results and extraction configuration options
+ *
+ * @param {Object} props
+ * @param {string} props.fileName - Name of the file being analyzed
+ * @param {Object} props.analyzed - Analysis results for single file mode
+ * @param {boolean} props.batchMode - Whether in batch processing mode
+ * @param {Object} props.batchAnalyzed - Analysis results for batch mode
+ * @param {Array<string>} props.availableLanguages - Languages available for extraction
+ * @param {Array<string>} props.selectedLanguages - Languages selected for extraction
+ * @param {Object} props.extractionOptions - Configuration options for extraction
+ * @param {number} props.maxWorkers - Number of worker threads for batch processing
+ * @param {Function} props.setMaxWorkers - Handler to update worker thread count
+ * @param {Function} props.toggleLanguage - Handler to toggle language selection
+ * @param {Function} props.toggleOption - Handler to toggle extraction options
+ * @param {Function} props.handleExtractTracks - Handler to start extraction process
+ * @param {boolean} props.isExtracting - Whether extraction is currently in progress
+ * @param {Function} props.setActiveTab - Handler to change the active tab
+ * @param {string} props.filePath - Path to the media file being processed
+ * @param {string} props.outputPath - Path where extracted files will be saved
+ * @param {Array<string>} props.inputPaths - Paths for batch processing
+ * @param {Object} props.fileProgressMap - Progress information for batch files
+ * @param {number} props.progressValue - Current extraction progress percentage
+ * @param {string} props.progressText - Text description of current extraction task
+ * @returns {JSX.Element} The rendered analysis tab
  */
 function AnalysisTab({
 	fileName,
@@ -57,14 +92,17 @@ function AnalysisTab({
 	progressValue,
 	progressText
 }) {
-	// Use a sensible range for worker count (1-16, capped at CPU count)
+	// Limit worker count based on available CPU cores with a sensible upper bound
 	const maxAllowedWorkers = Math.min(navigator.hardwareConcurrency || 4, 16)
 
-	// Determine which analysis result to use based on mode
+	// Select the appropriate analysis result based on current mode
 	const analysisResult = batchMode ? batchAnalyzed : analyzed
 	const displayName = batchMode ? `Batch (${inputPaths.length} files)` : fileName
 
-	// Function to determine the current extraction mode text
+	/**
+	 * Determines human-readable description of current extraction mode
+	 * @returns {string} Description of active extraction mode
+	 */
 	const getCurrentModeText = () => {
 		if (extractionOptions.audioOnly) return "Audio only"
 		if (extractionOptions.subtitleOnly) return "Subtitle only"
@@ -73,6 +111,7 @@ function AnalysisTab({
 		return "Audio and Subtitles" // Default mode
 	}
 
+	// Display placeholder when no analysis is available yet
 	if (!analysisResult) {
 		return (
 			<Card>
@@ -111,13 +150,14 @@ function AnalysisTab({
 					</CardDescription>
 				</CardHeader>
 				<CardContent className="space-y-6">
-					{/* Track summary cards - using shadcn Card component */}
+					{/* Track summary cards showing counts by type */}
 					<div className="grid grid-cols-3 gap-4 mb-6">
 						<TrackSummaryCard type="audio" count={analysisResult.audio_tracks} />
 						<TrackSummaryCard type="subtitle" count={analysisResult.subtitle_tracks} />
 						<TrackSummaryCard type="video" count={analysisResult.video_tracks} />
 					</div>
 
+					{/* Track list - only displayed in single file mode */}
 					{!batchMode && (
 						<div className="mb-6">
 							<div className="bg-gray-100 dark:bg-gray-800 py-2 px-3 font-medium rounded-t-lg">
@@ -201,6 +241,7 @@ function AnalysisTab({
 						</div>
 					)}
 
+					{/* Batch info - only displayed in batch mode */}
 					{batchMode && (
 						<div className="bg-muted p-4 rounded-lg">
 							<div className="flex items-center gap-2 mb-2">
@@ -227,7 +268,7 @@ function AnalysisTab({
 
 					<Separator />
 
-					{/* Language Selection Section */}
+					{/* Language selection interface with toggleable badges */}
 					<div className="mb-6">
 						<div className="bg-gray-100 dark:bg-gray-800 py-2 px-3 flex items-center gap-2 rounded-t-lg">
 							<Globe className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
@@ -258,7 +299,7 @@ function AnalysisTab({
 						</div>
 					</div>
 
-					{/* Extraction Options Section */}
+					{/* Extraction configuration options */}
 					<div className="mb-6">
 						<div className="bg-gray-100 dark:bg-gray-800 py-2 px-3 flex items-center gap-2 rounded-t-lg">
 							<SlidersHorizontal className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
@@ -266,7 +307,7 @@ function AnalysisTab({
 						</div>
 						<div className="border rounded-b-lg p-4 dark:border-gray-700">
 							<div className="space-y-4">
-								{/* Track Type Selection */}
+								{/* Track type selection with mutually exclusive options */}
 								<div>
 									<div className="mb-2 text-sm text-muted-foreground">
 										Track Type Selection
@@ -315,6 +356,7 @@ function AnalysisTab({
 									</div>
 								</div>
 
+								{/* Additional options for fine-tuning extraction behavior */}
 								<div>
 									<div className="mb-2 text-sm text-muted-foreground">
 										Additional Options
@@ -354,7 +396,7 @@ function AnalysisTab({
 						</div>
 					</div>
 
-					{/* Worker settings for batch mode */}
+					{/* Worker thread configuration - only shown in batch mode */}
 					{batchMode && (
 						<div className="mb-6">
 							<div className="bg-gray-100 dark:bg-gray-800 py-2 px-3 flex items-center gap-2 rounded-t-lg">
@@ -363,7 +405,7 @@ function AnalysisTab({
 							</div>
 							<div className="border rounded-b-lg p-4">
 								<div className="flex items-center gap-4">
-									{/* Modernized number input with integrated buttons */}
+									{/* Custom number input with increment/decrement buttons */}
 									<div className="relative flex items-center">
 										<input
 											id="worker-count"
@@ -419,7 +461,7 @@ function AnalysisTab({
 						</div>
 					)}
 
-					{/* Settings summary */}
+					{/* Configuration summary for user reference */}
 					<div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4 mb-6 border">
 						<div className="text-sm">
 							<div className="font-medium mb-2">Current Settings</div>
@@ -476,7 +518,7 @@ function AnalysisTab({
 				</CardFooter>
 			</Card>
 
-			{/* Progress card - only shown during extraction */}
+			{/* Progress visualization - only shown during active extraction */}
 			{isExtracting && (
 				<ProgressCard
 					progressText={progressText}

@@ -1,22 +1,54 @@
+/**
+ * Preload script that securely exposes main process APIs to the renderer process.
+ * Creates a bridge between Electron's main process capabilities (like file dialogs and
+ * Python integration) and the renderer process where the React UI runs.
+ *
+ * This script uses contextBridge to expose only the specific APIs needed by the UI
+ * without giving direct access to Node.js or Electron internals.
+ */
+
 import { electronAPI } from "@electron-toolkit/preload"
 import { contextBridge, ipcRenderer } from "electron"
 
 // Custom APIs for renderer
 const api = {}
 
-// Dialog API for renderer
+/**
+ * Dialog API for native file and directory selection
+ * Safely wraps Electron's dialog functionality for the renderer
+ */
 const dialogApi = {
+	/**
+	 * Opens a file selection dialog
+	 * @param {Object} options - Dialog configuration options
+	 * @returns {Promise<{canceled: boolean, filePaths: string[]}>} Dialog result
+	 */
 	openFileDialog: (options) => ipcRenderer.invoke("dialog:openFile", options),
+
+	/**
+	 * Opens a directory selection dialog
+	 * @param {Object} options - Dialog configuration options
+	 * @returns {Promise<{canceled: boolean, filePaths: string[]}>} Dialog result
+	 */
 	openDirectoryDialog: (options) => ipcRenderer.invoke("dialog:openDirectory", options),
+
+	/**
+	 * Opens a file save dialog
+	 * @param {Object} options - Dialog configuration options
+	 * @returns {Promise<{canceled: boolean, filePath: string}>} Dialog result
+	 */
 	saveFileDialog: (options) => ipcRenderer.invoke("dialog:saveFile", options)
 }
 
-// Python API for renderer
+/**
+ * Python API for interacting with Python backend processes
+ * Provides methods to analyze media files, extract tracks, and monitor progress
+ */
 const pythonApi = {
 	/**
 	 * Analyze a media file to identify tracks
 	 * @param {string} filePath - Path to the media file
-	 * @returns {Promise<Object>} - Analysis results
+	 * @returns {Promise<Object>} - Analysis results with track information
 	 */
 	analyzeFile: (filePath) => {
 		return ipcRenderer.invoke("python:analyze-file", filePath)
@@ -24,17 +56,18 @@ const pythonApi = {
 
 	/**
 	 * Extract tracks from a media file
-	 * @param {Object} options - Extraction options
-	 * @returns {Promise<Object>} - Extraction results
+	 * @param {Object} options - Extraction options including file path, languages, and track types
+	 * @returns {Promise<Object>} - Extraction results including success status and extracted tracks
 	 */
 	extractTracks: (options) => {
 		return ipcRenderer.invoke("python:extract-tracks", options)
 	},
 
 	/**
-	 * Register a callback for progress updates
+	 * Register a callback for progress updates during extraction
 	 * @param {string} operationId - Unique ID for the operation
-	 * @param {Function} callback - Progress callback function
+	 * @param {Function} callback - Function to call with progress updates
+	 * @returns {Function} - Unsubscribe function to remove the listener
 	 */
 	onProgress: (operationId, callback) => {
 		const channel = `python:progress:${operationId}`
@@ -63,8 +96,8 @@ const pythonApi = {
 
 	/**
 	 * Extract a specific track from a media file
-	 * @param {Object} options - Extraction options
-	 * @returns {Promise<Object>} - Extraction result
+	 * @param {Object} options - Extraction options including track ID and type
+	 * @returns {Promise<Object>} - Extraction result for the specific track
 	 */
 	extractSpecificTrack: (options) => {
 		return ipcRenderer.invoke("python:extract-specific-track", options)
@@ -72,8 +105,8 @@ const pythonApi = {
 
 	/**
 	 * Batch extract tracks from multiple media files
-	 * @param {Object} options - Batch extraction options
-	 * @returns {Promise<Object>} - Batch extraction results
+	 * @param {Object} options - Batch extraction options including file paths and worker count
+	 * @returns {Promise<Object>} - Batch extraction results and statistics
 	 */
 	batchExtract: (options) => {
 		return ipcRenderer.invoke("python:batch-extract", options)
@@ -81,19 +114,18 @@ const pythonApi = {
 
 	/**
 	 * Find media files in specified paths
-	 * @param {Array<string>} paths - Paths to search
-	 * @returns {Promise<Object>} - Found media files
+	 * @param {Array<string>} paths - Directories or file paths to search
+	 * @returns {Promise<Object>} - Object containing found media files
 	 */
 	findMediaFiles: (paths) => {
 		return ipcRenderer.invoke("python:find-media-files", paths)
 	}
 }
 
-// Use `contextBridge` APIs to expose Electron APIs to
-// renderer only if context isolation is enabled, otherwise
-// just add to the DOM global.
+// Expose APIs to renderer based on context isolation status
 if (process.contextIsolated) {
 	try {
+		// Expose the APIs through contextBridge when context isolation is enabled
 		contextBridge.exposeInMainWorld("electron", electronAPI)
 		contextBridge.exposeInMainWorld("api", api)
 		contextBridge.exposeInMainWorld("pythonApi", pythonApi)
@@ -102,6 +134,7 @@ if (process.contextIsolated) {
 		console.error(error)
 	}
 } else {
+	// Fall back to adding properties directly to window when context isolation is disabled
 	window.electron = electronAPI
 	window.api = api
 	window.pythonApi = pythonApi

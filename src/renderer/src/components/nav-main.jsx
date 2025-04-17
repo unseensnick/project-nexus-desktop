@@ -1,3 +1,10 @@
+/**
+ * Main navigation component that creates a collapsible, hierarchical navigation menu.
+ * Renders a list of menu items with optional nested subitems that expand/collapse.
+ *
+ * Uses the Shadcn UI Sidebar and Collapsible components for consistent styling and behavior.
+ */
+
 "use client"
 
 import { ChevronRight } from "lucide-react"
@@ -14,6 +21,17 @@ import {
 	SidebarMenuSubItem
 } from "@/components/ui/sidebar"
 
+/**
+ * Renders a hierarchical navigation menu with collapsible sections
+ *
+ * @param {Object} props
+ * @param {Array} props.items - Navigation items to display
+ * @param {string} props.items[].title - Item title
+ * @param {React.ComponentType} props.items[].icon - Item icon component
+ * @param {boolean} props.items[].isActive - Whether item is currently active
+ * @param {Array} props.items[].items - Optional nested subitems
+ * @returns {JSX.Element} The rendered navigation component
+ */
 export function NavMain({ items }) {
 	return (
 		<SidebarGroup>

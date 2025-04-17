@@ -1,10 +1,16 @@
 """
 Argument Handling Utilities for Project Nexus.
 
-This module provides utilities for parsing, validating, and preparing
-function arguments, particularly for the bridge between JavaScript and Python.
-It handles JSON parsing, command line argument extraction, and progress
-callback integration.
+Provides the bridge between user-facing frontends (JavaScript, CLI) and the Python core 
+functionality. Handles parsing, validation, transformation, and enrichment of arguments 
+from different sources to ensure they meet the expectations of the backend functions.
+
+Key responsibilities:
+- Converting between JavaScript and Python parameter formats
+- Handling JSON serialization/deserialization
+- Adding progress tracking capabilities to function calls
+- Validating required parameters
+- Parsing command-line arguments for CLI operations
 """
 
 import json
@@ -22,26 +28,33 @@ MODULE_NAME = "argument_handler"
 
 class ArgumentHandler:
     """
-    Handle preparation and parsing of function arguments.
+    Static handler for argument parsing and preparation.
     
-    This class provides static methods for parsing command-line arguments,
-    converting JSON to Python objects, and preparing arguments for function
-    execution, including adding progress callbacks when appropriate.
+    Provides utility methods for processing command-line arguments, 
+    parsing JSON, and preparing function arguments with additional
+    capabilities like progress tracking. Used primarily by the 
+    bridge module to facilitate frontend-backend communication.
     """
     
     @staticmethod
     def parse_command_line_args(args: List[str]) -> Tuple[str, str, Optional[str]]:
         """
-        Parse command line arguments for bridge operations.
+        Extract function name, arguments, and operation ID from CLI args.
+        
+        Processes raw command line arguments list (typically sys.argv)
+        into structured components for the bridge to use.
         
         Args:
-            args: Command line arguments (sys.argv)
+            args: Command line arguments array
             
         Returns:
-            Tuple of (function_name, arguments_json, operation_id)
+            Tuple containing:
+            - function_name: Target Python function to call
+            - arguments_json: JSON string of arguments
+            - operation_id: Optional unique ID for tracking (may be None)
             
         Raises:
-            SystemExit: If insufficient arguments are provided
+            SystemExit: If required arguments are missing
         """
         # Check if we have the required arguments
         if len(args) < 3:
@@ -63,17 +76,19 @@ class ArgumentHandler:
     @staticmethod
     def parse_arguments_json(arguments_json: str) -> Union[Dict, List, Any]:
         """
-        Parse JSON arguments into Python objects.
+        Parse JSON string into Python data structures.
+        
+        Converts JSON-formatted argument string into appropriate Python
+        objects (dictionaries, lists, or scalar values) for function calls.
         
         Args:
-            arguments_json: JSON string containing function arguments
+            arguments_json: JSON-formatted string containing arguments
             
         Returns:
-            Parsed arguments as Python objects (dict, list, or scalar value)
+            Parsed Python object representing the arguments
             
         Raises:
-            SystemExit: If the JSON is invalid
-            json.JSONDecodeError: If JSON parsing fails
+            SystemExit: On JSON parsing failure
         """
         try:
             arguments = json.loads(arguments_json)
@@ -92,19 +107,19 @@ class ArgumentHandler:
         operation_id: Optional[str] = None
     ) -> Any:
         """
-        Prepare arguments for function execution, including progress tracking.
+        Enhance function arguments with progress tracking.
         
-        Adds a progress callback to the arguments if the function accepts one
-        and an operation_id is provided. Works with both positional (list) and
-        keyword (dict) argument styles.
+        Inspects the target function signature and automatically adds
+        a progress callback if appropriate and an operation_id is provided.
+        Handles both positional (list) and keyword (dict) argument styles.
         
         Args:
-            function: The function to be called
-            arguments: Arguments to pass to the function
-            operation_id: Optional operation ID for progress tracking
+            function: Target function that will receive the arguments
+            arguments: Original arguments (list or dict)
+            operation_id: Optional tracking ID for progress reporting
             
         Returns:
-            Prepared arguments for the function call
+            Enhanced arguments with progress callback included if applicable
         """
         # If no operation_id or function doesn't accept progress_callback, return arguments as-is
         if not operation_id or "progress_callback" not in function.__code__.co_varnames:
@@ -129,15 +144,18 @@ class ArgumentHandler:
         progress_callback: Callable
     ) -> List:
         """
-        Add progress callback to list-style arguments.
+        Insert progress callback into positional arguments list.
+        
+        Determines the correct position for the callback parameter
+        and inserts it into the arguments list at that position.
         
         Args:
-            function: The function to be called
-            arguments: List of arguments to modify
-            progress_callback: Progress callback function to add
+            function: Target function
+            arguments: Original positional arguments list
+            progress_callback: Callback function to insert
             
         Returns:
-            Modified list of arguments with the progress callback
+            Updated arguments list with callback inserted
         """
         # Find the position of progress_callback in function arguments
         arg_names = function.__code__.co_varnames[:function.__code__.co_argcount]
@@ -161,16 +179,21 @@ class ArgumentHandler:
 
 def convert_js_to_python_params(params: Dict) -> Dict:
     """
-    Convert JavaScript camelCase parameter names to Python snake_case.
+    Transform JavaScript convention parameters to Python convention.
     
-    This is particularly useful for the bridge to convert params received
-    from JavaScript into the format expected by Python functions.
+    Converts camelCase parameter names (JavaScript convention) to 
+    snake_case (Python convention). Handles nested dictionaries and
+    lists containing dictionaries recursively.
     
     Args:
         params: Dictionary with camelCase keys
         
     Returns:
         Dictionary with snake_case keys
+    
+    Examples:
+        >>> convert_js_to_python_params({"userId": 123, "fileInfo": {"fileName": "test.mp4"}})
+        {"user_id": 123, "file_info": {"file_name": "test.mp4"}}
     """
     if not params or not isinstance(params, dict):
         return params
@@ -198,14 +221,17 @@ def convert_js_to_python_params(params: Dict) -> Dict:
 
 def parse_list_param(param: str, delimiter: str = ',') -> List[str]:
     """
-    Parse a comma-separated parameter into a list of strings.
+    Split a delimited string into a list of trimmed values.
+    
+    Commonly used for comma-separated lists in command-line interfaces
+    or configuration files. Handles empty input and trims whitespace.
     
     Args:
-        param: Comma-separated string
-        delimiter: Delimiter character (default: ',')
+        param: Delimited string (e.g., "en,fr,de")
+        delimiter: Separator character (default: comma)
         
     Returns:
-        List of trimmed strings
+        List of trimmed values, empty list for empty input
     """
     if not param:
         return []
@@ -215,14 +241,19 @@ def parse_list_param(param: str, delimiter: str = ',') -> List[str]:
 
 def validate_required_params(params: Dict, required_keys: List[str]) -> Tuple[bool, Optional[str]]:
     """
-    Validate that all required parameters are present.
+    Check if all required parameters are present in a dictionary.
+    
+    Validates that a parameters dictionary contains all the specified
+    required keys with non-None values.
     
     Args:
-        params: Dictionary of parameters
-        required_keys: List of required parameter keys
+        params: Parameters dictionary to validate
+        required_keys: List of keys that must be present and non-None
         
     Returns:
-        Tuple of (is_valid, error_message)
+        Tuple containing:
+        - is_valid: True if all required parameters are present
+        - error_message: Description of missing parameters or None if valid
     """
     missing = [key for key in required_keys if key not in params or params[key] is None]
     

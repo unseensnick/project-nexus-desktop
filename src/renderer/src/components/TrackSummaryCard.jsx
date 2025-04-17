@@ -1,12 +1,24 @@
+/**
+ * A visual indicator component that displays track counts by type.
+ * Features color-coded styling based on track type (audio, subtitle, video)
+ * with appropriate icons and responsive layout for different screen sizes.
+ */
+
 import { Headphones, Subtitles, Video } from "lucide-react"
 import React from "react"
 
 /**
- * Reusable Track Summary Card component with design matching the original from the analysis tab
- * More compact design with richer colors and no gaps between card top and header
+ * Displays a count of tracks for a specific media type with appropriate styling
+ *
+ * @param {Object} props
+ * @param {string} props.type - Type of track ('audio', 'subtitle', or 'video')
+ * @param {number} props.count - Number of tracks to display
+ * @returns {JSX.Element} The rendered track summary card
  */
 function TrackSummaryCard({ type, count }) {
-	// Define styling and content based on track type
+	// Configuration map for styling and content based on track type
+	// This approach enables consistent styling across different track types
+	// while allowing for easy customization and extension
 	const config = {
 		audio: {
 			icon: Headphones,
@@ -40,10 +52,10 @@ function TrackSummaryCard({ type, count }) {
 		}
 	}
 
-	// Default to audio if type is invalid
+	// Use audio as fallback for invalid track types
 	const trackType = config[type] ? type : "audio"
 
-	// Get configuration for the specified track type
+	// Extract configuration for the specified track type
 	const {
 		icon: Icon,
 		title,

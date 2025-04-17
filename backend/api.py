@@ -1,9 +1,17 @@
 """
 API Module for Project Nexus.
 
-This module provides the endpoints that the Electron application will call
-to interact with the Python backend. It acts as the bridge between the
-frontend and backend services.
+This module serves as the interface layer between the Electron frontend and the
+Python backend services. It provides standardized endpoints that handle converting
+between frontend requests and the core functionality provided by the media analyzer
+and extraction services.
+
+Key responsibilities:
+- Exposing API endpoints for all major functions
+- Converting between frontend data formats and backend objects
+- Centralizing error handling and response formatting
+- Ensuring type safety and serialization
+- Managing service dependencies
 """
 
 import logging
@@ -24,9 +32,17 @@ from utils.error_handler import (
 from utils.file_utils import find_media_files
 
 
-# Set up logging
+# Set up module-specific logging
 def setup_logging():
-    """Configure logging for the API module."""
+    """
+    Configure the logging system for the API module.
+    
+    Creates a dedicated log file for API operations to facilitate debugging
+    and troubleshooting of frontend-backend interactions.
+    
+    Returns:
+        Logger: Configured logger instance for the API module
+    """
     log_dir = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "logs"
     )
@@ -43,34 +59,63 @@ def setup_logging():
 
 logger = setup_logging()
 
-# Initialize services as module-level singletons
+# Initialize core services as module-level singletons for better performance
+# and to maintain state across API calls
 extraction_service = ExtractionService()
 media_analyzer = MediaAnalyzer()
 
 
 class APIHandler:
     """
-    Handles API requests from the frontend.
+    Handler for all frontend API requests.
     
-    This class provides methods that correspond to the API endpoints
-    exposed to the frontend application.
+    This class implements the controller layer of the application, providing
+    a clean interface between the frontend and backend services. Each method
+    corresponds to a specific API endpoint that the frontend can call.
+    
+    The handler follows these principles:
+    - Static methods only - stateless request handling
+    - Consistent error management via safe_execute
+    - Standardized response format for all endpoints
+    - Type validation of inputs and outputs
+    
+    Usage:
+        This class is not instantiated directly. Its static methods are
+        exposed as module-level functions for the bridge module to call.
     """
     
     @staticmethod
     def analyze_file(file_path: str) -> Dict:
         """
-        Analyze a media file and return information about its tracks.
+        Analyze a media file to identify and categorize its tracks.
+
+        This endpoint examines a media file and extracts detailed information
+        about all audio, subtitle, and video tracks it contains, including
+        language detection and codec identification.
 
         Args:
-            file_path: Path to the media file
+            file_path: Path to the media file to analyze
 
         Returns:
-            Dictionary containing track information
+            Dictionary containing track information with the following structure:
+            {
+                "success": bool,
+                "tracks": List of track dictionaries,
+                "audio_tracks": Count of audio tracks,
+                "subtitle_tracks": Count of subtitle tracks,
+                "video_tracks": Count of video tracks,
+                "languages": Dictionary of available languages by track type
+            }
+            
+        Error responses:
+            Returns a dictionary with "success": False and "error" message
+            if analysis fails.
         """
         MODULE_NAME = "api_handler.analyze_file"
         logger.info(f"Analyzing file: {file_path}")
         
         def _analyze_file():
+            # Use MediaAnalyzer to extract track information
             tracks = media_analyzer.analyze_file(Path(file_path))
 
             # Convert track objects to dictionaries for JSON serialization
@@ -100,6 +145,7 @@ class APIHandler:
             }
         
         try:
+            # Use safe_execute to provide consistent error handling
             return safe_execute(
                 _analyze_file,
                 module_name=MODULE_NAME,
@@ -126,21 +172,40 @@ class APIHandler:
         progress_callback: Optional[Callable] = None,
     ) -> Dict:
         """
-        Extract tracks from a media file.
+        Extract selected tracks from a media file based on specified parameters.
+
+        This endpoint handles the extraction of multiple tracks from a media file
+        according to user preferences like language and track type filters.
 
         Args:
-            file_path: Path to the media file
+            file_path: Path to the source media file
             output_dir: Directory to save extracted tracks
-            languages: List of language codes to extract
-            audio_only: Extract only audio tracks
-            subtitle_only: Extract only subtitle tracks
-            include_video: Include video tracks in extraction
-            video_only: Extract only video tracks
-            remove_letterbox: Remove letterboxing from video
-            progress_callback: Optional callback function for progress updates
+            languages: List of language codes to extract (ISO 639-2)
+            audio_only: Extract only audio tracks if True
+            subtitle_only: Extract only subtitle tracks if True
+            include_video: Include video tracks in extraction if True
+            video_only: Extract only video tracks if True (takes precedence)
+            remove_letterbox: Remove letterboxing from extracted video if True
+            progress_callback: Optional callback for real-time progress updates
 
         Returns:
-            Dictionary with extraction results
+            Dictionary with extraction results containing:
+            {
+                "success": bool,
+                "file": Source file path,
+                "extracted_audio": Count of audio tracks extracted,
+                "extracted_subtitles": Count of subtitle tracks extracted,
+                "extracted_video": Count of video tracks extracted,
+                "error": Error message if any
+            }
+            
+        Note:
+            The extraction parameters can create different extraction modes:
+            - Default: Audio and subtitles (no video)
+            - Audio only: Set audio_only=True
+            - Subtitle only: Set subtitle_only=True
+            - Video only: Set video_only=True
+            - All tracks: Set include_video=True
         """
         MODULE_NAME = "api_handler.extract_tracks"
         logger.info(f"Extracting tracks from: {file_path}")
@@ -158,7 +223,7 @@ class APIHandler:
                 progress_callback,
             )
 
-            # Ensure the result is serializable
+            # Ensure the result is serializable for JSON
             return {
                 "success": result["success"],
                 "file": result["file"],
@@ -192,18 +257,32 @@ class APIHandler:
         progress_callback: Optional[Callable] = None,
     ) -> Dict:
         """
-        Extract a specific track from a media file.
+        Extract a single specific track from a media file.
+
+        This endpoint allows precise extraction of an individual track when
+        the track ID is known, typically after analyzing the file.
 
         Args:
-            file_path: Path to the media file
+            file_path: Path to the source media file
             output_dir: Directory to save the extracted track
-            track_type: Type of track ('audio', 'subtitle', 'video')
-            track_id: ID of the track to extract
-            remove_letterbox: Remove letterboxing from video
-            progress_callback: Optional callback function for progress updates
+            track_type: Type of track to extract ('audio', 'subtitle', 'video')
+            track_id: ID of the specific track to extract
+            remove_letterbox: Remove letterboxing from video if True
+            progress_callback: Optional callback for real-time progress updates
 
         Returns:
-            Dictionary with extraction result
+            Dictionary with extraction result containing:
+            {
+                "success": bool,
+                "track_type": Type of extracted track,
+                "track_id": ID of extracted track,
+                "output_path": Path to the extracted file,
+                "error": Error message if any
+            }
+            
+        Note:
+            This endpoint is primarily used for targeted extraction when
+            the user selects a specific track from the UI after analysis.
         """
         MODULE_NAME = "api_handler.extract_specific_track"
         logger.info(f"Extracting {track_type} track {track_id} from: {file_path}")
@@ -218,7 +297,7 @@ class APIHandler:
                 progress_callback,
             )
 
-            # Convert Path to string for serialization
+            # Convert Path to string for JSON serialization
             if result["success"] and result["output_path"]:
                 result["output_path"] = str(result["output_path"])
 
@@ -255,23 +334,41 @@ class APIHandler:
         max_workers: int = 1,
     ) -> Dict:
         """
-        Extract tracks from multiple media files in batch.
+        Extract tracks from multiple media files in parallel.
+
+        This endpoint processes a batch of files concurrently, applying the
+        same extraction parameters to each file. It supports parallel processing
+        with configurable worker threads for performance optimization.
 
         Args:
-            input_paths: List of file or directory paths
-            output_dir: Base directory for extracted tracks
-            languages: List of language codes to extract
-            audio_only: Extract only audio tracks
-            subtitle_only: Extract only subtitle tracks
-            include_video: Include video tracks in extraction
-            video_only: Extract only video tracks
-            remove_letterbox: Remove letterboxing from video
-            use_org_structure: Organize output using parsed filenames
-            progress_callback: Optional callback function for progress updates
-            max_workers: Maximum number of concurrent workers
+            input_paths: List of file or directory paths to process
+            output_dir: Base directory for saving extracted tracks
+            languages: List of language codes to extract (ISO 639-2)
+            audio_only: Extract only audio tracks if True
+            subtitle_only: Extract only subtitle tracks if True
+            include_video: Include video tracks in extraction if True
+            video_only: Extract only video tracks if True (takes precedence)
+            remove_letterbox: Remove letterboxing from extracted video if True
+            use_org_structure: Create organized subdirectories for output if True
+            progress_callback: Optional callback for real-time progress updates
+            max_workers: Maximum number of concurrent extraction processes
 
         Returns:
-            Dictionary with batch extraction results
+            Dictionary with batch extraction results containing:
+            {
+                "success": bool,
+                "total_files": Total files processed,
+                "processed_files": Number of files attempted,
+                "successful_files": Number of files successfully processed,
+                "failed_files": Number of files that failed,
+                "extracted_tracks": Total number of tracks extracted,
+                "failed_files_list": List of (file_path, error) tuples for failures
+            }
+            
+        Note:
+            The max_workers parameter should be set based on available system
+            resources. Each worker consumes significant CPU and I/O bandwidth.
+            A value of 1 disables parallelism for reliable sequential processing.
         """
         MODULE_NAME = "api_handler.batch_extract"
         logger.info(f"Batch extracting from {len(input_paths)} paths")
@@ -291,8 +388,8 @@ class APIHandler:
                 max_workers,
             )
 
-            # Ensure the result is serializable
-            # Convert file paths to strings in failed_files_list
+            # Ensure the result is serializable for JSON
+            # Convert Path objects to strings for failed_files_list
             return {
                 "success": True,
                 "total_files": result["total_files"],
@@ -323,13 +420,25 @@ class APIHandler:
     @staticmethod
     def find_media_files_in_paths(paths: List[str]) -> Dict:
         """
-        Find all media files in the given paths.
+        Find all media files within the specified directories or paths.
+        
+        This utility endpoint scans directories recursively to identify
+        all valid media files for processing.
 
         Args:
-            paths: List of file or directory paths
+            paths: List of file or directory paths to scan
 
         Returns:
-            Dictionary with list of found media files
+            Dictionary with scan results containing:
+            {
+                "success": bool,
+                "files": List of found media file paths as strings,
+                "count": Number of media files found
+            }
+            
+        Note:
+            This endpoint is typically used when the user selects directories
+            for batch processing to enumerate the actual media files within.
         """
         MODULE_NAME = "api_handler.find_media_files"
         
@@ -354,6 +463,7 @@ class APIHandler:
 
 
 # Expose API methods as module-level functions for backward compatibility
+# and easier discovery by the bridge module
 analyze_file = APIHandler.analyze_file
 extract_tracks = APIHandler.extract_tracks
 extract_specific_track = APIHandler.extract_specific_track

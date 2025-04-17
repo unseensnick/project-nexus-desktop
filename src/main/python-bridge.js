@@ -1,9 +1,10 @@
 /**
- * Python Bridge for Project Nexus
+ * Bidirectional communication layer between Electron and Python processes.
  *
- * This module provides a unified interface for communication between the Electron
- * application and Python backend, handling process spawning, data exchange, and
- * progress tracking.
+ * This module creates a reliable bridge for executing Python functions from JavaScript,
+ * handling data serialization, process lifecycle management, and progress reporting.
+ * It establishes IPC channels for different operation types (analysis, extraction),
+ * standardizes error handling, and provides parameter conversion between language conventions.
  */
 
 import { ipcMain } from "electron"
@@ -13,11 +14,14 @@ import { v4 as uuidv4 } from "uuid"
 import PythonProcessManager from "./python-process-manager"
 
 /**
- * Manages communication with the Python backend
+ * Manages bidirectional communication with Python backend processes
+ *
+ * Creates a standardized interface for invoking Python functions, handling results,
+ * processing real-time progress updates, and managing error conditions.
  */
 class PythonBridge {
 	/**
-	 * Initialize the Python bridge
+	 * Creates a new Python bridge instance with its own process manager
 	 */
 	constructor() {
 		this.processManager = new PythonProcessManager()
@@ -25,17 +29,18 @@ class PythonBridge {
 	}
 
 	/**
-	 * Initialize the bridge with paths and main window
+	 * Sets up the bridge with required paths and window reference
 	 *
-	 * @param {electron.BrowserWindow} mainWindow - The main application window
-	 * @returns {PythonBridge} - This instance for chaining
+	 * @param {electron.BrowserWindow} mainWindow - Reference to main application window for IPC
+	 * @returns {PythonBridge} - Current instance for method chaining
+	 * @throws {Error} If bridge script cannot be found
 	 */
 	initialize(mainWindow) {
 		this.mainWindow = mainWindow
 		this.pythonPath = this._getPythonPath()
 		this.bridgeScriptPath = this._getBridgeScriptPath()
 
-		// Check if the bridge script exists
+		// Verify script exists before attempting to use it
 		if (!fs.existsSync(this.bridgeScriptPath)) {
 			console.error(
 				`${this._module}: Python bridge script not found at: ${this.bridgeScriptPath}`
@@ -43,7 +48,7 @@ class PythonBridge {
 			throw new Error(`Python bridge script not found at: ${this.bridgeScriptPath}`)
 		}
 
-		// Set up IPC handlers
+		// Register IPC handlers for frontend API calls
 		this.setupHandlers()
 
 		console.log(`${this._module}: Initialized with Python: ${this.pythonPath}`)
@@ -53,8 +58,12 @@ class PythonBridge {
 	}
 
 	/**
-	 * Get the Python executable path based on environment
-	 * @returns {string} Path to the Python executable
+	 * Determines appropriate Python executable path based on environment
+	 *
+	 * Uses bundled Python in production builds and system Python in development,
+	 * with platform-specific defaults and environment variable overrides.
+	 *
+	 * @returns {string} Path to Python executable
 	 */
 	_getPythonPath() {
 		const isProd = process.env.NODE_ENV === "production"
@@ -63,13 +72,13 @@ class PythonBridge {
 			// In production, use bundled Python
 			return path.join(process.resourcesPath, "python", "python")
 		} else {
-			// In development, search for Python executable
+			// In development, check for environment variable override first
 			const pythonPathEnv = process.env.PYTHON_PATH
 			if (pythonPathEnv) {
 				return pythonPathEnv
 			}
 
-			// Default Python executable name based on platform
+			// Fall back to platform-specific defaults
 			if (process.platform === "win32") {
 				return "python" // On Windows, just use 'python'
 			} else {
@@ -79,8 +88,9 @@ class PythonBridge {
 	}
 
 	/**
-	 * Get the path to the Python bridge script
-	 * @returns {string} Path to the Python bridge script
+	 * Determines path to Python bridge script based on environment
+	 *
+	 * @returns {string} Path to bridge.py script
 	 */
 	_getBridgeScriptPath() {
 		const isProd = process.env.NODE_ENV === "production"
@@ -93,35 +103,38 @@ class PythonBridge {
 	}
 
 	/**
-	 * Set up IPC handlers for Python communication
+	 * Registers IPC handlers for Python function calls
 	 */
 	setupHandlers() {
 		this._setupRealHandlers()
 	}
 
 	/**
-	 * Execute a Python function through the bridge
+	 * Executes a Python function via bridge script with JSON-serialized arguments
 	 *
-	 * @param {string} functionName - Name of the Python function to call
-	 * @param {Array|Object} args - Arguments to pass to the function
-	 * @param {string} operationId - Unique ID for the operation (for progress tracking)
-	 * @returns {Promise<any>} - Result from the Python function
+	 * Spawns a Python process, handles stdout/stderr, parses results, and
+	 * forwards progress updates to the renderer via IPC.
+	 *
+	 * @param {string} functionName - Name of Python function to execute
+	 * @param {Array|Object} args - Arguments to pass to the Python function
+	 * @param {string} [operationId] - Optional tracking ID for long-running operations
+	 * @returns {Promise<any>} Parsed result from the Python function
 	 */
 	executePythonFunction(functionName, args, operationId = null) {
 		return new Promise((resolve, reject) => {
 			const opId = operationId || uuidv4()
 
 			try {
-				// Ensure args is always an array or object, never a primitive
+				// Normalize arguments to ensure proper serialization
 				const formattedArgs =
 					typeof args !== "object" || args === null
 						? [args] // Wrap primitive values in an array
 						: args
 
-				// Convert arguments to JSON string
+				// Convert arguments to JSON string for bridge script
 				const argsJson = JSON.stringify(formattedArgs)
 
-				// Spawn Python process
+				// Spawn Python process with bridge script
 				const pythonProcess = this.processManager.spawnProcess(
 					this.pythonPath,
 					this.bridgeScriptPath,
@@ -131,7 +144,7 @@ class PythonBridge {
 				let result = ""
 				let errorOutput = ""
 
-				// Handle stdout (for normal output and progress updates)
+				// Process stdout for both results and progress updates
 				pythonProcess.stdout.on("data", (data) => {
 					try {
 						const dataStr = data.toString()
@@ -139,18 +152,20 @@ class PythonBridge {
 						// Debug what we're receiving from Python
 						console.log(`${this._module}: Raw Python stdout: "${dataStr}"`)
 
-						// Handle progress updates separately from other output
+						// Split by newlines to handle multiple messages in one chunk
 						const lines = dataStr.split("\n")
 
 						for (const line of lines) {
 							if (line.trim() === "") continue
 
+							// Special handling for progress update messages
 							if (line.startsWith("PROGRESS:")) {
 								try {
 									const progressJson = line.substring(9).trim()
 									console.log(`${this._module}: Progress data: ${progressJson}`)
 									const progressData = JSON.parse(progressJson)
-									// Make sure we have a valid object before sending to UI
+
+									// Forward valid progress updates to renderer
 									if (progressData && typeof progressData === "object") {
 										this.mainWindow.webContents.send(
 											`python:progress:${opId}`,
@@ -166,7 +181,7 @@ class PythonBridge {
 									)
 								}
 							} else {
-								// Regular output data
+								// Accumulate regular output for final result
 								result += line + "\n"
 							}
 						}
@@ -176,14 +191,14 @@ class PythonBridge {
 					}
 				})
 
-				// Handle stderr
+				// Collect error output for diagnostics
 				pythonProcess.stderr.on("data", (data) => {
 					const errorStr = data.toString()
 					errorOutput += errorStr
 					console.error(`${this._module}: Python stderr: ${errorStr}`)
 				})
 
-				// Handle process completion
+				// Process completion handler
 				pythonProcess.on("close", (code) => {
 					if (code === 0) {
 						try {
@@ -191,6 +206,7 @@ class PythonBridge {
 							result = result.trim()
 							console.log(`${this._module}: Final result string: "${result}"`)
 
+							// Parse JSON result from Python
 							const parsedResult = JSON.parse(result)
 							resolve(parsedResult)
 						} catch (err) {
@@ -208,7 +224,7 @@ class PythonBridge {
 					}
 				})
 
-				// Handle process error
+				// Handle process start errors
 				pythonProcess.on("error", (err) => {
 					console.error(`${this._module}: Failed to start Python process:`, err)
 					reject(new Error(`Failed to start Python process: ${err.message}`))
@@ -222,10 +238,13 @@ class PythonBridge {
 	}
 
 	/**
-	 * Convert JavaScript camelCase to Python snake_case for parameter names
+	 * Converts JavaScript camelCase parameters to Python snake_case format
 	 *
-	 * @param {Object} params - Object with camelCase keys
-	 * @returns {Object} - Object with snake_case keys
+	 * Handles nested objects recursively to ensure complete conversion
+	 * of complex parameter structures.
+	 *
+	 * @param {Object} params - Object with JavaScript camelCase keys
+	 * @returns {Object} Equivalent object with Python snake_case keys
 	 */
 	_convertToPythonParams(params) {
 		if (!params || typeof params !== "object" || Array.isArray(params)) {
@@ -238,7 +257,7 @@ class PythonBridge {
 			// Convert camelCase to snake_case
 			const snakeKey = key.replace(/([A-Z])/g, "_$1").toLowerCase()
 
-			// Handle nested objects recursively
+			// Process nested objects recursively
 			if (
 				typeof params[key] === "object" &&
 				!Array.isArray(params[key]) &&
@@ -254,10 +273,13 @@ class PythonBridge {
 	}
 
 	/**
-	 * Set up real IPC handlers for Python communication
+	 * Registers IPC handlers for Python operations
+	 *
+	 * Creates handlers for file analysis, track extraction, batch operations,
+	 * and media file discovery.
 	 */
 	_setupRealHandlers() {
-		// Analyze media file
+		// Media file analysis handler
 		ipcMain.handle("python:analyze-file", async (_, filePath) => {
 			console.log(`${this._module}: Analyzing file: ${filePath}`)
 			try {
@@ -268,21 +290,21 @@ class PythonBridge {
 			}
 		})
 
-		// Extract tracks
+		// Track extraction handler
 		ipcMain.handle("python:extract-tracks", async (_, options) => {
 			console.log(`${this._module}: Extracting tracks from: ${options.filePath}`)
 
-			// Debug the options we're receiving from the UI
+			// Log received options for debugging
 			console.log(`${this._module}: Original extraction options from UI:`, options)
 
 			try {
-				// Make a copy of options without operationId for Python
+				// Separate operation ID from other parameters
 				const { operationId, ...optionsForPython } = options
 
-				// Convert camelCase JavaScript params to snake_case Python params
+				// Convert parameter naming convention
 				const pythonOptions = this._convertToPythonParams(optionsForPython)
 
-				// Debug the options we're sending to Python
+				// Log converted options for debugging
 				console.log(`${this._module}: Converted Python options:`, pythonOptions)
 
 				return await this.executePythonFunction(
@@ -296,17 +318,17 @@ class PythonBridge {
 			}
 		})
 
-		// Extract specific track
+		// Specific track extraction handler
 		ipcMain.handle("python:extract-specific-track", async (_, options) => {
 			console.log(
 				`${this._module}: Extracting ${options.trackType} track ${options.trackId} from: ${options.filePath}`
 			)
 
 			try {
-				// Make a copy of options without operationId for Python
+				// Separate operation ID from other parameters
 				const { operationId, ...optionsForPython } = options
 
-				// Convert camelCase JavaScript params to snake_case Python params
+				// Convert parameter naming convention
 				const pythonOptions = this._convertToPythonParams(optionsForPython)
 
 				return await this.executePythonFunction(
@@ -320,15 +342,15 @@ class PythonBridge {
 			}
 		})
 
-		// Batch extract
+		// Batch extraction handler
 		ipcMain.handle("python:batch-extract", async (_, options) => {
 			console.log(`${this._module}: Batch extracting from ${options.inputPaths.length} paths`)
 
 			try {
-				// Make a copy of options without operationId for Python
+				// Separate operation ID from other parameters
 				const { operationId, ...optionsForPython } = options
 
-				// Convert camelCase JavaScript params to snake_case Python params
+				// Convert parameter naming convention
 				const pythonOptions = this._convertToPythonParams(optionsForPython)
 
 				return await this.executePythonFunction("batch_extract", pythonOptions, operationId)
@@ -338,7 +360,7 @@ class PythonBridge {
 			}
 		})
 
-		// Find media files
+		// Media file discovery handler
 		ipcMain.handle("python:find-media-files", async (_, paths) => {
 			console.log(`${this._module}: Finding media files in ${paths.length} paths`)
 			try {
@@ -351,7 +373,9 @@ class PythonBridge {
 	}
 
 	/**
-	 * Clean up resources when shutting down
+	 * Terminates all Python processes on application shutdown
+	 *
+	 * @returns {void}
 	 */
 	cleanup() {
 		const terminatedCount = this.processManager.cleanupAllProcesses()
@@ -359,7 +383,7 @@ class PythonBridge {
 	}
 }
 
-// Export a singleton instance
+// Export a singleton instance and convenience functions
 const pythonBridge = new PythonBridge()
 export default pythonBridge
 export const initPythonBridge = (mainWindow) => pythonBridge.initialize(mainWindow)

@@ -1,3 +1,14 @@
+/**
+ * A responsive component that visualizes extraction outcomes for both single-file and batch operations.
+ *
+ * Key responsibilities:
+ * - Displays real-time progress during active extractions
+ * - Shows summary statistics and track breakdowns after completion
+ * - Adapts UI based on operation mode (single vs. batch)
+ * - Presents detailed error information for failed operations
+ * - Provides workflow navigation controls
+ */
+
 import ProgressCard from "@/components/ProgressCard"
 import TrackSummaryCard from "@/components/TrackSummaryCard"
 import { Button } from "@/components/ui/button"
@@ -22,8 +33,18 @@ import {
 import React from "react"
 
 /**
- * Results tab that handles both single file and batch extraction results
- * Refactored to use shadcn UI components directly
+ * Displays extraction results with appropriate visualizations based on operation state
+ *
+ * @param {Object} props
+ * @param {Object} props.extractionResult - Results data from extraction operation
+ * @param {string} props.outputPath - Path where extracted files are saved
+ * @param {boolean} props.isExtracting - Whether extraction is currently in progress
+ * @param {number} props.progressValue - Current progress percentage (0-100)
+ * @param {string} props.progressText - Description of current extraction stage
+ * @param {Object} props.fileProgressMap - Map of file IDs to individual progress states (for batch mode)
+ * @param {Function} props.handleReset - Handler for starting a new extraction operation
+ * @param {Function} props.setActiveTab - Function to change the active application tab
+ * @param {boolean} props.batchMode - Whether operating in batch mode (multiple files) or single file mode
  */
 function ResultsTab({
 	extractionResult,
@@ -36,7 +57,7 @@ function ResultsTab({
 	setActiveTab,
 	batchMode
 }) {
-	// If still extracting, show progress through the ProgressCard component
+	// Display extraction progress view while operation is running
 	if (isExtracting) {
 		return (
 			<Card className="shadow-lg">
@@ -71,8 +92,9 @@ function ResultsTab({
 					<CardDescription>Summary of the batch extraction operation</CardDescription>
 				</CardHeader>
 				<CardContent className="space-y-6">
+					{/* Batch metrics dashboard with color-coded status cards */}
 					<div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-						{/* Use consistent styling similar to TrackSummaryCard for these result cards */}
+						{/* Total files processed indicator */}
 						<div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg overflow-hidden shadow-sm border border-gray-200 dark:border-gray-700/50">
 							<div className="p-2 flex items-center gap-1 border-b border-gray-200 dark:border-gray-700/50 bg-gray-100 dark:bg-gray-700/50">
 								<Layers className="h-4 w-4" />
@@ -125,6 +147,7 @@ function ResultsTab({
 						</div>
 					</div>
 
+					{/* Output location information panel */}
 					<div className="p-4 bg-muted rounded-lg">
 						<div className="flex items-start gap-2">
 							<FolderOpen className="h-5 w-5 mt-0.5 flex-shrink-0" />
@@ -135,6 +158,7 @@ function ResultsTab({
 						</div>
 					</div>
 
+					{/* Conditionally displayed error section for failed files */}
 					{extractionResult.failed_files_list &&
 						extractionResult.failed_files_list.length > 0 && (
 							<div className="p-4 bg-red-50 text-red-800 rounded-lg dark:bg-red-950 dark:text-red-100">
@@ -174,7 +198,7 @@ function ResultsTab({
 			</Card>
 		)
 	} else {
-		// Single file results
+		// Single file results view with track type breakdown
 		return (
 			<Card className="shadow-lg">
 				<CardHeader>
@@ -185,8 +209,8 @@ function ResultsTab({
 					<CardDescription>Summary of the extracted tracks</CardDescription>
 				</CardHeader>
 				<CardContent className="space-y-6">
+					{/* Track type summary cards for audio, subtitle and video */}
 					<div className="grid grid-cols-3 gap-4">
-						{/* Using the improved TrackSummaryCard component that matches the original design */}
 						<TrackSummaryCard type="audio" count={extractionResult.extracted_audio} />
 						<TrackSummaryCard
 							type="subtitle"
@@ -195,6 +219,7 @@ function ResultsTab({
 						<TrackSummaryCard type="video" count={extractionResult.extracted_video} />
 					</div>
 
+					{/* Output location information */}
 					<div className="p-4 bg-muted rounded-lg">
 						<div className="flex items-start gap-2">
 							<Folder className="h-5 w-5 mt-0.5 flex-shrink-0" />
@@ -205,6 +230,7 @@ function ResultsTab({
 						</div>
 					</div>
 
+					{/* Success confirmation message */}
 					<div className="p-4 bg-green-50 text-green-800 rounded-lg dark:bg-green-950 dark:text-green-300">
 						<div className="flex items-center gap-2">
 							<Check className="h-5 w-5" />

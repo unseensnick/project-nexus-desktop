@@ -1,3 +1,9 @@
+/**
+ * A responsive, collapsible sidebar navigation component for the application.
+ * Implements two display modes (expanded and collapsed) with appropriate UI adaptations,
+ * tooltips for collapsed state, and visual indicators for active/disabled items.
+ */
+
 import { HelpCircle, Layers, Monitor, Scissors, Settings, Subtitles } from "lucide-react"
 
 import { ModeToggle } from "@/components/ThemeToggle"
@@ -6,12 +12,14 @@ import { Toggle } from "@/components/ui/toggle"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
 /**
- * AppSidebar component using direct styling to match original design
- * Rather than using shadcn sidebar, we're preserving the original structure
- * while using shadcn Button and Toggle components
+ * Renders the application sidebar with navigation and action buttons
+ *
+ * @param {Object} props
+ * @param {boolean} props.collapsed - Whether the sidebar is in collapsed state
+ * @returns {JSX.Element} The rendered sidebar component
  */
 export function AppSidebar({ collapsed }) {
-	// Define sidebar navigation items
+	// Define sidebar navigation items with their metadata
 	const navItems = [
 		{
 			title: "Extract Tracks",
@@ -38,7 +46,6 @@ export function AppSidebar({ collapsed }) {
 		}
 	]
 
-	// Render the sidebar component with original styling
 	return (
 		<aside
 			className={`${
@@ -56,7 +63,7 @@ export function AppSidebar({ collapsed }) {
 				{collapsed && <Monitor className="size-4 mx-auto" />}
 			</div>
 
-			{/* Navigation menu */}
+			{/* Navigation menu with conditional tooltips for collapsed state */}
 			<nav className="flex-1 p-2">
 				<ul className="space-y-1">
 					{navItems.map((item) => (
@@ -104,7 +111,7 @@ export function AppSidebar({ collapsed }) {
 				</ul>
 			</nav>
 
-			{/* Bottom actions */}
+			{/* Bottom actions bar with theme toggle and utility buttons */}
 			<div className="p-2 border-t border-gray-800">
 				<div
 					className={`flex ${collapsed ? "flex-col gap-4 items-center" : "justify-between"}`}
@@ -112,7 +119,7 @@ export function AppSidebar({ collapsed }) {
 					<ModeToggle />
 					{collapsed ? (
 						<>
-							{/* When collapsed, stack buttons vertically */}
+							{/* When collapsed, stack buttons vertically for better space utilization */}
 							<Button
 								variant="ghost"
 								size="icon"
@@ -131,7 +138,7 @@ export function AppSidebar({ collapsed }) {
 							</Button>
 						</>
 					) : (
-						/* When expanded, group settings and help buttons */
+						/* When expanded, group settings and help buttons horizontally */
 						<div className="flex gap-2">
 							<Button
 								variant="ghost"

@@ -1,9 +1,16 @@
 """
 Language Utilities Module.
 
-This module provides utilities for language code detection, normalization, and validation.
-It enhances the reliability of language detection for media tracks by supporting multiple
-language code formats and implementing fallback detection strategies.
+Provides robust language identification, normalization, and validation for media tracks.
+Simplifies working with language codes by:
+
+- Standardizing diverse language formats (ISO codes, names, regional variants)
+- Extracting language information from filenames and titles
+- Supporting fallback detection when metadata is missing or ambiguous
+- Filtering tracks by language preferences
+
+All functions use ISO 639-2 (3-letter codes) as the standardized format internally,
+with comprehensive mapping to handle common variations and user input flexibility.
 """
 
 import logging
@@ -74,7 +81,7 @@ VALID_ISO_639_2_CODES = set(ISO_639_1_TO_639_2.values()).union(set(ALTERNATIVE_I
 # Extended Language Mappings (Common Variations and Aliases)
 # =====================================================================
 
-# Mapping for comprehensive language name and code variations
+# Mapping from standard codes to all possible variants (names, codes, regional variants)
 LANGUAGE_MAPPINGS = {
     # ---- English Variations ----
     "eng": ["eng", "en", "english", "en-us", "en-gb", "en-ca", "en-au", "en_us", "en_gb"],
@@ -123,7 +130,7 @@ LANGUAGE_MAPPINGS = {
     "und": ["und", "undefined", "unknown", "unspecified", ""],  # Undefined
 }
 
-# Reverse mapping for quick lookups - populate with all variations
+# Reverse lookup table for fast variant recognition
 LANGUAGE_CODE_LOOKUP = {}
 for standard_code, variations in LANGUAGE_MAPPINGS.items():
     for variant in variations:
@@ -176,13 +183,20 @@ LANGUAGE_NAMES = {
 
 def normalize_language_code(code: str) -> Optional[str]:
     """
-    Normalize a language code or name to ISO 639-2 format.
-
+    Convert any language identifier to standard ISO 639-2 format.
+    
+    Handles diverse inputs including:
+    - 2-letter ISO 639-1 codes (en, fr)
+    - 3-letter ISO 639-2 codes (eng, fra)
+    - Alternative 3-letter codes (fre instead of fra)
+    - Language names in English and other languages
+    - Regional variants with country codes (en-us, pt-br)
+    
     Args:
-        code: A language code or name to normalize
+        code: Language identifier to normalize (code or name)
 
     Returns:
-        Normalized ISO 639-2 language code, or None if code is not recognized
+        Standard 3-letter ISO 639-2 code, or None if unrecognized
     """
     if not code:
         return None
@@ -218,13 +232,18 @@ def normalize_language_code(code: str) -> Optional[str]:
 
 def detect_language_from_filename(filename: str) -> Optional[str]:
     """
-    Attempt to detect language code from a filename.
-
+    Extract language information from a filename using pattern recognition.
+    
+    Searches for common language indicators in filenames such as:
+    - [en] or (eng) markers
+    - .eng. separators in the filename
+    - _english_ text patterns
+    
     Args:
-        filename: Filename to analyze
+        filename: File name to analyze
 
     Returns:
-        Normalized language code if detected, None otherwise
+        Normalized 3-letter ISO code if detected, None otherwise
     """
     if not filename:
         return None
@@ -251,13 +270,17 @@ def detect_language_from_filename(filename: str) -> Optional[str]:
 
 def detect_language_from_title(title: str) -> Optional[str]:
     """
-    Attempt to detect language code from a track title.
-
+    Extract language information from track title metadata.
+    
+    Searches for language indicators in title fields such as:
+    - Language names in various languages ("English", "Español")
+    - Language codes in brackets [en], [eng], etc.
+    
     Args:
-        title: Track title to analyze
+        title: Track title text to analyze
 
     Returns:
-        Normalized language code if detected, None otherwise
+        Normalized 3-letter ISO code if detected, None otherwise
     """
     if not title:
         return None
@@ -289,18 +312,24 @@ def enhance_language_detection(
     track_title: Optional[str] = None
 ) -> Optional[str]:
     """
-    Enhance language detection by combining metadata and filename-based detection.
-
-    This function tries multiple strategies to determine the language of a track,
-    using a combination of metadata, track title, and filename information.
+    Determine track language through layered detection strategies.
+    
+    Applies multiple detection methods in priority order:
+    1. File metadata (if available)
+    2. Track title analysis (if available)
+    3. Filename pattern matching
+    4. Default to "und" (undefined) as last resort
+    
+    This multi-layered approach maximizes accuracy when metadata
+    is missing or inconsistent.
 
     Args:
-        metadata_lang: Language code from metadata, if available
-        filename: Filename to analyze as a fallback
-        track_title: Track title to check for language information, if available
+        metadata_lang: Language from file metadata (may be None)
+        filename: Filename for pattern analysis
+        track_title: Track title for additional detection (may be None)
 
     Returns:
-        Normalized language code, or None if language can't be detected
+        Normalized 3-letter ISO code or "und" for undefined
     """
     # Try metadata first
     if metadata_lang:
@@ -328,13 +357,15 @@ def enhance_language_detection(
 
 def is_valid_language_code(code: str) -> bool:
     """
-    Check if a language code is valid.
+    Verify if a language code can be recognized and normalized.
+    
+    Useful for validating user input or configuration before processing.
 
     Args:
-        code: Language code to validate
+        code: Language code or name to validate
 
     Returns:
-        True if the code is a valid ISO 639-2 code, False otherwise
+        True if code can be normalized to a valid ISO 639-2 code
     """
     if not code:
         return False
@@ -345,10 +376,13 @@ def is_valid_language_code(code: str) -> bool:
 
 def get_common_languages() -> List[str]:
     """
-    Get a list of common language codes in ISO 639-2 format.
+    Get standardized codes for the most commonly used languages.
+    
+    Provides a default set of popular languages for UI display
+    or default filter options.
 
     Returns:
-        List of common ISO 639-2 language codes
+        List of common ISO 639-2 language codes in order of popularity
     """
     # Return most common languages first
     return [
@@ -374,14 +408,17 @@ def normalize_language_codes(
     remove_duplicates: bool = True
 ) -> List[str]:
     """
-    Normalize a list of language codes.
+    Normalize multiple language codes in a batch operation.
+    
+    Handles both single codes and lists, with options for deduplication.
+    Failed normalizations are kept as lowercase originals to preserve intent.
 
     Args:
-        language_codes: Language code(s) to normalize
-        remove_duplicates: Remove duplicate codes after normalization
+        language_codes: Single code or list of codes to normalize
+        remove_duplicates: Whether to remove duplicates after normalization
 
     Returns:
-        List of normalized language codes
+        List of normalized codes (or original lowercase if normalization failed)
     """
     # Convert single code to list
     if isinstance(language_codes, str):
@@ -417,16 +454,19 @@ def filter_by_languages(
     include_undefined: bool = False
 ) -> List[Dict]:
     """
-    Filter a list of items by language.
+    Filter a list of items based on language criteria.
+    
+    Selects items whose language matches any of the requested languages.
+    Handles normalization of both requested languages and item languages.
 
     Args:
-        all_items: List of dictionaries containing language information
-        requested_languages: List of language codes to include
-        lang_key: Key in the dictionaries that contains the language code
-        include_undefined: Whether to include items with undefined language
+        all_items: List of dicts with language information
+        requested_languages: Languages to keep (normalized internally)
+        lang_key: Dictionary key containing the language value
+        include_undefined: Whether to include items with missing/empty language
 
     Returns:
-        Filtered list of items matching the requested languages
+        Filtered list containing only items with matching languages
     """
     if not all_items:
         return []
@@ -465,13 +505,15 @@ def filter_by_languages(
 
 def get_language_name(code: str) -> str:
     """
-    Get a human-readable language name for a language code.
+    Get human-readable language name from language code.
+    
+    Transforms technical codes into user-friendly display names.
 
     Args:
         code: Language code (ISO 639-1 or ISO 639-2)
 
     Returns:
-        Human-readable language name, or the original code if not recognized
+        Human-readable language name, or original code if unrecognized
     """
     normalized = normalize_language_code(code)
     if not normalized:
@@ -520,14 +562,17 @@ def create_language_filter(
     include_undefined: bool = False
 ) -> callable:
     """
-    Create a language filter function that can be used to filter tracks.
+    Create a reusable filter function for language matching.
+    
+    Returns a function that can be used multiple times to test
+    if language codes match the specified criteria.
 
     Args:
-        requested_languages: List of language codes to include
-        include_undefined: Whether to include items with undefined language
+        requested_languages: List of languages to match against
+        include_undefined: Whether to accept undefined languages
 
     Returns:
-        Function that takes a language code and returns True if it matches the filter
+        Function that takes a language code and returns True if it matches
     """
     # Normalize requested languages for consistent comparison
     norm_requested = normalize_language_codes(requested_languages)
@@ -536,16 +581,9 @@ def create_language_filter(
     if include_undefined:
         norm_requested.append("und")
         
-    # Create the filter function
     def language_filter(language_code: Optional[str]) -> bool:
         """
-        Check if a language code matches the filter.
-        
-        Args:
-            language_code: Language code to check
-            
-        Returns:
-            True if the language matches the filter
+        Test if a language code matches the filter criteria.
         """
         # Handle undefined language
         if not language_code or language_code.lower() in ("und", "unknown", ""):

@@ -3,6 +3,15 @@ Extraction Service Module.
 
 This module provides a unified service for media track extraction operations,
 centralizing the extraction logic for both individual and batch operations.
+It abstracts the complexity of media track processing behind a consistent interface
+while handling proper error reporting and recovery.
+
+Key responsibilities:
+- Coordinating media file analysis
+- Extracting audio, subtitle, and video tracks
+- Supporting batch processing with concurrent extraction
+- Progress tracking and reporting
+- Handling extraction errors gracefully
 """
 
 import logging
@@ -33,25 +42,34 @@ class ExtractionService:
     """
     Central service for media track extraction.
 
-    This service provides a unified interface for both individual and batch
-    extraction operations, reducing code duplication across the codebase.
+    This service provides a unified interface for both individual and batch extraction 
+    operations, reducing code duplication and ensuring consistent behavior. It delegates
+    specialized work to the appropriate extractors while managing the overall process flow.
+    
+    The design follows a mediator pattern, where this service coordinates between
+    the media analyzer and specialized extractors for different track types.
     """
 
     def __init__(self):
-        """Initialize the extraction service."""
+        """
+        Initialize the extraction service with required components.
+        
+        Creates a media analyzer and specialized extractors for each track type,
+        and initializes statistics tracking for extraction operations.
+        """
         self.media_analyzer = MediaAnalyzer()
         self.audio_extractor = AudioExtractor(self.media_analyzer)
         self.subtitle_extractor = SubtitleExtractor(self.media_analyzer)
         self.video_extractor = VideoExtractor(self.media_analyzer)
 
-        # Statistics
+        # Statistics tracking for batch operations
         self.processed_files = 0
         self.total_files = 0
         self.extracted_tracks = 0
         self.failed_files = []
 
     def reset_stats(self):
-        """Reset extraction statistics."""
+        """Reset extraction statistics to initial values."""
         self.processed_files = 0
         self.total_files = 0
         self.extracted_tracks = 0
@@ -70,21 +88,25 @@ class ExtractionService:
         progress_callback: Optional[Union[Callable, ProgressReporter, str]] = None,
     ) -> Dict:
         """
-        Extract tracks from a single media file.
+        Extract tracks from a single media file based on specified options.
+
+        This method serves as the main entry point for single-file extraction. It handles
+        the entire extraction workflow including file analysis, track selection by type
+        and language, and coordinating the specialized extractors.
 
         Args:
             file_path: Path to the media file
             output_dir: Directory where extracted tracks will be saved
-            languages: List of language codes to extract
-            audio_only: Extract only audio tracks if True
-            subtitle_only: Extract only subtitle tracks if True
-            include_video: Include video tracks in extraction if True
-            video_only: Extract only video tracks if True
+            languages: List of language codes to extract (e.g., ["eng", "jpn"])
+            audio_only: Extract only audio tracks
+            subtitle_only: Extract only subtitle tracks
+            include_video: Include video tracks in extraction
+            video_only: Extract only video tracks (overrides audio_only and subtitle_only)
             remove_letterbox: Remove letterboxing from video tracks if True
-            progress_callback: Callback function, ProgressReporter instance, or operation_id string
+            progress_callback: Function, ProgressReporter instance, or operation_id string
 
         Returns:
-            Dict with extraction results
+            Dictionary with extraction results (success status, counts, and error info)
         """
         # Create output directory and initialize result
         output_dir = ensure_directory(output_dir)
@@ -112,7 +134,7 @@ class ExtractionService:
                 progress_reporter.complete(False, result['error'])
                 return result
 
-            # Determine track types to extract
+            # Determine track types to extract based on user options
             extract_audio, extract_subtitles, extract_video = determine_track_types(
                 audio_only, subtitle_only, video_only, include_video
             )
@@ -158,7 +180,17 @@ class ExtractionService:
         return result
 
     def _initialize_result_dict(self, file_path: Path) -> Dict:
-        """Initialize the result dictionary for extraction."""
+        """
+        Initialize the result dictionary for extraction.
+        
+        Creates a standard structure for tracking extraction results.
+        
+        Args:
+            file_path: Path to the source media file
+            
+        Returns:
+            Dictionary with initialized result fields
+        """
         return {
             "file": str(file_path),
             "success": False,
@@ -176,12 +208,15 @@ class ExtractionService:
         """
         Get a standardized progress reporter based on the input type.
         
+        Handles different types of progress reporting mechanisms by converting
+        them to a consistent ProgressReporter instance.
+        
         Args:
             progress_input: Callback function, ProgressReporter instance, or operation_id string
-            file_path: Optional file path for context
+            file_path: Optional file path to include in progress context
             
         Returns:
-            A standardized ProgressReporter instance
+            Configured ProgressReporter instance
         """
         context_dict = {}
         if file_path:
@@ -214,10 +249,13 @@ class ExtractionService:
         """
         Analyze media file and handle errors.
         
+        Uses the media analyzer to extract track information from the file
+        and properly reports progress and errors.
+        
         Args:
             file_path: Path to the media file
-            result: Result dictionary to update
-            progress_reporter: Progress reporter instance
+            result: Result dictionary to update with error info if needed
+            progress_reporter: Progress reporter for status updates
             
         Returns:
             True if analysis succeeded, False otherwise
@@ -226,7 +264,7 @@ class ExtractionService:
             # Report analysis start
             progress_reporter.update("analyzing", 0, 0, None, file_path=str(file_path))
             
-            # Use safe_execute to analyze the file with error handling - FIXED: don't reassign the method
+            # Use safe_execute to analyze the file with error handling
             safe_execute(
                 self.media_analyzer.analyze_file,
                 file_path,
@@ -273,7 +311,10 @@ class ExtractionService:
         result: Dict,
     ) -> None:
         """
-        Extract tracks based on determined types.
+        Extract tracks based on the determined track types.
+        
+        Delegates extraction to the appropriate specialized extractors
+        based on the user's selected options.
         
         Args:
             file_path: Path to the media file
@@ -282,8 +323,8 @@ class ExtractionService:
             extract_audio: Whether to extract audio tracks
             extract_subtitles: Whether to extract subtitle tracks
             extract_video: Whether to extract video tracks
-            remove_letterbox: Whether to remove letterboxing from video tracks
-            progress_reporter: Progress reporter instance
+            remove_letterbox: Whether to remove letterboxing from video
+            progress_reporter: Progress reporter for status updates
             result: Result dictionary to update
         """
         # Create an extraction plan and report it
@@ -330,11 +371,14 @@ class ExtractionService:
         """
         Extract audio tracks with progress reporting.
         
+        Uses the AudioExtractor to extract audio tracks matching the specified
+        languages, with appropriate error handling to continue even if one track fails.
+        
         Args:
             file_path: Path to the media file
             output_dir: Directory where extracted tracks will be saved
             languages: List of language codes to extract
-            progress_reporter: Progress reporter instance
+            progress_reporter: Progress reporter for status updates
             result: Result dictionary to update
         """
         try:
@@ -347,7 +391,7 @@ class ExtractionService:
                 file_path, 
                 output_dir, 
                 languages, 
-                progress_reporter  # Pass the progress reporter
+                progress_reporter
             )
             
             result["extracted_audio"] = len(audio_paths)
@@ -378,11 +422,14 @@ class ExtractionService:
         """
         Extract subtitle tracks with progress reporting.
         
+        Uses the SubtitleExtractor to extract subtitle tracks matching the
+        specified languages, with error handling to continue if one track fails.
+        
         Args:
             file_path: Path to the media file
             output_dir: Directory where extracted tracks will be saved
             languages: List of language codes to extract
-            progress_reporter: Progress reporter instance
+            progress_reporter: Progress reporter for status updates
             result: Result dictionary to update
         """
         try:
@@ -395,7 +442,7 @@ class ExtractionService:
                 file_path, 
                 output_dir, 
                 languages, 
-                progress_reporter  # Pass the progress reporter
+                progress_reporter
             )
             
             result["extracted_subtitles"] = len(subtitle_paths)
@@ -426,11 +473,15 @@ class ExtractionService:
         """
         Extract video tracks with progress reporting.
         
+        Uses the VideoExtractor to extract all video tracks, with option to
+        remove letterboxing. Video tracks are not filtered by language since
+        they often lack language metadata.
+        
         Args:
             file_path: Path to the media file
             output_dir: Directory where extracted tracks will be saved
-            remove_letterbox: Whether to remove letterboxing from video tracks
-            progress_reporter: Progress reporter instance
+            remove_letterbox: Whether to remove letterboxing from video
+            progress_reporter: Progress reporter for status updates
             result: Result dictionary to update
         """
         # Create a task for video extraction
@@ -457,7 +508,7 @@ class ExtractionService:
 
         logger.info(f"Found {len(self.media_analyzer.video_tracks)} video tracks")
         
-        # Extract each video track
+        # Extract each video track individually
         for track in self.media_analyzer.video_tracks:
             video_task_key = f"video_track_{track.id}_{file_path.name}"
             try:
@@ -513,11 +564,14 @@ class ExtractionService:
 
     def _update_extraction_status(self, result: Dict, languages: List[str]):
         """
-        Update extraction result status and handle no-tracks case.
+        Update extraction result status and handle the no-tracks case.
+        
+        Determines overall success and provides meaningful error messages
+        when no tracks are extracted.
         
         Args:
             result: Result dictionary to update
-            languages: List of language codes that were extracted
+            languages: List of language codes used for extraction
         """
         # Consider the operation successful if at least one track was extracted
         total_extracted = (
@@ -555,11 +609,14 @@ class ExtractionService:
         """
         Handle extraction errors consistently.
         
+        Logs the error, updates the result dictionary, and reports
+        the error through the progress reporter.
+        
         Args:
             e: Exception that occurred
             file_path: Path to the media file
             result: Result dictionary to update
-            progress_reporter: Progress reporter instance
+            progress_reporter: Progress reporter for status updates
         """
         error_msg = f"Error processing {file_path}: {str(e)}"
         log_exception(e, module_name="extraction_service._handle_extraction_error")
@@ -580,18 +637,21 @@ class ExtractionService:
         progress_callback: Optional[Union[Callable, ProgressReporter, str]] = None,
     ) -> Dict:
         """
-        Extract a specific track from a media file.
+        Extract a specific track identified by type and ID.
 
+        Allows extracting a single track directly without language filtering,
+        useful for UI interactions where the user selects a specific track.
+        
         Args:
             file_path: Path to the media file
             output_dir: Directory where the extracted track will be saved
             track_type: Type of track ('audio', 'subtitle', 'video')
             track_id: ID of the track to extract
             remove_letterbox: Remove letterboxing from video track if True
-            progress_callback: Callback function, ProgressReporter instance, or operation_id string
+            progress_callback: Callback function, ProgressReporter, or operation_id
 
         Returns:
-            Dict with extraction result
+            Dictionary with extraction result including output path if successful
         """
         # Create output directory if it doesn't exist
         output_dir = ensure_directory(output_dir)
@@ -690,7 +750,7 @@ class ExtractionService:
             track_type: Type of track ('audio', 'subtitle', 'video')
 
         Returns:
-            The appropriate extractor or None if track_type is invalid
+            The appropriate extractor instance or None if track_type is invalid
         """
         extractors = {
             "audio": self.audio_extractor,
@@ -714,23 +774,27 @@ class ExtractionService:
         max_workers: int = 1,
     ) -> Dict:
         """
-        Extract tracks from multiple media files in batch.
+        Extract tracks from multiple media files in batch mode.
+
+        Processes multiple files either sequentially or concurrently based on
+        the max_workers parameter. With max_workers > 1, uses a thread pool 
+        to process files in parallel for improved performance.
 
         Args:
             input_paths: List of file or directory paths to process
             output_dir: Base directory where extracted tracks will be saved
             languages: List of language codes to extract
-            audio_only: Extract only audio tracks if True
-            subtitle_only: Extract only subtitle tracks if True
-            include_video: Include video tracks in extraction if True
-            video_only: Extract only video tracks if True
-            remove_letterbox: Remove letterboxing from video tracks if True
-            use_org_structure: Organize output using parsed filenames if True
-            progress_callback: Callback function, ProgressReporter instance, or operation_id string
-            max_workers: Maximum number of concurrent workers (default: 1)
+            audio_only: Extract only audio tracks
+            subtitle_only: Extract only subtitle tracks
+            include_video: Include video tracks in extraction
+            video_only: Extract only video tracks
+            remove_letterbox: Remove letterboxing from video tracks
+            use_org_structure: Create subdirectories based on filenames
+            progress_callback: Callback function, ProgressReporter, or operation_id
+            max_workers: Maximum number of concurrent worker threads
 
         Returns:
-            Dict with batch extraction results
+            Dictionary with batch extraction results and statistics
         """
         # Reset statistics
         self.reset_stats()
@@ -750,7 +814,7 @@ class ExtractionService:
         # Create output directory if it doesn't exist
         output_dir = ensure_directory(output_dir)
 
-        # Find all media files
+        # Find all media files in the input paths
         all_media_files = self._find_media_files(input_paths, progress_reporter)
 
         if self.total_files == 0:
@@ -823,11 +887,14 @@ class ExtractionService:
         progress_reporter: ProgressReporter
     ) -> List[Path]:
         """
-        Find all media files from the input paths.
+        Find all media files from the provided input paths.
+        
+        Searches directories recursively for media files and handles
+        individual file paths as well.
         
         Args:
-            input_paths: List of file or directory paths to process
-            progress_reporter: Progress reporter instance
+            input_paths: List of file or directory paths
+            progress_reporter: Progress reporter for status updates
             
         Returns:
             List of paths to media files
@@ -852,7 +919,12 @@ class ExtractionService:
         return all_media_files
 
     def _create_empty_batch_result(self) -> Dict:
-        """Create a result dictionary for empty batch."""
+        """
+        Create an empty result dictionary for batch extraction.
+        
+        Returns:
+            Dictionary with initialized batch result fields (all zeros)
+        """
         return {
             "total_files": 0,
             "processed_files": 0,
@@ -863,7 +935,15 @@ class ExtractionService:
         }
 
     def _prepare_batch_report(self, results: List[Dict]) -> Dict:
-        """Prepare the final batch report."""
+        """
+        Prepare the final batch report from individual file results.
+        
+        Args:
+            results: List of result dictionaries from individual files
+            
+        Returns:
+            Dictionary with summarized batch extraction results
+        """
         successful_files = sum(1 for r in results if r["success"])
         failed_files = len(self.failed_files)
 
@@ -881,17 +961,19 @@ class ExtractionService:
     ) -> Path:
         """
         Prepare the output directory for a file.
-
+        
+        When organization is enabled, creates a file-specific subdirectory
+        to keep extracted tracks together.
+        
         Args:
             output_dir: Base output directory
             file_path: Path to the media file
-            use_org_structure: Whether to use organizational structure
-
+            use_org_structure: Whether to use filename-based organization
+            
         Returns:
-            Prepared output directory
+            Prepared output directory path
         """
         if use_org_structure:
-            # FIXED: Use get_output_path_for_file which now properly uses file stem
             return ensure_directory(get_output_path_for_file(output_dir, file_path))
         
         return ensure_directory(output_dir)
@@ -911,23 +993,26 @@ class ExtractionService:
         max_workers: int = 1,
     ) -> List[Dict]:
         """
-        Process files sequentially.
-
+        Process files sequentially (one at a time).
+        
+        This is the simpler but slower method for batch processing, used
+        when max_workers is 1.
+        
         Args:
             all_media_files: List of media files to process
             output_dir: Base output directory
             languages: List of language codes to extract
-            audio_only: Extract only audio tracks if True
-            subtitle_only: Extract only subtitle tracks if True
-            include_video: Include video tracks in extraction if True
-            video_only: Extract only video tracks if True
-            remove_letterbox: Remove letterboxing from video tracks if True
-            use_org_structure: Organize output using parsed filenames if True
-            progress_reporter: Progress reporter instance
-            max_workers: Number of workers (used for interface consistency)
-
+            audio_only: Extract only audio tracks
+            subtitle_only: Extract only subtitle tracks
+            include_video: Include video tracks in extraction
+            video_only: Extract only video tracks
+            remove_letterbox: Remove letterboxing from video
+            use_org_structure: Create subdirectories based on filenames
+            progress_reporter: Progress reporter for status updates
+            max_workers: Number of workers (for interface consistency)
+            
         Returns:
-            List of result dictionaries for each file
+            List of result dictionaries from processed files
         """
         # Create a batch progress task
         batch_task_key = "sequential_batch"
@@ -1025,7 +1110,16 @@ class ExtractionService:
         return results
     
     def _create_error_result(self, file_path: Path, error: str) -> Dict:
-        """Create an error result for a file."""
+        """
+        Create an error result dictionary for a file.
+        
+        Args:
+            file_path: Path to the media file that failed
+            error: Error message describing what went wrong
+            
+        Returns:
+            Dictionary with error result information
+        """
         return {
             "file": str(file_path),
             "success": False,
@@ -1050,23 +1144,26 @@ class ExtractionService:
         max_workers: int,
     ) -> List[Dict]:
         """
-        Process files in parallel using a thread pool.
+        Process files in parallel using multiple worker threads.
+        
+        This method significantly improves performance for batch operations
+        by processing multiple files concurrently.
         
         Args:
             all_media_files: List of media files to process
             output_dir: Base output directory
             languages: List of language codes to extract
-            audio_only: Extract only audio tracks if True
-            subtitle_only: Extract only subtitle tracks if True
-            include_video: Include video tracks in extraction if True
-            video_only: Extract only video tracks if True
-            remove_letterbox: Remove letterboxing from video tracks if True
-            use_org_structure: Organize output using parsed filenames if True
-            progress_reporter: Progress reporter instance
+            audio_only: Extract only audio tracks
+            subtitle_only: Extract only subtitle tracks
+            include_video: Include video tracks in extraction
+            video_only: Extract only video tracks
+            remove_letterbox: Remove letterboxing from video
+            use_org_structure: Create subdirectories based on filenames
+            progress_reporter: Progress reporter for status updates
             max_workers: Maximum number of concurrent workers
-
+            
         Returns:
-            List of result dictionaries for each file
+            List of result dictionaries from processed files
         """
         # Create a batch progress task
         batch_task_key = "parallel_batch"
@@ -1075,6 +1172,7 @@ class ExtractionService:
             f"Processing {len(all_media_files)} files with {max_workers} worker threads"
         )
         
+        # Thread-local storage to prevent contention
         thread_local = threading.local()
         stats_lock = threading.Lock()
         results = []
@@ -1084,10 +1182,10 @@ class ExtractionService:
         # Create a dictionary to store file-specific progress reporters
         file_reporters = {}
 
-        # Create a task for each file to be processed in parallel
+        # Define a worker function to process a single file
         def process_file_task(idx: int, file_path: Path):
             try:
-                # Get thread-local extraction service
+                # Get thread-local extraction service to prevent concurrency issues
                 extraction_service = self._get_thread_local_extraction_service(thread_local)
                 
                 # Create file-specific context
@@ -1110,7 +1208,7 @@ class ExtractionService:
                 
                 file_reporter = file_reporters[idx]
 
-                # FIXED: Use get_output_path_for_file through _prepare_output_dir
+                # Create per-file output directory
                 file_output_dir = self._prepare_output_dir(
                     output_dir, file_path, use_org_structure
                 )
@@ -1122,7 +1220,7 @@ class ExtractionService:
                     f"Processing file {idx+1}/{len(all_media_files)}: {file_path.name}"
                 )
 
-                # Process the file using safe_execute to catch and handle errors
+                # Process the file with error handling
                 result = safe_execute(
                     extraction_service.extract_tracks,
                     file_path,
@@ -1133,7 +1231,7 @@ class ExtractionService:
                     include_video,
                     video_only,
                     remove_letterbox,
-                    file_reporter,  # Use the file-specific reporter
+                    file_reporter,
                     module_name=f"parallel_extraction_{file_path.name}",
                     raise_error=False,
                     default_return=self._create_error_result(file_path, "Extraction failed with unknown error")
@@ -1197,7 +1295,18 @@ class ExtractionService:
         return results
     
     def _get_thread_local_extraction_service(self, thread_local):
-        """Get or create thread-local extraction service."""
+        """
+        Get or create a thread-local extraction service.
+        
+        Creates a separate ExtractionService instance for each worker thread
+        to prevent concurrency issues when processing multiple files.
+        
+        Args:
+            thread_local: Thread-local storage object
+            
+        Returns:
+            Thread-specific ExtractionService instance
+        """
         if not hasattr(thread_local, "extraction_service"):
             thread_local.extraction_service = ExtractionService()
         return thread_local.extraction_service
@@ -1205,7 +1314,17 @@ class ExtractionService:
     def _update_shared_stats(
         self, result: Dict, file_path: Path, stats_lock: threading.Lock
     ):
-        """Update shared statistics with thread safety."""
+        """
+        Update shared batch statistics with thread safety.
+        
+        Updates the global counters for processed files and extracted tracks
+        using a lock to prevent race conditions between worker threads.
+        
+        Args:
+            result: Extraction result dictionary
+            file_path: Path to the processed file
+            stats_lock: Lock for thread-safe access to shared statistics
+        """
         with stats_lock:
             if result["success"]:
                 self.processed_files += 1
@@ -1225,7 +1344,22 @@ class ExtractionService:
         progress_reporter: ProgressReporter,
         stats_lock: threading.Lock,
     ):
-        """Handle errors in parallel file processing."""
+        """
+        Handle errors in parallel file processing.
+        
+        Logs the error, updates statistics, and reports the error to the
+        progress reporter, all in a thread-safe manner.
+        
+        Args:
+            e: Exception that occurred
+            file_path: Path to the media file
+            idx: Index of the file in the batch
+            progress_reporter: Progress reporter for status updates
+            stats_lock: Lock for thread-safe access to shared statistics
+            
+        Returns:
+            Error result dictionary for the failed file
+        """
         error_msg = f"Unexpected error processing {file_path}: {str(e)}"
         log_exception(e, module_name="extraction_service._handle_parallel_file_error")
         logger.error(error_msg)
@@ -1233,7 +1367,6 @@ class ExtractionService:
         with stats_lock:
             self.failed_files.append((str(file_path), str(e)))
 
-        # Report error for this file
         file_task_key = f"file_{idx}_{file_path.name}"
         progress_reporter.error(error_msg, file_task_key)
         progress_reporter.task_completed(file_task_key, False, error_msg)
