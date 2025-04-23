@@ -1,3 +1,12 @@
+/**
+ * Main entry point for the Electron application.
+ * Handles application lifecycle events, window creation and management,
+ * and initializes core services like dialog handlers and Python bridges.
+ *
+ * This file orchestrates the application startup sequence and shutdown procedures,
+ * ensuring proper resource initialization and cleanup.
+ */
+
 import { electronApp, is, optimizer } from "@electron-toolkit/utils"
 import { app, BrowserWindow, ipcMain, shell } from "electron"
 import { join } from "path"
@@ -5,12 +14,17 @@ import icon from "../../resources/icon.png?asset"
 import { initDialogHandlers } from "./dialog-handlers"
 import { cleanupPythonProcesses, initPythonBridge } from "./python-bridge"
 
+/**
+ * Creates and configures the main application window
+ *
+ * @returns {BrowserWindow} The created browser window
+ */
 function createWindow() {
-	// Create the browser window.
+	// Create the browser window with optimized dimensions and security settings
 	const mainWindow = new BrowserWindow({
 		width: 1024, // Increased width for better UI experience
-		height: 768, // Increased height for better UI experience
-		show: false,
+		height: 1180, // Increased height for better UI experience
+		show: false, // Hide until ready-to-show for smoother startup
 		autoHideMenuBar: true,
 		...(process.platform === "linux" ? { icon } : {}),
 		webPreferences: {
@@ -19,72 +33,68 @@ function createWindow() {
 		}
 	})
 
+	// Show window when content has loaded to prevent white flash
 	mainWindow.on("ready-to-show", () => {
 		mainWindow.show()
 	})
 
+	// Handle external links securely
 	mainWindow.webContents.setWindowOpenHandler((details) => {
 		shell.openExternal(details.url)
 		return { action: "deny" }
 	})
 
-	// HMR for renderer base on electron-vite cli.
-	// Load the remote URL for development or the local html file for production.
+	// Load the appropriate content based on environment
 	if (is.dev && process.env["ELECTRON_RENDERER_URL"]) {
+		// Development mode - load from dev server
 		mainWindow.loadURL(process.env["ELECTRON_RENDERER_URL"])
 	} else {
+		// Production mode - load built HTML file
 		mainWindow.loadFile(join(__dirname, "../renderer/index.html"))
 	}
 
 	return mainWindow
 }
 
-// This method will be called when Electron has finished
-// initialization and is ready to create browser windows.
-// Some APIs can only be used after this event occurs.
+// Application initialization sequence
 app.whenReady().then(() => {
-	// Set app user model id for windows
+	// Set application ID for proper taskbar grouping on Windows
 	electronApp.setAppUserModelId("com.electron")
 
-	// Default open or close DevTools by F12 in development
-	// and ignore CommandOrControl + R in production.
-	// see https://github.com/alex8088/electron-toolkit/tree/master/packages/utils
+	// Configure developer shortcuts for window management
 	app.on("browser-window-created", (_, window) => {
 		optimizer.watchWindowShortcuts(window)
 	})
 
-	// IPC test
+	// Set up IPC test endpoint
 	ipcMain.on("ping", () => console.log("pong"))
 
-	// Create the main window
+	// Create the main application window
 	const mainWindow = createWindow()
 
-	// Initialize dialog handlers - pass ipcMain
+	// Initialize dialog handlers with IPC main
 	initDialogHandlers(ipcMain)
 
-	// Initialize Python bridge
+	// Initialize Python bridge with the main window
 	initPythonBridge(mainWindow)
 
+	// Handle macOS app activation (dock click)
 	app.on("activate", function () {
-		// On macOS it's common to re-create a window in the app when the
-		// dock icon is clicked and there are no other windows open.
+		// On macOS, recreate the window if none exist when the dock icon is clicked
 		if (BrowserWindow.getAllWindows().length === 0) createWindow()
 	})
 })
 
-// Quit when all windows are closed, except on macOS. There, it's common
-// for applications and their menu bar to stay active until the user quits
-// explicitly with Cmd + Q.
+// Handle application shutdown
 app.on("window-all-closed", () => {
+	// Quit the application when all windows are closed, except on macOS
 	if (process.platform !== "darwin") {
 		app.quit()
 	}
 })
 
-// Clean up Python processes before quitting
+// Perform cleanup operations before quitting
 app.on("will-quit", () => {
+	// Ensure all Python child processes are terminated
 	cleanupPythonProcesses()
 })
-
-// In this file you can include the rest of your app's specific main process
-// code. You can also put them in separate files and require them here.

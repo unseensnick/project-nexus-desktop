@@ -1,507 +1,586 @@
 """
 Progress Reporting Module.
 
-This module provides a unified system for tracking and reporting progress
-across different operations in the application, ensuring consistent UI feedback.
+Provides a standardized system for tracking and reporting operation progress
+throughout the application. This enables:
+
+- Consistent UI feedback across different operations
+- Thread-safe progress tracking in multi-threaded contexts
+- Unified progress reporting from diverse components
+- Hierarchical task tracking for complex operations
+- Bridge communication with frontend (JS/Electron)
+
+The module implements an observer pattern where operations report progress 
+to a central tracker that forwards updates to registered callbacks.
 """
 
+import json
 import logging
-from typing import Any, Callable, Dict, Optional, Tuple
-
-from rich.live import Live
-from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
+import threading
+from time import time
+from typing import Any, Callable, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
 
-class ProgressManager:
+class ProgressReporter:
     """
-    Unified system for managing progress reporting across different operations.
-
-    This class handles progress tracking for both individual and batch operations,
-    providing a consistent interface for updating progress in the UI.
+    Thread-safe progress tracker for operations with standardized reporting.
+    
+    Acts as the central hub for progress tracking with capabilities for:
+    - Track-specific progress updates (audio, subtitle, video)
+    - Batch operation tracking across multiple files
+    - Sub-task organization within larger operations
+    - Thread-safe updating from concurrent operations
+    
+    The reporter maintains an internal state of all tracked tasks and
+    calculates aggregate progress. All updates follow a consistent format
+    for frontend compatibility.
     """
-
+    
     def __init__(
-        self,
-        progress_instance: Optional[Progress] = None,
-        task_id: Optional[Any] = None,
-        parent_callback: Optional[Callable] = None,
+        self, 
+        parent_callback: Optional[Callable] = None, 
+        operation_id: Optional[str] = None,
+        context: Optional[Dict[str, Any]] = None
     ):
         """
-        Initialize the progress manager.
-
+        Initialize progress tracker with optional callback and context.
+        
         Args:
-            progress_instance: Optional Rich progress instance
-            task_id: Task ID in the progress instance
-            parent_callback: Optional callback to a parent progress manager
+            parent_callback: Function to receive progress updates
+            operation_id: Unique ID for associating related progress updates
+            context: Additional data included with all updates from this reporter
         """
-        self.progress = progress_instance
-        self.task_id = task_id
         self.parent_callback = parent_callback
-        self.current_percentage = 0
-        self.subtasks: Dict[str, float] = {}  # Subtask weights
-        self._subtask_progress: Dict[
-            str, float
-        ] = {}  # Current subtask progress (0-100)
-
-    def register_subtask(self, subtask_id: str, weight: float = 1.0):
-        """
-        Register a subtask with a weight.
-
-        Args:
-            subtask_id: Unique identifier for the subtask
-            weight: Relative weight of this subtask (default: 1.0)
-        """
-        self.subtasks[subtask_id] = weight
-        self._subtask_progress[subtask_id] = 0
-        self._recalculate()
-
-    def update(self, subtask_id: Optional[str] = None, percentage: float = 0):
-        """
-        Update progress for a subtask or the main task.
-
-        Args:
-            subtask_id: Subtask ID to update, or None for the main task
-            percentage: Progress percentage (0-100)
-        """
-        if subtask_id:
-            if subtask_id in self._subtask_progress:
-                self._subtask_progress[subtask_id] = min(percentage, 100)
-                self._recalculate()
-        else:
-            # Update main task directly
-            self._update_progress(percentage)
-
-    def update_with_count(
-        self, subtask_id: Optional[str] = None, current: int = 0, total: int = 0
-    ):
-        """
-        Update progress using count values.
-
-        Args:
-            subtask_id: Subtask ID to update, or None for the main task
-            current: Current count
-            total: Total count
-        """
-        if total > 0:
-            percentage = min(int((current / total) * 100), 100)
-        else:
-            percentage = 0
-
-        self.update(subtask_id, percentage)
-
-    def _recalculate(self):
-        """Recalculate overall progress based on subtask progress."""
-        if not self.subtasks:
-            return
-
-        total_weight = sum(self.subtasks.values())
-        weighted_progress = 0
-
-        for subtask_id, weight in self.subtasks.items():
-            weighted_progress += self._subtask_progress.get(subtask_id, 0) * weight
-
-        overall_percentage = weighted_progress / total_weight if total_weight > 0 else 0
-        self._update_progress(overall_percentage)
-
-    def _update_progress(self, percentage: float):
-        """Update the progress bar and call parent callback if provided."""
-        self.current_percentage = min(percentage, 100)
-
-        # Update progress instance if available
-        if self.progress and self.task_id is not None:
-            self.progress.update(self.task_id, completed=self.current_percentage)
-
-        # Call parent callback if provided
-        if self.parent_callback:
-            self.parent_callback(self.current_percentage)
-
-    def get_subtask_callback(self, subtask_id: str) -> Callable[[float], None]:
-        """
-        Get a callback function for a subtask that accepts a percentage.
-
-        Args:
-            subtask_id: Subtask ID
-
-        Returns:
-            Callback function that accepts a percentage
-        """
-
-        def callback(percentage: float):
-            self.update(subtask_id, percentage)
-
-        return callback
-
-    def get_count_callback(self, subtask_id: str) -> Callable[[int, int], None]:
-        """
-        Get a callback function for a subtask that accepts current/total counts.
-
-        Args:
-            subtask_id: Subtask ID
-
-        Returns:
-            Callback function that accepts (current, total)
-        """
-
-        def callback(current: int, total: int):
-            self.update_with_count(subtask_id, current, total)
-
-        return callback
-
-    def get_track_callback(
-        self, track_type: str, track_id: int
+        self.operation_id = operation_id
+        self.context = context or {}
+        self.current_progress = 0
+        self.tasks = {}  # Tracks all tasks by key
+        self._lock = threading.Lock()  # For thread safety
+        
+    def create_track_callback(
+        self, 
+        track_type: str, 
+        track_id: int, 
+        language: Optional[str] = None,
+        title: Optional[str] = None
     ) -> Callable[[float], None]:
         """
-        Get a callback for a specific track.
-
+        Create callback function for tracking media track extraction progress.
+        
+        Used for FFmpeg operations that extract specific tracks from media files.
+        The returned callback accepts a percentage and handles all reporting details.
+        
         Args:
-            track_type: Type of track ('audio', 'subtitle', 'video')
-            track_id: ID of the track
-
+            track_type: Media type ('audio', 'subtitle', 'video')
+            track_id: Track identifier number
+            language: ISO language code if applicable
+            title: Human-readable track name
+            
         Returns:
-            Callback function that accepts a percentage
+            Function accepting progress percentage (0-100)
         """
-        subtask_id = f"{track_type}_{track_id}"
-
-        # Register this as a subtask if not already registered
-        if subtask_id not in self.subtasks:
-            self.register_subtask(subtask_id)
-
-        return self.get_subtask_callback(subtask_id)
-
-    def complete(self):
-        """Mark all subtasks and the main task as complete (100%)."""
-        for subtask_id in self.subtasks:
-            self._subtask_progress[subtask_id] = 100
-        self._update_progress(100)
-
-
-class TrackExtractionProgress:
-    """
-    Specialized progress manager for track extraction.
-
-    This class provides track-specific progress tracking and reporting,
-    with support for different track types.
-    """
-
-    def __init__(
+        task_key = f"{track_type}_{track_id}"
+        with self._lock:
+            self.tasks[task_key] = {
+                "type": track_type,
+                "id": track_id,
+                "language": language or "",
+                "title": title or "",
+                "progress": 0
+            }
+        
+        def callback(percentage: float) -> None:
+            """Update progress for specific track."""
+            self._safe_update(task_key, percentage, track_type, track_id, language)
+                
+        return callback
+    
+    def create_operation_callback(
         self,
-        audio_progress: Optional[Progress] = None,
-        subtitle_progress: Optional[Progress] = None,
-        video_progress: Optional[Progress] = None,
-    ):
-        """
-        Initialize track extraction progress tracking.
-
-        Args:
-            audio_progress: Optional progress bar for audio tracks
-            subtitle_progress: Optional progress bar for subtitle tracks
-            video_progress: Optional progress bar for video tracks
-        """
-        self.audio_progress = audio_progress
-        self.subtitle_progress = subtitle_progress
-        self.video_progress = video_progress
-
-        self.audio_task_id = None
-        self.subtitle_task_id = None
-        self.video_task_id = None
-
-        self.audio_tracks = {}  # Track ID -> task ID mapping
-        self.subtitle_tracks = {}
-        self.video_tracks = {}
-
-        # Live display reference
-        self.live_display = None
-
-    def start_live_display(self, display_group, console):
-        """
-        Start a live display with the progress bars.
-
-        Args:
-            display_group: Rich display group to show
-            console: Rich console to use
-
-        Returns:
-            Live display object
-        """
-        self.live_display = Live(display_group, console=console, refresh_per_second=10)
-        self.live_display.start()
-        return self.live_display
-
-    def setup_tasks(self):
-        """Set up initial tasks for each track type."""
-        if self.audio_progress:
-            self.audio_task_id = self.audio_progress.add_task("Waiting...", total=100)
-
-        if self.subtitle_progress:
-            self.subtitle_task_id = self.subtitle_progress.add_task(
-                "Waiting...", total=100
-            )
-
-        if self.video_progress:
-            self.video_task_id = self.video_progress.add_task("Waiting...", total=100)
-
-    def get_track_callback(
-        self, track_type: str, track_id: int, language: str = ""
+        operation_type: str,
+        total_items: int = 1,
+        current_item: int = 0,
+        description: str = ""
     ) -> Callable[[float], None]:
         """
-        Get a progress callback for a specific track.
-
+        Create callback for general (non-track) operations.
+        
+        Used for higher-level processes like analysis, scanning, or initialization.
+        The callback simplifies progress reporting from arbitrary operations.
+        
         Args:
-            track_type: Type of track ('audio', 'subtitle', 'video')
-            track_id: ID of the track
-            language: Optional language code for the track
-
+            operation_type: Operation category identifier
+            total_items: Total count of items being processed
+            current_item: Index of current item
+            description: Human-readable operation summary
+            
         Returns:
-            Callback function that accepts a percentage
+            Function accepting progress percentage (0-100)
         """
-        if track_type == "audio":
-            return self._get_audio_callback(track_id, language)
-        elif track_type == "subtitle":
-            return self._get_subtitle_callback(track_id, language)
-        elif track_type == "video":
-            return self._get_video_callback(track_id)
-        else:
-            # Return a no-op callback if track type is invalid
-            return lambda _: None
-
-    def _get_audio_callback(
-        self, track_id: int, language: str = ""
+        task_key = f"{operation_type}_{current_item}"
+        with self._lock:
+            self.tasks[task_key] = {
+                "type": operation_type,
+                "id": current_item,
+                "total": total_items,
+                "description": description,
+                "progress": 0
+            }
+        
+        def callback(percentage: float) -> None:
+            """Update progress for general operation."""
+            self._safe_update(
+                task_key, 
+                percentage,
+                kwargs={
+                    "operation_type": operation_type,
+                    "total_items": total_items,
+                    "current_item": current_item,
+                    "description": description
+                }
+            )
+                
+        return callback
+    
+    def create_file_operation_callback(
+        self,
+        file_path: str,
+        operation_type: str = "file_processing",
+        file_index: int = 0,
+        total_files: int = 1
     ) -> Callable[[float], None]:
         """
-        Get a callback for audio track progress.
-
+        Create callback for file-specific operations in batch processing.
+        
+        Specialized for tracking operations on individual files within a batch,
+        providing context about the file's position in the overall sequence.
+        
         Args:
-            track_id: Audio track ID
-            language: Optional language code
-
+            file_path: Path to current file
+            operation_type: Operation being performed on the file
+            file_index: Position in file sequence (0-based)
+            total_files: Total file count in batch
+            
         Returns:
-            Callback function for progress updates
+            Function accepting progress percentage (0-100)
         """
-        # No progress tracking if no progress bar
-        if not self.audio_progress:
-            return lambda _: None
-
-        # Create task description
-        track_desc = f"Track {track_id}" + (f" [{language}]" if language else "")
-
-        # Create task if it doesn't exist
-        if track_id not in self.audio_tracks:
-            task_id = self.audio_progress.add_task(track_desc, total=100)
-            self.audio_tracks[track_id] = task_id
-        else:
-            task_id = self.audio_tracks[track_id]
-
-        # Return the callback
-        def callback(percentage: float):
-            self.audio_progress.update(
-                task_id, completed=percentage, description=track_desc
+        task_key = f"{operation_type}_{file_path}"
+        with self._lock:
+            self.tasks[task_key] = {
+                "type": operation_type,
+                "file_path": file_path,
+                "index": file_index,
+                "total": total_files,
+                "progress": 0
+            }
+        
+        def callback(percentage: float) -> None:
+            """Update progress for file operation."""
+            self._safe_update(
+                task_key, 
+                percentage,
+                kwargs={
+                    "operation_type": operation_type,
+                    "file_path": file_path,
+                    "file_index": file_index,
+                    "total_files": total_files
+                }
             )
-
+                
         return callback
-
-    def _get_subtitle_callback(
-        self, track_id: int, language: str = ""
-    ) -> Callable[[float], None]:
+    
+    def update(
+        self,
+        task_type: str,
+        task_id: int,
+        percentage: float,
+        language: Optional[str] = None,
+        **kwargs
+    ) -> None:
         """
-        Get a callback for subtitle track progress.
-
+        Directly update progress without creating a callback first.
+        
+        Provides a direct update method when callback creation is unnecessary,
+        supporting the same parameters as the callback-based approaches.
+        
         Args:
-            track_id: Subtitle track ID
-            language: Optional language code
-
-        Returns:
-            Callback function for progress updates
+            task_type: Type of task (e.g., 'audio', 'video')
+            task_id: Identifier for the task
+            percentage: Current progress (0-100)
+            language: Language code if applicable
+            **kwargs: Additional context information
         """
-        # No progress tracking if no progress bar
-        if not self.subtitle_progress:
-            return lambda _: None
-
-        # Create task description
-        track_desc = f"Track {track_id}" + (f" [{language}]" if language else "")
-
-        # Create task if it doesn't exist
-        if track_id not in self.subtitle_tracks:
-            task_id = self.subtitle_progress.add_task(track_desc, total=100)
-            self.subtitle_tracks[track_id] = task_id
-        else:
-            task_id = self.subtitle_tracks[track_id]
-
-        # Return the callback
-        def callback(percentage: float):
-            self.subtitle_progress.update(
-                task_id, completed=percentage, description=track_desc
-            )
-
-        return callback
-
-    def _get_video_callback(self, track_id: int) -> Callable[[float], None]:
+        task_key = f"{task_type}_{task_id}"
+        self._safe_update(task_key, percentage, task_type, task_id, language, kwargs)
+    
+    def _safe_update(
+        self,
+        task_key: str,
+        percentage: float,
+        task_type: str = None,
+        task_id: int = None,
+        language: str = None,
+        kwargs: Dict[str, Any] = None
+    ) -> None:
         """
-        Get a callback for video track progress.
-
+        Thread-safe progress update with error handling.
+        
+        Internal method that handles thread synchronization, error protection,
+        and delegation to the parent callback if available.
+        
         Args:
-            track_id: Video track ID
-
-        Returns:
-            Callback function for progress updates
+            task_key: Unique task identifier
+            percentage: Progress value (0-100)
+            task_type: Category of task
+            task_id: Task identifier
+            language: Language code
+            kwargs: Additional parameters
         """
-        # No progress tracking if no progress bar
-        if not self.video_progress:
-            return lambda _: None
-
-        # Create task description
-        track_desc = f"Track {track_id}"
-
-        # Create task if it doesn't exist
-        if track_id not in self.video_tracks:
-            task_id = self.video_progress.add_task(track_desc, total=100)
-            self.video_tracks[track_id] = task_id
-        else:
-            task_id = self.video_tracks[track_id]
-
-        # Return the callback
-        def callback(percentage: float):
-            self.video_progress.update(
-                task_id, completed=percentage, description=track_desc
-            )
-
-        return callback
-
-    def get_combined_callback(self) -> Callable[[str, int, float, str], None]:
+        try:
+            # Normalize percentage to valid range
+            normalized_percentage = min(100, max(0, float(percentage)))
+            
+            # Thread-safe state update
+            with self._lock:
+                if task_key in self.tasks:
+                    self.tasks[task_key]["progress"] = normalized_percentage
+                
+                # Calculate overall progress as average
+                if self.tasks:
+                    self.current_progress = sum(
+                        task["progress"] for task in self.tasks.values()
+                    ) / len(self.tasks)
+            
+            # Propagate to parent if available
+            if self.parent_callback:
+                self._call_parent_callback(
+                    task_type, task_id, normalized_percentage, language, kwargs
+                )
+                
+            # Log milestone progress points for debugging
+            if int(normalized_percentage) % 20 == 0:
+                logger.debug(f"Progress update: {task_key} at {normalized_percentage}%")
+                    
+        except Exception as e:
+            # Prevent progress errors from affecting main operations
+            logger.error(f"Error in progress update: {e}", exc_info=True)
+    
+    def _call_parent_callback(
+        self,
+        task_type: Optional[str],
+        task_id: Optional[int],
+        percentage: float,
+        language: Optional[str],
+        kwargs: Optional[Dict[str, Any]]
+    ) -> None:
         """
-        Get a callback that routes progress updates to the appropriate progress bar.
-
-        Returns:
-            Callback function that accepts (track_type, track_id, percentage, language)
-        """
-
-        def callback(
-            track_type: str, track_id: int, percentage: float, language: str = ""
-        ):
-            track_callback = self.get_track_callback(track_type, track_id, language)
-            track_callback(percentage)
-
-        return callback
-
-    def update_progress(
-        self, track_type: str, track_id: int, percentage: float, message: str = ""
-    ):
-        """
-        Update progress for a specific track.
-
+        Format and invoke parent callback with consistent parameter structure.
+        
+        Ensures all progress updates follow the same parameter format regardless
+        of their source, maintaining protocol consistency.
+        
         Args:
-            track_type: Type of track ('audio', 'subtitle', 'video')
-            track_id: ID of the track
-            percentage: Progress percentage (0-100)
-            message: Optional message to display
+            task_type: Type of task
+            task_id: Task identifier
+            percentage: Progress value
+            language: Language code
+            kwargs: Additional parameters
         """
-        if track_type == "audio" and self.audio_progress:
-            # Use main audio task for general updates or specific task for track updates
-            if track_id == 0 and self.audio_task_id is not None:
-                self.audio_progress.update(
-                    self.audio_task_id,
-                    completed=percentage,
-                    description=message or "Waiting...",
+        try:
+            if not self.parent_callback:
+                return
+                
+            # Build positional args according to standard protocol
+            args = []
+            
+            if task_type is not None:
+                args.append(task_type)
+                
+                if task_id is not None:
+                    args.append(task_id)
+                    args.append(percentage)
+                    
+                    if language is not None:
+                        args.append(language)
+                else:
+                    args.append(percentage)
+            else:
+                args.append(percentage)
+            
+            # Prepare keyword args with context
+            callback_kwargs = kwargs or {}
+            if self.operation_id:
+                callback_kwargs["operation_id"] = self.operation_id
+            
+            if self.context:
+                callback_kwargs.update(self.context)
+            
+            # Invoke callback with assembled parameters
+            self.parent_callback(*args, **callback_kwargs)
+                
+        except Exception as e:
+            logger.error(f"Error calling parent callback: {e}", exc_info=True)
+    
+    def complete(self, success: bool = True, message: str = "") -> None:
+        """
+        Mark operation as finished and send final status update.
+        
+        Signals completion of all tasks, setting all progress to 100%
+        and providing final success status and message.
+        
+        Args:
+            success: Whether operation succeeded
+            message: Status or result description
+        """
+        try:
+            # Mark all tasks as complete
+            with self._lock:
+                for task_key in self.tasks:
+                    self.tasks[task_key]["progress"] = 100
+                self.current_progress = 100
+            
+            # Send completion notification
+            if self.parent_callback:
+                completion_kwargs = {
+                    "status": "complete",
+                    "success": success,
+                    "message": message
+                }
+                
+                if self.operation_id:
+                    completion_kwargs["operation_id"] = self.operation_id
+                
+                if self.context:
+                    completion_kwargs.update(self.context)
+                
+                # Use special "complete" task type for completion events
+                self.parent_callback("complete", 0, 100, None, **completion_kwargs)
+                
+            logger.info(f"Operation complete. Success: {success}, Message: {message}")
+            
+        except Exception as e:
+            logger.error(f"Error in progress completion: {e}", exc_info=True)
+    
+    def get_overall_progress(self) -> float:
+        """
+        Calculate average progress across all tracked tasks.
+        
+        Returns:
+            Overall percentage complete (0-100)
+        """
+        with self._lock:
+            if not self.tasks:
+                return 0
+                
+            total_progress = sum(task["progress"] for task in self.tasks.values())
+            return total_progress / len(self.tasks)
+        
+    def task_started(self, task_key: str, description: str = "") -> None:
+        """
+        Signal the beginning of a new task.
+        
+        Useful for tracking task lifecycle and timing. Sends start notification
+        without waiting for first progress update.
+        
+        Args:
+            task_key: Unique task identifier
+            description: Human-readable task description
+        """
+        logger.debug(f"Task started: {task_key} - {description}")
+        if self.parent_callback:
+            try:
+                self.parent_callback(
+                    "task_started", 
+                    0, 
+                    0, 
+                    None, 
+                    task_key=task_key, 
+                    description=description,
+                    operation_id=self.operation_id
                 )
-            elif track_id in self.audio_tracks:
-                task_id = self.audio_tracks[track_id]
-                self.audio_progress.update(
-                    task_id,
-                    completed=percentage,
-                    description=message or f"Track {track_id}",
+            except Exception as e:
+                logger.error(f"Error in task_started callback: {e}", exc_info=True)
+                
+    def task_completed(self, task_key: str, success: bool = True, message: str = "") -> None:
+        """
+        Signal successful completion of a specific task.
+        
+        Updates task progress to 100% and sends completion notification
+        with success status and optional result message.
+        
+        Args:
+            task_key: Unique task identifier
+            success: Whether task completed successfully
+            message: Completion message or result description
+        """
+        logger.debug(f"Task completed: {task_key} - Success: {success} - {message}")
+        
+        # Update task state
+        with self._lock:
+            if task_key in self.tasks:
+                self.tasks[task_key]["progress"] = 100
+                self.tasks[task_key]["success"] = success
+                self.tasks[task_key]["message"] = message
+        
+        # Notify parent
+        if self.parent_callback:
+            try:
+                self.parent_callback(
+                    "task_completed", 
+                    0, 
+                    100, 
+                    None, 
+                    task_key=task_key,
+                    success=success,
+                    message=message,
+                    operation_id=self.operation_id
                 )
+            except Exception as e:
+                logger.error(f"Error in task_completed callback: {e}", exc_info=True)
 
-        elif track_type == "subtitle" and self.subtitle_progress:
-            if track_id == 0 and self.subtitle_task_id is not None:
-                self.subtitle_progress.update(
-                    self.subtitle_task_id,
-                    completed=percentage,
-                    description=message or "Waiting...",
+    def error(self, error_message: str, task_key: str = None) -> None:
+        """
+        Report an error that occurred during task execution.
+        
+        Sends error notification without changing progress state,
+        useful for reporting failures without stopping the operation.
+        
+        Args:
+            error_message: Error description
+            task_key: Identifier of task with error (if applicable)
+        """
+        logger.error(f"Error in operation: {error_message}", exc_info=True)
+        
+        if self.parent_callback:
+            try:
+                self.parent_callback(
+                    "error", 
+                    0, 
+                    self.current_progress, 
+                    None, 
+                    error=error_message,
+                    task_key=task_key,
+                    operation_id=self.operation_id
                 )
-            elif track_id in self.subtitle_tracks:
-                task_id = self.subtitle_tracks[track_id]
-                self.subtitle_progress.update(
-                    task_id,
-                    completed=percentage,
-                    description=message or f"Track {track_id}",
-                )
-
-        elif track_type == "video" and self.video_progress:
-            if track_id == 0 and self.video_task_id is not None:
-                self.video_progress.update(
-                    self.video_task_id,
-                    completed=percentage,
-                    description=message or "Waiting...",
-                )
-            elif track_id in self.video_tracks:
-                task_id = self.video_tracks[track_id]
-                self.video_progress.update(
-                    task_id,
-                    completed=percentage,
-                    description=message or f"Track {track_id}",
-                )
-
-    def finish_display(self):
-        """Stop the live display."""
-        if self.live_display:
-            self.live_display.stop()
-            self.live_display = None
+            except Exception as e:
+                logger.error(f"Error in error callback: {e}", exc_info=True)
 
 
-def create_standard_progress() -> Progress:
+# Global registry for sharing ProgressReporter instances across components
+_progress_reporters = {}
+_registry_lock = threading.Lock()
+
+
+def get_progress_reporter(
+    operation_id: str, 
+    parent_callback: Optional[Callable] = None,
+    context: Optional[Dict[str, Any]] = None
+) -> ProgressReporter:
     """
-    Create a standard progress bar for general operations.
-
-    Returns:
-        Progress bar with standard configuration
-    """
-    return Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        BarColumn(),
-        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-    )
-
-
-def create_track_progress(title: str = "Tracks", color: str = "cyan") -> Progress:
-    """
-    Create a progress bar for track extraction.
-
+    Retrieve or create a progress reporter by operation ID.
+    
+    Maintains a registry of reporters keyed by operation ID, enabling
+    different components to share the same reporter when working on
+    the same logical operation.
+    
     Args:
-        title: Title for the progress section
-        color: Color to use for the progress bar
-
+        operation_id: Unique operation identifier
+        parent_callback: Function to receive progress updates (updates existing if provided)
+        context: Additional context (merged with existing if provided)
+        
     Returns:
-        Progress bar configured for track extraction
+        ProgressReporter instance (new or existing)
     """
-    return Progress(
-        SpinnerColumn(),
-        TextColumn(f"[{color}]{{task.description}}"),
-        BarColumn(),
-        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-    )
+    with _registry_lock:
+        if operation_id in _progress_reporters:
+            reporter = _progress_reporters[operation_id]
+            # Update existing reporter if parameters provided
+            if parent_callback is not None:
+                reporter.parent_callback = parent_callback
+            if context is not None:
+                reporter.context.update(context)
+            return reporter
+        else:
+            reporter = ProgressReporter(parent_callback, operation_id, context)
+            _progress_reporters[operation_id] = reporter
+            return reporter
 
 
-def create_batch_progress() -> Tuple[Progress, Progress]:
+def remove_progress_reporter(operation_id: str) -> None:
     """
-    Create progress bars for batch extraction.
+    Remove reporter from registry when operation is complete.
+    
+    Essential for preventing memory leaks by cleaning up reporters
+    that are no longer needed. Should be called after operation completes.
+    
+    Args:
+        operation_id: Unique identifier for the completed operation
+    """
+    with _registry_lock:
+        if operation_id in _progress_reporters:
+            del _progress_reporters[operation_id]
 
+
+def create_progress_callback_factory(operation_id: str) -> Callable:
+    """
+    Create callback function for bridge module integration.
+    
+    Generates a function that accepts progress updates and formats them
+    for transmission to the JavaScript frontend. Implements throttling
+    to prevent overwhelming the UI with updates.
+    
+    Args:
+        operation_id: Unique operation identifier
+        
     Returns:
-        Tuple of (overall_progress, file_progress)
+        Callback function compatible with bridge.py's expectations
     """
-    overall_progress = Progress(
-        TextColumn("[bold blue]{task.description}"),
-        BarColumn(),
-        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-        TextColumn("({task.completed}/{task.total})"),
-    )
-
-    file_progress = Progress(
-        TextColumn("[bold cyan]Current file:"),
-        TextColumn("[cyan]{task.description}"),
-        BarColumn(bar_width=None),
-        TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-    )
-
-    return overall_progress, file_progress
+    # State for update throttling
+    last_progress = None
+    last_update_time = 0
+    
+    def progress_callback(*args, **kwargs):
+        nonlocal last_progress, last_update_time
+        
+        try:
+            # Extract standard parameters from args
+            task_type = args[0] if len(args) > 0 else None
+            task_id = args[1] if len(args) > 1 else None
+            percentage = args[2] if len(args) > 2 else 0
+            language = args[3] if len(args) > 3 else None
+            
+            # Normalize percentage to integer
+            try:
+                percentage = int(float(percentage)) if percentage is not None else 0
+            except (ValueError, TypeError):
+                percentage = 0
+            
+            # Format progress data for bridge protocol
+            progress_data = {
+                "operationId": operation_id,
+                "args": [task_type, task_id, percentage, language],
+                "kwargs": kwargs
+            }
+            
+            # Throttle identical updates (100ms minimum interval)
+            current_time = time()
+            if (
+                last_progress == progress_data 
+                and current_time - last_update_time < 0.1
+            ):
+                return
+            
+            # Update throttling state
+            last_progress = progress_data.copy()
+            last_update_time = current_time
+            
+            # Send to JavaScript via stdout protocol
+            print(f"PROGRESS:{json.dumps(progress_data)}", flush=True)
+            
+        except Exception as e:
+            # Ensure progress errors don't affect main operations
+            logger.error(f"Error in progress callback: {e}", exc_info=True)
+    
+    return progress_callback
