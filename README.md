@@ -1,29 +1,35 @@
 # Project Nexus
 
-A targeted media manipulation tool designed for comprehensive, flexible management of media file tracks.
+A comprehensive media management toolkit designed for flexible manipulation of media file tracks and content optimization.
 
 ## Project Overview
 
-Project Nexus is a lightweight, efficient solution for analyzing, extracting, and reconstructing video, audio and subtitle tracks from media files. It features a desktop interface built with Electron and React, minimal dependencies, and a focus on robust media track management capabilities.
+Project Nexus is a desktop application built with Electron, React, and Python that provides powerful tools for working with media files. The current MVP focuses on track extraction, with planned expansions for a complete media workflow solution.
 
-## Key Features
+## Current Features (MVP)
 
 - **Media File Analysis**: Identify audio, subtitle, and video tracks in media files
-- **Language Detection**: Automatically identify track languages
+- **Language Detection**: Automatically identify track languages using metadata and intelligent fallbacks
 - **Track Extraction**: Extract specific video, audio and subtitle tracks
 - **Language Filtering**: Filter tracks by language preference
 - **Batch Processing**: Process multiple media files at once
-- **Concurrent Extraction**: Optional multi-threaded extraction for faster batch processing
+- **Concurrent Extraction**: Multi-threaded extraction for faster batch processing
 - **Fault Tolerance**: Modular design ensures partial functionality when components fail
+
+## Planned Features
+
+- **Subtitle Editor**: Edit, synchronize, and format subtitle tracks
+- **Video Muxing**: Combine multiple media tracks into a single container
+- **Video Editor**: Basic editing capabilities for cutting, joining, and transforming video
+- **Directory Watcher**: Automatically process new files in watched directories
+- **Media Optimization**: Re-encode files to reduce size while maintaining quality
 
 ## Prerequisites
 
-Before getting started with Project Nexus, ensure you have the following installed:
-
 - **Node.js** (v20.0+ recommended)
-- **Npm** (v10.0+ recommended)
+- **npm** (v10.0+ recommended)
 - **Python 3.10+**
-- **FFmpeg** (included in the project for Windows, may need to be installed separately for other platforms)
+- **FFmpeg** (included for Windows, may need installation on other platforms)
 - **Git** (for cloning the repository)
 
 ## Getting Started
@@ -37,95 +43,77 @@ cd project-nexus
 
 ### Setup Python Backend
 
-1. Create a virtual environment in the backend directory:
-
 ```bash
-# Navigate to the backend directory
+# Navigate to backend directory
 cd backend
 
-# Create virtual environment
+# Create and activate virtual environment
 python -m venv venv
-
-# Activate the virtual environment
+# Windows
 venv\Scripts\activate
+# macOS/Linux
+source venv/bin/activate
 
-# Install Python dependencies
+# Install dependencies
 pip install -r requirements.txt
 
 # Deactivate the virtual environment
-Deactivate
+deactivate
 
 # Return to project root
 cd ..
 ```
 
-2. Activate the virtual environment:
-
-**Windows**:
-
-```bash
-backend\venv\Scripts\activate
-```
-
-**macOS/Linux**:
-
-```bash
-source backend/venv/bin/activate
-```
-
 ### Setup Electron Frontend
 
-1. Install npm dependencies:
-
 ```bash
+# Install dependencies
 npm install
 ```
 
-### Start the Development Server
-
-With the Python virtual environment activated, start the development server:
+### Start Development Server
 
 ```bash
+# Activate the Python virtual environment
+# Windows
+backend\venv\Scripts\activate
+# macOS/Linux
+source backend/venv/bin/activate
+
+# With Python virtual environment active
 npm run dev
 ```
 
-This will launch both the Python backend and the Electron application.
+## Project Structure
 
-## Development
-
-### Project Structure
-
-The project follows a modular architecture:
-
-- **backend/**: Python backend with core functionality
-    - **core/**: Core functionality including media analysis
-    - **extractors/**: Track extraction modules
-    - **services/**: Extraction services and orchestration
-    - **utils/**: Utility functions and helper modules
-- **src/**: Electron and React frontend
-    - **main/**: Electron main process code
-    - **preload/**: Electron preload scripts
-    - **renderer/**: React frontend application
-        - **components/**: UI components
-        - **hooks/**: React custom hooks
+```
+project-nexus/
+├── backend/
+│   ├── core/               # Media analysis and core functionality
+│   ├── extractors/         # Track extraction modules
+│   ├── services/           # Orchestration services
+│   ├── utils/              # Helper utilities
+│   └── bridge.py           # Python-Electron communication
+├── src/
+│   ├── main/               # Electron main process
+│   ├── preload/            # Electron preload scripts
+│   └── renderer/           # React frontend
+│       ├── components/     # UI components
+│       └── hooks/          # React custom hooks
+├── ffmpeg-bin/             # Bundled FFmpeg executables
+└── resources/              # Application resources
+```
 
 ## Building for Production
 
-### Windows
-
 ```bash
+# Windows
 npm run build:win
-```
 
-### macOS
-
-```bash
+# macOS
 npm run build:mac
-```
 
-### Linux
-
-```bash
+# Linux
 npm run build:linux
 ```
 
@@ -133,11 +121,13 @@ npm run build:linux
 
 ### Common Issues
 
-- **FFmpeg Not Found**: Ensure FFmpeg is properly installed and in your PATH or use the bundled version in ffmpeg-bin/
-- **Python Bridge Connection Error**: Make sure the Python virtual environment is activated before starting the application
-- **Missing Dependencies**: Run `npm install` and check the Python requirements installation
+- **FFmpeg Not Found**: Ensure FFmpeg is installed and in your PATH or use bundled version
+- **Python Bridge Error**: Verify Python virtual environment is activated
+- **Missing Dependencies**: Run `npm install` and check Python requirements
+- **Port Conflicts**: Ensure no other applications are using the required ports
 
 ## Acknowledgments
 
-- FFmpeg project for the underlying media processing capabilities
+- FFmpeg project for media processing capabilities
 - Electron and React for the application framework
+- Python for backend processing power
