@@ -1,17 +1,24 @@
+#!/usr/bin/env python3
 """
-Main bridge script for IPC communication with the frontend.
+Fixed bridge script for frontend-backend communication.
 
-This script is executed by the Electron frontend as a child process
-and handles command-line based communication protocol.
+**REPLACE:** `backend/ipc/bridge.py` **WITH:** `bridge.py` **LOCATION:** `backend/ipc/`
 """
+
+import sys
+import os
+from pathlib import Path
+
+# Add the backend directory to Python path so we can import modules
+# This script is in backend/ipc/, so we need to go up one level to get to backend/
+backend_dir = Path(__file__).parent.parent
+sys.path.insert(0, str(backend_dir))
 
 import json
-import sys
 from typing import Any, Dict, List
 
 from core.application import Application
 from core.logger import LoggerFactory
-from .ipc_handler import IPCHandler
 
 
 class Bridge:
@@ -42,6 +49,9 @@ class Bridge:
             
             # Create IPC handler with dependency container
             container = self._app.get_container()
+            
+            # Import IPC handler here to avoid circular imports
+            from ipc.ipc_handler import IPCHandler
             self._ipc_handler = IPCHandler(container)
             
             # Validate arguments
@@ -77,6 +87,9 @@ class Bridge:
             # Log error if logger is available
             if self._logger:
                 self._logger.error(f"Bridge error: {e}")
+            else:
+                # Fallback error logging to stderr
+                print(f"Bridge error: {e}", file=sys.stderr)
             
             sys.exit(1)
         
@@ -88,9 +101,25 @@ class Bridge:
 
 def main() -> None:
     """Main entry point for the bridge script."""
+    # Handle special case for help or testing
+    if len(sys.argv) > 1 and sys.argv[1] in ["--help", "-h", "help"]:
+        print("Project Nexus Backend Bridge")
+        print("Usage: python bridge.py <function_name> <arguments_json> [operation_id]")
+        print("Functions: analyze_file, extract_tracks, batch_extract, find_media_files_in_paths")
+        sys.exit(0)
+    
+    if len(sys.argv) > 1 and sys.argv[1] == "test":
+        print(json.dumps({
+            "success": True,
+            "message": "Bridge script is working",
+            "backend_dir": str(backend_dir),
+            "python_path": sys.path[:3]  # Show first few entries
+        }))
+        sys.exit(0)
+    
     bridge = Bridge()
     bridge.run(sys.argv[1:])
 
 
 if __name__ == "__main__":
-    main() 
+    main()

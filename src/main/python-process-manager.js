@@ -1,10 +1,7 @@
 /**
- * Provides lifecycle management for Python child processes.
- * Creates, monitors, and terminates Python processes used for media analysis and extraction.
+ * Updated Python Process Manager with working directory support.
  *
- * This manager maintains a registry of active processes, allowing the application
- * to track running operations and ensure proper cleanup at shutdown.
- * Key responsibilities include process spawning, error handling, and graceful termination.
+ * **REPLACE:** `src/main/python-process-manager.js` **WITH:** `python-process-manager.js` **LOCATION:** `src/main/`
  */
 
 import { spawn } from "child_process"
@@ -33,23 +30,41 @@ class PythonProcessManager {
 	 * @param {string} scriptPath - Path to the Python script to execute
 	 * @param {Array} args - Arguments to pass to the script
 	 * @param {string} operationId - Unique ID for tracking (auto-generated if not provided)
+	 * @param {Object} options - Additional spawn options (e.g., { cwd: "/path/to/working/dir" })
 	 * @returns {child_process.ChildProcess} - The spawned process instance
 	 * @throws {Error} If process spawning fails
 	 */
-	spawnProcess(pythonPath, scriptPath, args, operationId = null) {
+	spawnProcess(pythonPath, scriptPath, args, operationId = null, options = {}) {
 		// Generate or use the provided operation ID for tracking
 		const opId = operationId || uuidv4()
 		console.log(`${this._module}: Spawning process for operation ${opId}`)
 
+		// Prepare spawn options
+		const spawnOptions = {
+			stdio: ["pipe", "pipe", "pipe"], // stdin, stdout, stderr
+			...options // Merge any additional options (like cwd)
+		}
+
 		try {
-			// Spawn the Python process with the specified arguments
-			const pythonProcess = spawn(pythonPath, [scriptPath, ...args])
+			// Spawn the Python process with the specified arguments and options
+			const pythonProcess = spawn(pythonPath, [scriptPath, ...args], spawnOptions)
 			this.activeProcesses.set(opId, pythonProcess)
+
+			// Log working directory for debugging
+			if (options.cwd) {
+				console.log(`${this._module}: Process ${opId} running in directory: ${options.cwd}`)
+			}
 
 			// Set up automatic cleanup when the process exits
 			pythonProcess.on("close", () => {
 				this.activeProcesses.delete(opId)
 				console.log(`${this._module}: Process ${opId} completed and removed`)
+			})
+
+			// Log any process errors
+			pythonProcess.on("error", (error) => {
+				console.error(`${this._module}: Process ${opId} error: ${error.message}`)
+				this.activeProcesses.delete(opId)
 			})
 
 			return pythonProcess

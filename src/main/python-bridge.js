@@ -1,10 +1,7 @@
 /**
- * Bidirectional communication layer between Electron and Python processes.
+ * Fixed Python Bridge with correct path to backend/ipc/bridge.py
  *
- * This module creates a reliable bridge for executing Python functions from JavaScript,
- * handling data serialization, process lifecycle management, and progress reporting.
- * It establishes IPC channels for different operation types (analysis, extraction),
- * standardizes error handling, and provides parameter conversion between language conventions.
+ * **REPLACE:** `src/main/python-bridge.js` **WITH:** `python-bridge.js` **LOCATION:** `src/main/`
  */
 
 import { ipcMain } from "electron"
@@ -89,6 +86,7 @@ class PythonBridge {
 
 	/**
 	 * Determines path to Python bridge script based on environment
+	 * FIXED: Now points to the correct location at backend/ipc/bridge.py
 	 *
 	 * @returns {string} Path to bridge.py script
 	 */
@@ -98,7 +96,8 @@ class PythonBridge {
 		if (isProd) {
 			return path.join(process.resourcesPath, "python", "bridge.py")
 		} else {
-			return path.join(__dirname, "..", "..", "backend", "bridge.py")
+			// FIXED: Updated to point to backend/ipc/bridge.py instead of backend/bridge.py
+			return path.join(__dirname, "..", "..", "backend", "ipc", "bridge.py")
 		}
 	}
 
@@ -283,7 +282,7 @@ class PythonBridge {
 		ipcMain.handle("python:analyze-file", async (_, filePath) => {
 			console.log(`${this._module}: Analyzing file: ${filePath}`)
 			try {
-				return await this.executePythonFunction("analyze_file", [filePath])
+				return await this.executePythonFunction("analyze_file", { file_path: filePath })
 			} catch (err) {
 				console.error(`${this._module}: Error analyzing file:`, err)
 				return { success: false, error: err.message }
@@ -364,7 +363,7 @@ class PythonBridge {
 		ipcMain.handle("python:find-media-files", async (_, paths) => {
 			console.log(`${this._module}: Finding media files in ${paths.length} paths`)
 			try {
-				return await this.executePythonFunction("find_media_files_in_paths", paths)
+				return await this.executePythonFunction("find_media_files_in_paths", { paths })
 			} catch (err) {
 				console.error(`${this._module}: Error finding media files:`, err)
 				return { success: false, error: err.message }

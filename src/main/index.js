@@ -1,16 +1,14 @@
 /**
- * Main entry point for the Electron application.
- * Handles application lifecycle events, window creation and management,
- * and initializes core services like dialog handlers and Python bridges.
+ * Updated main entry point with improved error handling and diagnostics.
  *
- * This file orchestrates the application startup sequence and shutdown procedures,
- * ensuring proper resource initialization and cleanup.
+ * **REPLACE:** `src/main/index.js` **WITH:** `index.js` **LOCATION:** `src/main/`
  */
 
 import { electronApp, is, optimizer } from "@electron-toolkit/utils"
 import { app, BrowserWindow, ipcMain, shell } from "electron"
 import { join } from "path"
 import icon from "../../resources/icon.png?asset"
+import { BackendDiagnostic } from "./backend-diagnostic"
 import { initDialogHandlers } from "./dialog-handlers"
 import { cleanupPythonProcesses, initPythonBridge } from "./python-bridge"
 
@@ -56,8 +54,57 @@ function createWindow() {
 	return mainWindow
 }
 
+/**
+ * Initialize Python bridge with comprehensive error handling
+ */
+async function initializePythonBridgeWithDiagnostics(mainWindow) {
+	try {
+		console.log("Initializing Python bridge...")
+		await initPythonBridge(mainWindow)
+		console.log("Python bridge initialized successfully")
+	} catch (error) {
+		console.error("Python bridge initialization failed:", error)
+
+		// Run diagnostics to help identify the issue
+		const diagnostic = new BackendDiagnostic()
+		const results = await diagnostic.runDiagnostics()
+		diagnostic.printDiagnosticReport(results)
+
+		// Show user-friendly error message
+		const { dialog } = require("electron")
+
+		let message = "Failed to initialize Python backend.\n\n"
+
+		if (!results.pythonAvailable) {
+			message +=
+				"• Python is not available. Please install Python 3.10+ and ensure it's in your PATH.\n"
+		}
+
+		if (!results.bridgeScriptExists) {
+			message +=
+				"• Backend bridge script is missing. Please ensure the backend directory is complete.\n"
+		}
+
+		if (!results.backendModulesExist) {
+			message +=
+				"• Backend modules are missing. Please ensure all backend files are present.\n"
+		}
+
+		if (!results.ffmpegAvailable) {
+			message += "• FFmpeg is not available. This may cause media processing issues.\n"
+		}
+
+		message += "\nCheck the console for detailed diagnostic information."
+
+		dialog.showErrorBox("Backend Initialization Error", message)
+
+		// Continue without backend (the frontend should handle this gracefully)
+		console.warn("Continuing without Python backend - some features may not work")
+	}
+}
+
 // Application initialization sequence
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
 	// Set application ID for proper taskbar grouping on Windows
 	electronApp.setAppUserModelId("com.electron")
 
@@ -75,8 +122,8 @@ app.whenReady().then(() => {
 	// Initialize dialog handlers with IPC main
 	initDialogHandlers(ipcMain)
 
-	// Initialize Python bridge with the main window
-	initPythonBridge(mainWindow)
+	// Initialize Python bridge with comprehensive error handling
+	await initializePythonBridgeWithDiagnostics(mainWindow)
 
 	// Handle macOS app activation (dock click)
 	app.on("activate", function () {
@@ -97,4 +144,34 @@ app.on("window-all-closed", () => {
 app.on("will-quit", () => {
 	// Ensure all Python child processes are terminated
 	cleanupPythonProcesses()
+})
+
+// Handle uncaught exceptions
+process.on("uncaughtException", (error) => {
+	console.error("Uncaught Exception:", error)
+
+	// In development, continue running
+	if (is.dev) {
+		console.error("Continuing in development mode...")
+		return
+	}
+
+	// In production, show error and exit gracefully
+	const { dialog } = require("electron")
+	dialog.showErrorBox("Application Error", `An unexpected error occurred: ${error.message}`)
+	app.quit()
+})
+
+// Handle unhandled promise rejections
+process.on("unhandledRejection", (reason, promise) => {
+	console.error("Unhandled Promise Rejection at:", promise, "reason:", reason)
+
+	// In development, just log the error
+	if (is.dev) {
+		console.error("Continuing in development mode...")
+		return
+	}
+
+	// In production, might want to handle this more gracefully
+	console.error("Unhandled promise rejection - continuing...")
 })

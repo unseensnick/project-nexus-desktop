@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional, Union
 from core.dependency_container import DependencyContainer
 from core.logger import LoggerFactory
 from media_analyzer import MediaAnalyzerModule
+from track_processor import TrackProcessorModule
 from language_handler import LanguageHandlerModule
 
 
@@ -77,39 +78,37 @@ class IPCHandler:
         Normalize argument names from camelCase to snake_case.
         
         Args:
-            arguments: Original arguments dictionary
+            arguments: Arguments with potentially camelCase keys
             
         Returns:
-            Normalized arguments dictionary
+            Arguments with snake_case keys
         """
-        normalized = {}
-        
-        # Common argument mappings
-        arg_mappings = {
+        # Mapping of camelCase to snake_case
+        key_mappings = {
             "filePath": "file_path",
             "outputDir": "output_dir",
+            "outputDirectory": "output_directory",
+            "trackType": "track_type",
+            "trackId": "track_id",
+            "removeLetterbox": "remove_letterbox",
             "audioOnly": "audio_only",
             "subtitleOnly": "subtitle_only",
             "includeVideo": "include_video",
             "videoOnly": "video_only",
-            "removeLetterbox": "remove_letterbox",
-            "trackType": "track_type",
-            "trackId": "track_id",
             "inputPaths": "input_paths",
-            "useOrgStructure": "use_org_structure",
-            "maxWorkers": "max_workers",
-            "progressCallback": "progress_callback"
+            "maxWorkers": "max_workers"
         }
         
+        normalized = {}
         for key, value in arguments.items():
-            normalized_key = arg_mappings.get(key, key)
+            normalized_key = key_mappings.get(key, key)
             normalized[normalized_key] = value
         
         return normalized
     
     def _analyze_file(self, args: Dict[str, Any], operation_id: Optional[str] = None) -> Dict[str, Any]:
         """
-        Analyze a media file to identify tracks.
+        Analyze a media file and return track information.
         
         Args:
             args: Arguments containing file_path
@@ -166,7 +165,7 @@ class IPCHandler:
     
     def _extract_tracks(self, args: Dict[str, Any], operation_id: Optional[str] = None) -> Dict[str, Any]:
         """
-        Extract tracks from a media file.
+        Extract tracks from a media file based on language and type filters.
         
         Args:
             args: Arguments for track extraction
@@ -175,13 +174,101 @@ class IPCHandler:
         Returns:
             Extraction results
         """
-        # This would be implemented to use the WorkflowEngine module
-        # For now, return a placeholder response
-        return {
-            "success": False,
-            "error": "Track extraction not yet implemented in new backend",
-            "error_type": "NotImplementedError"
-        }
+        try:
+            # Get required arguments
+            file_path = args.get("file_path")
+            output_dir = args.get("output_dir")
+            languages = args.get("languages", ["eng"])
+            
+            if not file_path:
+                raise ValueError("file_path is required")
+            if not output_dir:
+                raise ValueError("output_dir is required")
+            
+            # Get extraction options
+            audio_only = args.get("audio_only", False)
+            subtitle_only = args.get("subtitle_only", False)
+            include_video = args.get("include_video", True)
+            video_only = args.get("video_only", False)
+            remove_letterbox = args.get("remove_letterbox", False)
+            
+            # Get modules from dependency container
+            media_analyzer = self._container.get(MediaAnalyzerModule)
+            track_processor = self._container.get(TrackProcessorModule)
+            
+            # Analyze file first
+            media_file = media_analyzer.analyze_file(file_path)
+            
+            # Filter tracks based on criteria
+            tracks_to_extract = []
+            
+            for track in media_file.tracks:
+                # Apply language filter
+                if track.language and track.language not in languages:
+                    continue
+                
+                # Apply type filters
+                if video_only and track.type != "video":
+                    continue
+                if audio_only and track.type != "audio":
+                    continue
+                if subtitle_only and track.type != "subtitle":
+                    continue
+                
+                # For general extraction, respect include_video flag
+                if not video_only and not include_video and track.type == "video":
+                    continue
+                
+                tracks_to_extract.append(track)
+            
+            if not tracks_to_extract:
+                return {
+                    "success": True,
+                    "extracted_audio": 0,
+                    "extracted_video": 0,
+                    "extracted_subtitles": 0,
+                    "output_files": [],
+                    "message": "No tracks found matching criteria"
+                }
+            
+            # Extract each track using TrackProcessor module
+            output_files = []
+            extracted_counts = {"audio": 0, "video": 0, "subtitle": 0}
+            
+            for track in tracks_to_extract:
+                try:
+                    result = track_processor.extract_track(
+                        source_file=file_path,
+                        output_directory=output_dir,
+                        track_type=track.type,
+                        track_id=track.id,
+                        remove_letterbox=remove_letterbox if track.type == "video" else False
+                    )
+                    
+                    if result.success:
+                        output_files.append(str(result.output_file))
+                        extracted_counts[track.type] += 1
+                    else:
+                        self._logger.warning(f"Failed to extract {track.type} track {track.id}: {result.error_message}")
+                        
+                except Exception as e:
+                    self._logger.error(f"Error extracting {track.type} track {track.id}: {e}")
+            
+            return {
+                "success": True,
+                "extracted_audio": extracted_counts["audio"],
+                "extracted_video": extracted_counts["video"],
+                "extracted_subtitles": extracted_counts["subtitle"],
+                "output_files": output_files
+            }
+            
+        except Exception as e:
+            self._logger.error(f"Track extraction failed: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "error_type": e.__class__.__name__
+            }
     
     def _extract_specific_track(self, args: Dict[str, Any], operation_id: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -194,13 +281,50 @@ class IPCHandler:
         Returns:
             Extraction results
         """
-        # This would be implemented to use the TrackProcessor module
-        # For now, return a placeholder response
-        return {
-            "success": False,
-            "error": "Specific track extraction not yet implemented in new backend",
-            "error_type": "NotImplementedError"
-        }
+        try:
+            # Get required arguments
+            file_path = args.get("file_path")
+            output_dir = args.get("output_dir")
+            track_type = args.get("track_type")
+            track_id = args.get("track_id")
+            
+            if not all([file_path, output_dir, track_type is not None, track_id is not None]):
+                raise ValueError("file_path, output_dir, track_type, and track_id are required")
+            
+            remove_letterbox = args.get("remove_letterbox", False)
+            
+            # Get track processor module from dependency container
+            track_processor = self._container.get(TrackProcessorModule)
+            
+            # Extract the specific track
+            result = track_processor.extract_track(
+                source_file=file_path,
+                output_directory=output_dir,
+                track_type=track_type,
+                track_id=track_id,
+                remove_letterbox=remove_letterbox
+            )
+            
+            if result.success:
+                return {
+                    "success": True,
+                    "output_file": str(result.output_file),
+                    "processing_time": result.processing_time
+                }
+            else:
+                return {
+                    "success": False,
+                    "error": result.error_message,
+                    "error_type": result.error_type
+                }
+                
+        except Exception as e:
+            self._logger.error(f"Specific track extraction failed: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "error_type": e.__class__.__name__
+            }
     
     def _batch_extract(self, args: Dict[str, Any], operation_id: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -213,13 +337,87 @@ class IPCHandler:
         Returns:
             Batch extraction results
         """
-        # This would be implemented to use the BatchProcessor module
-        # For now, return a placeholder response
-        return {
-            "success": False,
-            "error": "Batch extraction not yet implemented in new backend",
-            "error_type": "NotImplementedError"
-        }
+        try:
+            # Get required arguments
+            input_paths = args.get("input_paths", [])
+            output_dir = args.get("output_dir")
+            languages = args.get("languages", ["eng"])
+            
+            if not input_paths:
+                raise ValueError("input_paths is required and cannot be empty")
+            if not output_dir:
+                raise ValueError("output_dir is required")
+            
+            # Get extraction options
+            audio_only = args.get("audio_only", False)
+            subtitle_only = args.get("subtitle_only", False)
+            include_video = args.get("include_video", True)
+            video_only = args.get("video_only", False)
+            remove_letterbox = args.get("remove_letterbox", False)
+            max_workers = args.get("max_workers", 4)
+            
+            # Get modules from dependency container
+            media_analyzer = self._container.get(MediaAnalyzerModule)
+            track_processor = self._container.get(TrackProcessorModule)
+            
+            # Process each file
+            total_files = len(input_paths)
+            successful_files = 0
+            failed_files = 0
+            failed_files_list = []
+            total_tracks_extracted = 0
+            
+            for file_path in input_paths:
+                try:
+                    # Use the same logic as single extraction
+                    result = self._extract_tracks({
+                        "file_path": file_path,
+                        "output_dir": output_dir,
+                        "languages": languages,
+                        "audio_only": audio_only,
+                        "subtitle_only": subtitle_only,
+                        "include_video": include_video,
+                        "video_only": video_only,
+                        "remove_letterbox": remove_letterbox
+                    }, operation_id)
+                    
+                    if result["success"]:
+                        successful_files += 1
+                        total_tracks_extracted += (
+                            result.get("extracted_audio", 0) +
+                            result.get("extracted_video", 0) +
+                            result.get("extracted_subtitles", 0)
+                        )
+                    else:
+                        failed_files += 1
+                        failed_files_list.append({
+                            "file": file_path,
+                            "error": result.get("error", "Unknown error")
+                        })
+                        
+                except Exception as e:
+                    failed_files += 1
+                    failed_files_list.append({
+                        "file": file_path,
+                        "error": str(e)
+                    })
+            
+            return {
+                "success": True,
+                "total_files": total_files,
+                "successful_files": successful_files,
+                "failed_files": failed_files,
+                "failed_files_list": failed_files_list,
+                "total_tracks_extracted": total_tracks_extracted
+            }
+            
+        except Exception as e:
+            self._logger.error(f"Batch extraction failed: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "error_type": e.__class__.__name__
+            }
     
     def _find_media_files_in_paths(self, args: Dict[str, Any], operation_id: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -237,24 +435,31 @@ class IPCHandler:
             return {"success": True, "files": []}
         
         try:
-            # Get configuration for supported extensions
-            config_manager = self._container.get(type(self._container.get(MediaAnalyzerModule)._config))
-            supported_extensions = config_manager.media_extensions | config_manager.audio_extensions
+            # Define supported media file extensions
+            supported_extensions = {
+                ".mkv", ".mp4", ".avi", ".mov", ".webm", ".m4v", ".flv", ".wmv",
+                ".mts", ".m2ts", ".ts", ".vob", ".ogv", ".3gp", ".asf", ".rm",
+                ".rmvb", ".divx", ".xvid", ".mpg", ".mpeg", ".m4a", ".aac", ".flac"
+            }
             
             found_files = []
             
             for path_str in paths:
-                path = Path(path_str)
-                
-                if path.is_file():
-                    # Single file
-                    if path.suffix.lower() in supported_extensions:
-                        found_files.append(str(path))
-                elif path.is_dir():
-                    # Directory - scan for media files
-                    for file_path in path.rglob("*"):
-                        if file_path.is_file() and file_path.suffix.lower() in supported_extensions:
-                            found_files.append(str(file_path))
+                try:
+                    path = Path(path_str)
+                    
+                    if path.is_file():
+                        # Single file
+                        if path.suffix.lower() in supported_extensions:
+                            found_files.append(str(path))
+                    elif path.is_dir():
+                        # Directory - scan for media files
+                        for file_path in path.rglob("*"):
+                            if file_path.is_file() and file_path.suffix.lower() in supported_extensions:
+                                found_files.append(str(file_path))
+                except Exception as e:
+                    self._logger.warning(f"Error processing path {path_str}: {e}")
+                    continue
             
             return {
                 "success": True,
@@ -267,4 +472,4 @@ class IPCHandler:
                 "success": False,
                 "error": str(e),
                 "error_type": e.__class__.__name__
-            } 
+            }

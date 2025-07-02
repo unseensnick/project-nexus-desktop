@@ -1,12 +1,11 @@
 /**
- * A dynamic file selection interface that adapts between single-file and batch processing modes.
- * Handles file/directory selection through Electron's native dialog APIs and displays
- * current selection state with appropriate visualizations.
+ * Updated FileSelectionTab component that works with the new modular backend.
+ * Maintains all existing UI functionality while using enhanced file validation.
  *
- * The component serves as the initial step in the extraction workflow, allowing users
- * to select input files/directories and specify where extracted content should be saved.
+ * **REPLACE:** `src/renderer/src/components/FileSelectionTab.jsx` **WITH:** `FileSelectionTab.jsx` **LOCATION:** `src/renderer/src/components/`
  */
 
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import {
 	Card,
@@ -17,26 +16,22 @@ import {
 	CardTitle
 } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
-import { File, FilesIcon, Folder, FolderOpen, Info, Layers, RefreshCw } from "lucide-react"
+import { useBackendService } from "@/providers/BackendModuleProvider"
+import {
+	AlertCircle,
+	File,
+	FilesIcon,
+	Folder,
+	FolderOpen,
+	Info,
+	Layers,
+	RefreshCw
+} from "lucide-react"
 import React from "react"
 
 /**
- * Renders the file selection interface for the extraction workflow
- *
- * @param {Object} props
- * @param {string} props.filePath - Path to selected media file (single mode)
- * @param {string} props.outputPath - Path to output directory for extracted content
- * @param {boolean} props.isAnalyzing - Whether a single file is currently being analyzed
- * @param {boolean} props.isBatchAnalyzing - Whether a batch is currently being analyzed
- * @param {boolean} props.batchMode - Whether in batch processing mode
- * @param {Array<string>} props.inputPaths - Selected file paths for batch processing
- * @param {Function} props.handleSelectFile - Handler for selecting a single file
- * @param {Function} props.handleSelectOutputDir - Handler for selecting output directory
- * @param {Function} props.handleSelectInputFiles - Handler for selecting multiple input files
- * @param {Function} props.handleSelectInputDirectory - Handler for selecting input directory
- * @param {Function} props.handleAnalyzeFile - Handler to analyze a single file
- * @param {Function} props.handleAnalyzeBatch - Handler to analyze a batch of files
- * @returns {JSX.Element} The file selection interface
+ * Enhanced FileSelectionTab component with backend service integration.
+ * Renders the file selection interface for the extraction workflow.
  */
 function FileSelectionTab({
 	filePath,
@@ -52,6 +47,96 @@ function FileSelectionTab({
 	handleAnalyzeFile,
 	handleAnalyzeBatch
 }) {
+	// Backend service integration for enhanced file validation
+	const { isBackendReady, getBackendStatus, services } = useBackendService()
+
+	/**
+	 * Get supported file extensions for display.
+	 */
+	const getSupportedExtensions = () => {
+		return [
+			"mkv",
+			"mp4",
+			"avi",
+			"mov",
+			"wmv",
+			"flv",
+			"webm",
+			"mpg",
+			"mpeg",
+			"m4v",
+			"3gp",
+			"ts",
+			"mts",
+			"m2ts",
+			"mp3",
+			"aac",
+			"flac",
+			"m4a",
+			"ogg",
+			"opus",
+			"wav"
+		]
+	}
+
+	/**
+	 * Check if current selection is valid for analysis.
+	 */
+	const canAnalyze = () => {
+		const backendReady = isBackendReady()
+
+		if (batchMode) {
+			return backendReady && inputPaths.length > 0 && outputPath && !isBatchAnalyzing
+		} else {
+			return backendReady && filePath && !isAnalyzing
+		}
+	}
+
+	/**
+	 * Get backend status information for display.
+	 */
+	const getBackendStatusInfo = () => {
+		const status = getBackendStatus()
+		return {
+			isReady: status.isReady,
+			message: status.isReady
+				? "Backend services ready"
+				: status.error?.message || "Backend not available",
+			details: status
+		}
+	}
+
+	/**
+	 * Get file validation status.
+	 */
+	const getFileValidationStatus = () => {
+		if (!filePath) return null
+
+		if (!services?.mediaAnalyzer) {
+			return {
+				isValid: null,
+				message: "Backend file validation not available"
+			}
+		}
+
+		try {
+			const isValid = services.mediaAnalyzer.isSupportedFile(filePath)
+			return {
+				isValid,
+				message: isValid ? "File format is supported" : "File format is not supported"
+			}
+		} catch (err) {
+			return {
+				isValid: null,
+				message: `Validation error: ${err.message}`
+			}
+		}
+	}
+
+	const backendStatus = getBackendStatusInfo()
+	const fileValidation = getFileValidationStatus()
+	const supportedExtensions = getSupportedExtensions()
+
 	return (
 		<Card className="shadow-lg">
 			<CardHeader>
@@ -63,6 +148,14 @@ function FileSelectionTab({
 				</CardDescription>
 			</CardHeader>
 			<CardContent className="space-y-6">
+				{/* Backend status indicator */}
+				{!backendStatus.isReady && (
+					<Alert variant="destructive">
+						<AlertCircle className="h-4 w-4" />
+						<AlertDescription>Backend Error: {backendStatus.message}</AlertDescription>
+					</Alert>
+				)}
+
 				{/* Conditionally render single file or batch selection UI */}
 				{!batchMode ? (
 					// Single file selection mode
@@ -72,7 +165,8 @@ function FileSelectionTab({
 							<Button
 								variant="default"
 								onClick={handleSelectFile}
-								className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700"
+								disabled={!backendStatus.isReady}
+								className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
 							>
 								<File className="h-4 w-4" />
 								Select File
@@ -88,6 +182,21 @@ function FileSelectionTab({
 								)}
 							</div>
 						</div>
+
+						{/* File validation status */}
+						{filePath && fileValidation && (
+							<div
+								className={`text-xs p-2 rounded ${
+									fileValidation.isValid === true
+										? "bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300"
+										: fileValidation.isValid === false
+											? "bg-red-50 text-red-700 dark:bg-red-950 dark:text-red-300"
+											: "bg-yellow-50 text-yellow-700 dark:bg-yellow-950 dark:text-yellow-300"
+								}`}
+							>
+								{fileValidation.message}
+							</div>
+						)}
 					</div>
 				) : (
 					// Batch selection mode with multiple file/directory options
@@ -98,7 +207,8 @@ function FileSelectionTab({
 								<Button
 									variant="default"
 									onClick={handleSelectInputFiles}
-									className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700"
+									disabled={!backendStatus.isReady}
+									className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
 								>
 									<FilesIcon className="h-4 w-4" />
 									Select Files
@@ -106,7 +216,8 @@ function FileSelectionTab({
 								<Button
 									variant="default"
 									onClick={handleSelectInputDirectory}
-									className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700"
+									disabled={!backendStatus.isReady}
+									className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
 								>
 									<FolderOpen className="h-4 w-4" />
 									Select Directory
@@ -133,7 +244,8 @@ function FileSelectionTab({
 						<Button
 							variant="default"
 							onClick={handleSelectOutputDir}
-							className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700"
+							disabled={!backendStatus.isReady}
+							className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
 						>
 							<Folder className="h-4 w-4" />
 							Select Folder
@@ -150,6 +262,65 @@ function FileSelectionTab({
 						</div>
 					</div>
 				</div>
+
+				{/* Supported formats information */}
+				<div className="bg-muted p-4 rounded-lg">
+					<div className="text-sm">
+						<div className="font-medium mb-2">Supported Media Formats</div>
+						<div className="text-muted-foreground">
+							<strong>Video:</strong>{" "}
+							{supportedExtensions
+								.filter((ext) =>
+									[
+										"mkv",
+										"mp4",
+										"avi",
+										"mov",
+										"wmv",
+										"flv",
+										"webm",
+										"mpg",
+										"mpeg",
+										"m4v",
+										"3gp",
+										"ts",
+										"mts",
+										"m2ts"
+									].includes(ext)
+								)
+								.join(", ")}
+						</div>
+						<div className="text-muted-foreground mt-1">
+							<strong>Audio:</strong>{" "}
+							{supportedExtensions
+								.filter((ext) =>
+									["mp3", "aac", "flac", "m4a", "ogg", "opus", "wav"].includes(
+										ext
+									)
+								)
+								.join(", ")}
+						</div>
+					</div>
+				</div>
+
+				{/* Backend service status */}
+				<div className="bg-muted p-3 rounded-lg">
+					<div className="text-xs">
+						<div className="font-medium mb-1">Backend Status</div>
+						<div className="space-y-1">
+							<div>Services: {backendStatus.isReady ? "✓ Ready" : "✗ Not Ready"}</div>
+							<div>
+								File Validation:{" "}
+								{services?.mediaAnalyzer ? "✓ Available" : "✗ Not Available"}
+							</div>
+							{!backendStatus.isReady && (
+								<div className="text-red-600 dark:text-red-400 mt-2">
+									{backendStatus.message}
+								</div>
+							)}
+						</div>
+					</div>
+				</div>
 			</CardContent>
 			<CardFooter className="flex justify-between">
 				<div className="text-sm text-muted-foreground">
@@ -162,8 +333,8 @@ function FileSelectionTab({
 				{batchMode ? (
 					<Button
 						onClick={handleAnalyzeBatch}
-						disabled={!outputPath || inputPaths.length === 0 || isBatchAnalyzing}
-						className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700"
+						disabled={!canAnalyze()}
+						className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
 					>
 						{isBatchAnalyzing ? (
 							<RefreshCw className="h-4 w-4 animate-spin" />
@@ -175,8 +346,8 @@ function FileSelectionTab({
 				) : (
 					<Button
 						onClick={handleAnalyzeFile}
-						disabled={!filePath || isAnalyzing}
-						className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700"
+						disabled={!canAnalyze()}
+						className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
 					>
 						{isAnalyzing ? (
 							<RefreshCw className="h-4 w-4 animate-spin" />

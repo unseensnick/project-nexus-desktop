@@ -1,126 +1,254 @@
+/**
+ * New useMediaAnalysis hook that utilizes the MediaAnalyzer backend module.
+ * Provides media file analysis capabilities with proper backend integration.
+ *
+ * **REPLACE:** `src/renderer/src/hooks/useMediaAnalysis.js` **WITH:** `useMediaAnalysis.js` **LOCATION:** `src/renderer/src/hooks/`
+ */
+
 import { useCallback, useEffect, useState } from "react"
+import { useBackendService } from "../providers/BackendModuleProvider.jsx"
 
 /**
- * Custom hook for analyzing media files to discover available tracks and languages.
- *
- * This hook manages the analysis process including:
- * 1. Communicating with the Python backend to analyze media files
- * 2. Extracting and organizing available languages from the analysis
- * 3. Maintaining loading and error states during analysis
- * 4. Automatically resetting state when the file path changes
- *
- * It's designed to be used in conjunction with useFileSelection to analyze
- * files after selection and prepare for the extraction process.
+ * Hook for managing media file analysis using the MediaAnalyzer backend module.
  *
  * @param {string} filePath - Path to the media file to analyze
  * @returns {Object} Analysis state and handler methods
  */
 function useMediaAnalysis(filePath) {
-	// State to store analysis results and process status
-	const [analyzed, setAnalyzed] = useState(null) // Analysis results
-	const [isAnalyzing, setIsAnalyzing] = useState(false) // Loading state
-	const [error, setError] = useState(null) // Error information
-	const [availableLanguages, setAvailableLanguages] = useState([]) // Detected languages
+	// State management
+	const [analyzed, setAnalyzed] = useState(null)
+	const [isAnalyzing, setIsAnalyzing] = useState(false)
+	const [error, setError] = useState(null)
+	const [availableLanguages, setAvailableLanguages] = useState([])
 
-	// Reset analysis results when file path changes to prevent showing stale data
+	// Backend service integration
+	const { executeOperation, mediaAnalyzer, isBackendReady } = useBackendService()
+
+	// Reset analysis state when file path changes
 	useEffect(() => {
 		setAnalyzed(null)
 		setError(null)
+		setAvailableLanguages([])
 	}, [filePath])
 
 	/**
-	 * Process analysis results to extract a flat list of unique languages.
-	 *
-	 * Combines languages from audio and subtitle tracks and removes duplicates
-	 * to provide a simple list for language selection in the UI.
-	 *
-	 * @param {Object} analysisResult - Results from Python analysis
+	 * Extract and process available languages from analysis result.
 	 */
 	const updateAvailableLanguages = useCallback((analysisResult) => {
-		if (!analysisResult || !analysisResult.languages) return
+		if (!analysisResult || !analysisResult.languages) {
+			setAvailableLanguages([])
+			return
+		}
 
-		// Combine audio and subtitle languages into a single flat array
-		const languages = [
-			...(analysisResult.languages.audio || []),
-			...(analysisResult.languages.subtitle || [])
-		]
-
-		// Remove duplicates by converting to Set and back to Array
-		setAvailableLanguages([...new Set(languages)])
+		// Get all unique languages across all track types
+		const allLanguages = analysisResult.languages.all || []
+		setAvailableLanguages(allLanguages)
 	}, [])
 
 	/**
-	 * Initiate media file analysis via the Python backend.
-	 *
-	 * Validates input, manages loading state, and handles errors
-	 * during the analysis process. Updates the analyzed state with
-	 * results on success.
-	 *
-	 * @returns {Promise<Object|null>} Analysis results or null on error
+	 * Analyze the current media file.
 	 */
 	const handleAnalyzeFile = useCallback(async () => {
-		// Verify that a file has been selected
 		if (!filePath) {
 			setError("Please select a file first")
 			return null
 		}
 
-		// Set loading state to show analysis in progress
+		if (!isBackendReady()) {
+			setError("Backend services not available")
+			return null
+		}
+
 		setIsAnalyzing(true)
 		setError(null)
 
 		try {
-			// Verify that the Python API is available
-			if (!window.pythonApi || typeof window.pythonApi.analyzeFile !== "function") {
-				throw new Error("Python API is not available")
-			}
+			const result = await executeOperation(
+				"Media File Analysis",
+				async (services) => {
+					return await services.mediaAnalyzer.analyzeFile(filePath)
+				},
+				"File analysis"
+			)
 
-			// Call the Python API to analyze the file
-			const result = await window.pythonApi.analyzeFile(filePath)
+			// Process successful result
+			setAnalyzed(result)
+			updateAvailableLanguages(result)
 
-			// Process results based on success state
-			if (result.success) {
-				setAnalyzed(result)
-				updateAvailableLanguages(result)
-				return result
-			} else {
-				const errorMsg = result.error || "Analysis failed"
-				setError(errorMsg)
-				return null
-			}
+			console.log("Analysis completed:", {
+				file: filePath,
+				tracks: result.trackCounts,
+				languages: result.languages.all
+			})
+
+			return result
 		} catch (err) {
-			console.error("Error analyzing file:", err)
-			setError(`Error analyzing file: ${err.message || "Unknown error"}`)
+			console.error("Analysis failed:", err)
+
+			// Set user-friendly error message
+			const errorMessage = err.message || "Analysis failed"
+			setError(errorMessage)
+
 			return null
 		} finally {
-			// Always update loading state when done
 			setIsAnalyzing(false)
 		}
-	}, [filePath, updateAvailableLanguages])
+	}, [filePath, executeOperation, isBackendReady, updateAvailableLanguages])
 
 	/**
-	 * Reset all analysis state.
-	 *
-	 * Clears analysis results, loading state, errors, and available languages.
-	 * Typically used when starting a new extraction or when closing
-	 * the current project.
+	 * Get tracks by type from current analysis.
+	 */
+	const getTracksByType = useCallback(
+		(trackType) => {
+			if (!analyzed || !analyzed.tracks) {
+				return []
+			}
+
+			return analyzed.tracks.filter((track) => track.type === trackType)
+		},
+		[analyzed]
+	)
+
+	/**
+	 * Get tracks by language from current analysis.
+	 */
+	const getTracksByLanguage = useCallback(
+		(language) => {
+			if (!analyzed || !analyzed.tracks) {
+				return []
+			}
+
+			return analyzed.tracks.filter((track) => track.language === language)
+		},
+		[analyzed]
+	)
+
+	/**
+	 * Get available languages for a specific track type.
+	 */
+	const getLanguagesForTrackType = useCallback(
+		(trackType) => {
+			if (!analyzed || !analyzed.languages) {
+				return []
+			}
+
+			return analyzed.languages[trackType] || []
+		},
+		[analyzed]
+	)
+
+	/**
+	 * Check if a specific track type is available.
+	 */
+	const hasTracksOfType = useCallback(
+		(trackType) => {
+			if (!analyzed || !analyzed.trackCounts) {
+				return false
+			}
+
+			return (analyzed.trackCounts[trackType] || 0) > 0
+		},
+		[analyzed]
+	)
+
+	/**
+	 * Get track count for a specific type.
+	 */
+	const getTrackCount = useCallback(
+		(trackType) => {
+			if (!analyzed || !analyzed.trackCounts) {
+				return 0
+			}
+
+			return analyzed.trackCounts[trackType] || 0
+		},
+		[analyzed]
+	)
+
+	/**
+	 * Reset analysis state.
 	 */
 	const resetAnalysis = useCallback(() => {
 		setAnalyzed(null)
 		setIsAnalyzing(false)
 		setError(null)
 		setAvailableLanguages([])
-	}, [])
 
-	// Return all state variables and functions needed by components
+		// Clear cache for current file if analyzer is available
+		if (mediaAnalyzer && filePath) {
+			mediaAnalyzer.clearAnalysisCache(filePath)
+		}
+	}, [mediaAnalyzer, filePath])
+
+	/**
+	 * Validate if current file path is supported.
+	 */
+	const isSupportedFile = useCallback(
+		(filePathToCheck = filePath) => {
+			if (!mediaAnalyzer || !filePathToCheck) {
+				return false
+			}
+
+			return mediaAnalyzer.isSupportedFile(filePathToCheck)
+		},
+		[mediaAnalyzer, filePath]
+	)
+
+	/**
+	 * Get detailed analysis information.
+	 */
+	const getAnalysisDetails = useCallback(() => {
+		if (!analyzed) {
+			return null
+		}
+
+		return {
+			isAnalyzed: true,
+			trackCounts: analyzed.trackCounts,
+			totalTracks: analyzed.trackCounts.total,
+			languages: analyzed.languages,
+			metadata: analyzed.metadata,
+			tracks: analyzed.tracks,
+			hasAudio: analyzed.trackCounts.audio > 0,
+			hasVideo: analyzed.trackCounts.video > 0,
+			hasSubtitles: analyzed.trackCounts.subtitle > 0
+		}
+	}, [analyzed])
+
 	return {
-		analyzed, // Analysis results from Python
-		isAnalyzing, // Whether analysis is in progress
-		error, // Current error message if any
-		setError, // Function to manually set error state
-		availableLanguages, // List of unique languages found
-		handleAnalyzeFile, // Function to start file analysis
-		resetAnalysis // Function to reset all state values
+		// Core analysis state
+		analyzed,
+		isAnalyzing,
+		error,
+		setError,
+		availableLanguages,
+
+		// Analysis operations
+		handleAnalyzeFile,
+		resetAnalysis,
+
+		// Query methods
+		getTracksByType,
+		getTracksByLanguage,
+		getLanguagesForTrackType,
+		hasTracksOfType,
+		getTrackCount,
+		getAnalysisDetails,
+		isSupportedFile,
+
+		// Backend status
+		isBackendReady: isBackendReady(),
+
+		// Legacy compatibility (for components that expect these properties)
+		availableLanguages: availableLanguages,
+
+		// Derived state for convenience
+		hasAnalysis: Boolean(analyzed),
+		isAnalysisValid: Boolean(analyzed && analyzed.success),
+		audioTracks: analyzed?.trackCounts?.audio || 0,
+		videoTracks: analyzed?.trackCounts?.video || 0,
+		subtitleTracks: analyzed?.trackCounts?.subtitle || 0,
+		totalTracks: analyzed?.trackCounts?.total || 0
 	}
 }
 

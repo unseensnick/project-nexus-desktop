@@ -7,6 +7,7 @@ providing a clean interface for different extraction scenarios.
 
 import subprocess
 import time
+import re
 from pathlib import Path
 from typing import Callable, List, Optional, Union
 
@@ -51,9 +52,6 @@ class FFmpegExtractor:
             
         Returns:
             True if extraction succeeded, False otherwise
-            
-        Raises:
-            RuntimeError: If FFmpeg is not available or command fails
         """
         ffmpeg_path = self._config.get_ffmpeg_path()
         if not ffmpeg_path:
@@ -90,175 +88,29 @@ class FFmpegExtractor:
         Args:
             input_file: Source media file
             output_file: Target output file
-            track: Video track to extract
+            track: Track to extract (must be video type)
             progress_callback: Optional progress callback function
             
         Returns:
             True if extraction succeeded, False otherwise
         """
         if track.type != "video":
-            raise ValueError("Letterbox removal only applies to video tracks")
+            raise ValueError("Letterbox removal only supported for video tracks")
         
         ffmpeg_path = self._config.get_ffmpeg_path()
         if not ffmpeg_path:
             raise RuntimeError("FFmpeg not found. Please install FFmpeg.")
         
-        # Build command with cropdetect and crop filters
-        command = self._build_letterbox_removal_command(
+        # Build command with cropdetect filter
+        command = self._build_video_extraction_with_crop_command(
             ffmpeg_path, input_file, output_file, track
         )
         
         return self._execute_ffmpeg_command(command, progress_callback)
     
-    def _build_audio_extraction_command(
-        self, ffmpeg_path: str, input_file: Path, output_file: Path, track: Track
-    ) -> List[str]:
-        """Build FFmpeg command for audio track extraction."""
-        return [
-            ffmpeg_path,
-            "-i", str(input_file),
-            "-map", f"0:a:{track.id}",  # Map specific audio track
-            "-c", "copy",               # Copy without re-encoding
-            "-y",                       # Overwrite output file
-            str(output_file)
-        ]
-    
-    def _build_subtitle_extraction_command(
-        self, ffmpeg_path: str, input_file: Path, output_file: Path, track: Track
-    ) -> List[str]:
-        """Build FFmpeg command for subtitle track extraction."""
-        return [
-            ffmpeg_path,
-            "-i", str(input_file),
-            "-map", f"0:s:{track.id}",  # Map specific subtitle track
-            "-c", "copy",               # Copy without re-encoding
-            "-y",                       # Overwrite output file
-            str(output_file)
-        ]
-    
-    def _build_video_extraction_command(
-        self, ffmpeg_path: str, input_file: Path, output_file: Path, track: Track
-    ) -> List[str]:
-        """Build FFmpeg command for video track extraction."""
-        return [
-            ffmpeg_path,
-            "-i", str(input_file),
-            "-map", f"0:v:{track.id}",  # Map specific video track
-            "-c", "copy",               # Copy without re-encoding
-            "-y",                       # Overwrite output file
-            str(output_file)
-        ]
-    
-    def _build_letterbox_removal_command(
-        self, ffmpeg_path: str, input_file: Path, output_file: Path, track: Track
-    ) -> List[str]:
-        """Build FFmpeg command for video extraction with letterbox removal."""
-        return [
-            ffmpeg_path,
-            "-i", str(input_file),
-            "-map", f"0:v:{track.id}",
-            "-vf", "cropdetect=24:16:0,crop=in_w:in_h-2*y:x:y",  # Auto-crop letterboxes
-            "-c:v", "libx264",          # Re-encode with H.264
-            "-preset", "medium",        # Encoding preset
-            "-crf", "23",              # Quality setting
-            "-y",                       # Overwrite output file
-            str(output_file)
-        ]
-    
-    def _execute_ffmpeg_command(
-        self, command: List[str], progress_callback: Optional[Callable[[float], None]] = None
-    ) -> bool:
-        """
-        Execute FFmpeg command with optional progress tracking.
-        
-        Args:
-            command: FFmpeg command to execute
-            progress_callback: Optional progress callback function
-            
-        Returns:
-            True if command succeeded, False otherwise
-        """
-        try:
-            self._logger.debug(f"Executing FFmpeg command: {' '.join(command)}")
-            start_time = time.time()
-            
-            if progress_callback:
-                # Execute with progress tracking
-                return self._execute_with_progress(command, progress_callback)
-            else:
-                # Execute without progress tracking
-                result = subprocess.run(
-                    command,
-                    capture_output=True,
-                    text=True,
-                    check=True
-                )
-                
-                execution_time = time.time() - start_time
-                self._logger.debug(f"FFmpeg command completed in {execution_time:.2f}s")
-                return True
-                
-        except subprocess.CalledProcessError as e:
-            self._logger.error(f"FFmpeg command failed: {e.stderr}")
-            return False
-        except Exception as e:
-            self._logger.error(f"Unexpected error executing FFmpeg: {e}")
-            return False
-    
-    def _execute_with_progress(
-        self, command: List[str], progress_callback: Callable[[float], None]
-    ) -> bool:
-        """
-        Execute FFmpeg command with progress tracking.
-        
-        Args:
-            command: FFmpeg command to execute
-            progress_callback: Progress callback function
-            
-        Returns:
-            True if command succeeded, False otherwise
-        """
-        try:
-            # Add progress reporting to command
-            progress_command = command + ["-progress", "pipe:1"]
-            
-            process = subprocess.Popen(
-                progress_command,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                universal_newlines=True
-            )
-            
-            # Parse progress output
-            while True:
-                output = process.stdout.readline()
-                if output == '' and process.poll() is not None:
-                    break
-                
-                if output.startswith('out_time_ms='):
-                    # Extract time and calculate progress
-                    time_ms = int(output.split('=')[1])
-                    # This would need duration info for accurate progress
-                    # For now, just report that processing is happening
-                    progress_callback(50.0)  # Placeholder progress
-            
-            return_code = process.poll()
-            if return_code == 0:
-                progress_callback(100.0)  # Complete
-                return True
-            else:
-                error_output = process.stderr.read()
-                self._logger.error(f"FFmpeg failed with return code {return_code}: {error_output}")
-                return False
-                
-        except Exception as e:
-            self._logger.error(f"Error executing FFmpeg with progress: {e}")
-            return False
-    
     def validate_ffmpeg_availability(self) -> bool:
         """
-        Check if FFmpeg is available and functional.
+        Check if FFmpeg is available for use.
         
         Returns:
             True if FFmpeg is available, False otherwise
@@ -271,8 +123,154 @@ class FFmpegExtractor:
             subprocess.run(
                 [ffmpeg_path, "-version"],
                 capture_output=True,
-                check=True
+                check=True,
+                timeout=10
             )
             return True
-        except (subprocess.CalledProcessError, FileNotFoundError):
-            return False 
+        except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+            return False
+    
+    def _build_video_extraction_command(
+        self, ffmpeg_path: str, input_file: Path, output_file: Path, track: Track
+    ) -> List[str]:
+        """Build FFmpeg command for video track extraction."""
+        return [
+            ffmpeg_path,
+            "-i", str(input_file),
+            "-map", f"0:{track.id}",
+            "-c:v", "copy",  # Copy video stream without re-encoding
+            "-avoid_negative_ts", "make_zero",
+            "-y",  # Overwrite output file
+            str(output_file)
+        ]
+    
+    def _build_audio_extraction_command(
+        self, ffmpeg_path: str, input_file: Path, output_file: Path, track: Track
+    ) -> List[str]:
+        """Build FFmpeg command for audio track extraction."""
+        return [
+            ffmpeg_path,
+            "-i", str(input_file),
+            "-map", f"0:{track.id}",
+            "-c:a", "copy",  # Copy audio stream without re-encoding
+            "-avoid_negative_ts", "make_zero", 
+            "-y",  # Overwrite output file
+            str(output_file)
+        ]
+    
+    def _build_subtitle_extraction_command(
+        self, ffmpeg_path: str, input_file: Path, output_file: Path, track: Track
+    ) -> List[str]:
+        """Build FFmpeg command for subtitle track extraction."""
+        # For subtitle extraction, handle different formats appropriately
+        if track.codec in ["ass", "ssa"]:
+            # Keep ASS/SSA format
+            return [
+                ffmpeg_path,
+                "-i", str(input_file),
+                "-map", f"0:{track.id}",
+                "-c:s", "copy",
+                "-y",
+                str(output_file)
+            ]
+        else:
+            # Convert to SRT for other formats
+            return [
+                ffmpeg_path,
+                "-i", str(input_file),
+                "-map", f"0:{track.id}",
+                "-c:s", "srt",
+                "-y",
+                str(output_file)
+            ]
+    
+    def _build_video_extraction_with_crop_command(
+        self, ffmpeg_path: str, input_file: Path, output_file: Path, track: Track
+    ) -> List[str]:
+        """Build FFmpeg command for video extraction with letterbox removal."""
+        return [
+            ffmpeg_path,
+            "-i", str(input_file),
+            "-map", f"0:{track.id}",
+            "-vf", "cropdetect=24:16:0,crop=w=iw-max(0\\,2*max(t\\,b)):h=ih-max(0\\,2*max(l\\,r)):x=max(l\\,0):y=max(t\\,0)",
+            "-c:v", "libx264",  # Re-encode for cropping
+            "-crf", "18",  # High quality
+            "-preset", "medium",
+            "-avoid_negative_ts", "make_zero",
+            "-y",
+            str(output_file)
+        ]
+    
+    def _execute_ffmpeg_command(
+        self, command: List[str], progress_callback: Optional[Callable[[float], None]] = None
+    ) -> bool:
+        """
+        Execute FFmpeg command with progress tracking.
+        
+        Args:
+            command: FFmpeg command to execute
+            progress_callback: Optional progress callback function
+            
+        Returns:
+            True if command succeeded, False otherwise
+        """
+        try:
+            self._logger.info(f"Executing FFmpeg command: {' '.join(command)}")
+            
+            process = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True
+            )
+            
+            # Track progress if callback provided
+            if progress_callback:
+                self._track_progress(process, progress_callback)
+            
+            stdout, stderr = process.communicate()
+            
+            if process.returncode == 0:
+                self._logger.info("FFmpeg extraction completed successfully")
+                if progress_callback:
+                    progress_callback(100.0)
+                return True
+            else:
+                self._logger.error(f"FFmpeg failed with return code {process.returncode}")
+                self._logger.error(f"FFmpeg stderr: {stderr}")
+                return False
+                
+        except Exception as e:
+            self._logger.error(f"FFmpeg execution failed: {e}")
+            return False
+    
+    def _track_progress(self, process: subprocess.Popen, progress_callback: Callable[[float], None]):
+        """Track FFmpeg progress by parsing stderr output."""
+        duration_pattern = re.compile(r"Duration: (\d{2}):(\d{2}):(\d{2})\.(\d{2})")
+        time_pattern = re.compile(r"time=(\d{2}):(\d{2}):(\d{2})\.(\d{2})")
+        
+        total_duration = None
+        
+        try:
+            for line in iter(process.stderr.readline, ''):
+                if not line:
+                    break
+                
+                # Extract total duration
+                if total_duration is None:
+                    duration_match = duration_pattern.search(line)
+                    if duration_match:
+                        hours, minutes, seconds, centiseconds = map(int, duration_match.groups())
+                        total_duration = hours * 3600 + minutes * 60 + seconds + centiseconds / 100
+                
+                # Extract current time and calculate progress
+                if total_duration:
+                    time_match = time_pattern.search(line)
+                    if time_match:
+                        hours, minutes, seconds, centiseconds = map(int, time_match.groups())
+                        current_time = hours * 3600 + minutes * 60 + seconds + centiseconds / 100
+                        progress = min(100.0, (current_time / total_duration) * 100)
+                        progress_callback(progress)
+                        
+        except Exception as e:
+            self._logger.warning(f"Progress tracking failed: {e}")

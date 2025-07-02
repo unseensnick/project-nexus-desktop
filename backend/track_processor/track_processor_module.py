@@ -1,5 +1,5 @@
 """
-TrackProcessor Module - Main interface for track extraction and processing.
+TrackProcessor Module - Complete implementation for track extraction and processing.
 
 Provides the primary interface for extracting tracks from media files,
 coordinating between FFmpeg operations and file management.
@@ -52,153 +52,130 @@ class TrackProcessorModule:
         
         Args:
             source_file: Path to the source media file
-            output_directory: Directory to save the extracted track
-            track_type: Type of track to extract ('audio', 'video', 'subtitle')
-            track_id: ID of the track to extract
-            remove_letterbox: Whether to remove letterboxing (video only)
+            output_directory: Directory to save extracted track
+            track_type: Type of track (audio, video, subtitle)
+            track_id: ID of the specific track to extract
+            remove_letterbox: Whether to remove letterbox from video tracks
             progress_callback: Optional progress callback function
             
         Returns:
             ExtractionResult containing operation details
+            
+        Raises:
+            ValueError: If parameters are invalid
+            RuntimeError: If extraction fails
         """
         source_path = Path(source_file)
         output_dir = Path(output_directory)
         
-        self._logger.info(f"Extracting {track_type} track {track_id} from {source_path}")
+        # Validate inputs
+        if not source_path.exists():
+            raise FileNotFoundError(f"Source file not found: {source_path}")
+        
+        if not output_dir.exists():
+            output_dir.mkdir(parents=True, exist_ok=True)
         
         try:
-            # Ensure output directory exists
-            output_dir.mkdir(parents=True, exist_ok=True)
-            
             # Analyze source file to get track information
-            media_file = self._media_analyzer.analyze_file(source_path)
+            self._logger.info(f"Analyzing source file: {source_path}")
+            media_file = self._media_analyzer.analyze_file(str(source_path))
             
-            # Find the requested track
-            track = self._find_track_by_type_and_id(media_file.tracks, track_type, track_id)
-            if not track:
-                return ExtractionResult.error_result(
-                    f"Track {track_type}:{track_id} not found in {source_path}",
-                    "TrackNotFoundError"
+            # Find the specific track
+            target_track = self._find_track_by_type_and_id(
+                media_file.tracks, track_type, track_id
+            )
+            
+            if not target_track:
+                raise ValueError(
+                    f"Track not found: {track_type} track with ID {track_id}"
                 )
             
             # Create extraction request
-            request = TrackExtractionRequest(
+            request = TrackExtractionRequest.create(
                 source_file=source_path,
                 output_directory=output_dir,
-                track=track,
+                track=target_track,
                 remove_letterbox=remove_letterbox
             )
             
             # Execute extraction
-            return self._execute_extraction(request, progress_callback)
+            self._logger.info(f"Extracting {track_type} track {track_id} from {source_path}")
+            result = self._execute_extraction(request, progress_callback)
+            
+            if result.success:
+                self._logger.info(f"Successfully extracted track to {result.output_file}")
+            else:
+                self._logger.error(f"Track extraction failed: {result.error_message}")
+            
+            return result
             
         except Exception as e:
             self._logger.error(f"Track extraction failed: {e}")
             return ExtractionResult.error_result(str(e), e.__class__.__name__)
     
-    def extract_tracks_by_language(
+    def extract_multiple_tracks(
         self,
         source_file: Union[str, Path],
         output_directory: Union[str, Path],
-        languages: List[str],
-        track_types: Optional[List[str]] = None,
+        track_specifications: List[dict],
         progress_callback: Optional[Callable[[float], None]] = None
     ) -> List[ExtractionResult]:
         """
-        Extract all tracks matching specified languages.
+        Extract multiple tracks from a media file.
         
         Args:
             source_file: Path to the source media file
             output_directory: Directory to save extracted tracks
-            languages: List of language codes to extract
-            track_types: Optional list of track types to include
+            track_specifications: List of track specs with type, id, and options
             progress_callback: Optional progress callback function
             
         Returns:
-            List of ExtractionResult objects for each extraction
+            List of ExtractionResult objects for each track
         """
-        source_path = Path(source_file)
-        output_dir = Path(output_directory)
+        results = []
+        total_tracks = len(track_specifications)
         
-        if track_types is None:
-            track_types = ["audio", "subtitle"]  # Default types
-        
-        self._logger.info(f"Extracting tracks for languages {languages} from {source_path}")
-        
-        try:
-            # Analyze source file
-            media_file = self._media_analyzer.analyze_file(source_path)
-            
-            # Filter tracks by language and type
-            matching_tracks = []
-            for track in media_file.tracks:
-                if (track.type in track_types and 
-                    track.language in languages):
-                    matching_tracks.append(track)
-            
-            if not matching_tracks:
-                self._logger.warning(f"No tracks found for languages {languages}")
-                return []
-            
-            # Extract each matching track
-            results = []
-            for i, track in enumerate(matching_tracks):
-                # Calculate progress for this track
-                track_progress_callback = None
+        for i, spec in enumerate(track_specifications):
+            try:
+                # Update progress
                 if progress_callback:
-                    def track_progress(progress: float):
-                        overall_progress = (i / len(matching_tracks)) * 100 + (progress / len(matching_tracks))
-                        progress_callback(overall_progress)
-                    track_progress_callback = track_progress
+                    progress = (i / total_tracks) * 100
+                    progress_callback(progress)
                 
-                # Create extraction request
-                request = TrackExtractionRequest(
-                    source_file=source_path,
-                    output_directory=output_dir,
-                    track=track
+                # Extract individual track
+                result = self.extract_track(
+                    source_file=source_file,
+                    output_directory=output_directory,
+                    track_type=spec.get("track_type"),
+                    track_id=spec.get("track_id"),
+                    remove_letterbox=spec.get("remove_letterbox", False)
                 )
                 
-                # Execute extraction
-                result = self._execute_extraction(request, track_progress_callback)
                 results.append(result)
                 
-                # Stop on first failure if desired
-                if not result.success:
-                    self._logger.warning(f"Track extraction failed: {result.error_message}")
-            
-            return results
-            
-        except Exception as e:
-            self._logger.error(f"Language-based extraction failed: {e}")
-            return [ExtractionResult.error_result(str(e), e.__class__.__name__)]
-    
-    def get_codec_extension(self, track: Track) -> str:
-        """
-        Get appropriate file extension for a track's codec.
+            except Exception as e:
+                self._logger.error(f"Failed to extract track {spec}: {e}")
+                results.append(ExtractionResult.error_result(str(e), e.__class__.__name__))
         
-        Args:
-            track: Track to get extension for
-            
-        Returns:
-            File extension for the track's codec
+        # Final progress update
+        if progress_callback:
+            progress_callback(100.0)
+        
+        return results
+    
+    def get_supported_formats(self) -> dict:
         """
-        if track.type == "audio":
-            return self._config.audio_codec_mappings.get(
-                track.codec, 
-                self._config.audio_codec_mappings["default"]
-            )
-        elif track.type == "subtitle":
-            return self._config.subtitle_codec_mappings.get(
-                track.codec,
-                self._config.subtitle_codec_mappings["default"]
-            )
-        elif track.type == "video":
-            return self._config.video_codec_mappings.get(
-                track.codec,
-                self._config.video_codec_mappings["default"]
-            )
-        else:
-            return "mkv"  # Default container
+        Get supported input and output formats.
+        
+        Returns:
+            Dictionary with supported formats information
+        """
+        return {
+            "input_formats": [".mkv", ".mp4", ".avi", ".mov", ".webm", ".m4v"],
+            "audio_codecs": ["aac", "mp3", "ac3", "dts", "flac", "opus"],
+            "video_codecs": ["h264", "h265", "vp9", "av1"],
+            "subtitle_codecs": ["ass", "srt", "vtt", "sup"]
+        }
     
     def validate_extraction_capability(self) -> bool:
         """
@@ -282,4 +259,38 @@ class TrackProcessorModule:
         for track in tracks:
             if track.type == track_type and track.id == track_id:
                 return track
-        return None 
+        return None
+    
+    def _get_extension_for_track(self, track: Track) -> str:
+        """
+        Get appropriate file extension for a track.
+        
+        Args:
+            track: Track to get extension for
+            
+        Returns:
+            File extension for the track's codec
+        """
+        if track.type == "audio":
+            codec_map = {
+                "aac": "aac",
+                "mp3": "mp3", 
+                "ac3": "ac3",
+                "dts": "dts",
+                "flac": "flac",
+                "opus": "opus"
+            }
+            return codec_map.get(track.codec, "mka")
+        elif track.type == "subtitle":
+            codec_map = {
+                "ass": "ass",
+                "ssa": "ssa", 
+                "srt": "srt",
+                "subrip": "srt",
+                "vtt": "vtt"
+            }
+            return codec_map.get(track.codec, "srt")
+        elif track.type == "video":
+            return "mkv"  # Use MKV container for video
+        else:
+            return "mkv"  # Default container

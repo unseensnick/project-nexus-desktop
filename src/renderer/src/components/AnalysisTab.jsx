@@ -1,14 +1,8 @@
 /**
- * A comprehensive interface for analyzing media files and configuring extraction settings.
- * Adapts its UI between single-file and batch processing modes, displaying appropriate
- * options and controls for each context.
+ * Updated AnalysisTab component that works with the new modular backend.
+ * Maintains all existing UI functionality while using the new backend services.
  *
- * Key responsibilities:
- * - Displaying media analysis results (track counts, track details)
- * - Managing language selection for extraction
- * - Configuring extraction options (track types, processing settings)
- * - Handling batch processing parameters (worker threads)
- * - Providing visual feedback during extraction operations
+ * **REPLACE:** `src/renderer/src/components/AnalysisTab.jsx` **WITH:** `AnalysisTab.jsx` **LOCATION:** `src/renderer/src/components/`
  */
 
 import ProgressCard from "@/components/ProgressCard"
@@ -25,6 +19,7 @@ import {
 } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import { Switch } from "@/components/ui/switch"
+import { useBackendService } from "@/providers/BackendModuleProvider"
 import {
 	Check,
 	ChevronLeft,
@@ -45,30 +40,8 @@ import {
 import React from "react"
 
 /**
- * Displays analysis results and extraction configuration options
- *
- * @param {Object} props
- * @param {string} props.fileName - Name of the file being analyzed
- * @param {Object} props.analyzed - Analysis results for single file mode
- * @param {boolean} props.batchMode - Whether in batch processing mode
- * @param {Object} props.batchAnalyzed - Analysis results for batch mode
- * @param {Array<string>} props.availableLanguages - Languages available for extraction
- * @param {Array<string>} props.selectedLanguages - Languages selected for extraction
- * @param {Object} props.extractionOptions - Configuration options for extraction
- * @param {number} props.maxWorkers - Number of worker threads for batch processing
- * @param {Function} props.setMaxWorkers - Handler to update worker thread count
- * @param {Function} props.toggleLanguage - Handler to toggle language selection
- * @param {Function} props.toggleOption - Handler to toggle extraction options
- * @param {Function} props.handleExtractTracks - Handler to start extraction process
- * @param {boolean} props.isExtracting - Whether extraction is currently in progress
- * @param {Function} props.setActiveTab - Handler to change the active tab
- * @param {string} props.filePath - Path to the media file being processed
- * @param {string} props.outputPath - Path where extracted files will be saved
- * @param {Array<string>} props.inputPaths - Paths for batch processing
- * @param {Object} props.fileProgressMap - Progress information for batch files
- * @param {number} props.progressValue - Current extraction progress percentage
- * @param {string} props.progressText - Text description of current extraction task
- * @returns {JSX.Element} The rendered analysis tab
+ * Enhanced AnalysisTab component with backend service integration.
+ * Displays analysis results and extraction configuration options.
  */
 function AnalysisTab({
 	fileName,
@@ -88,10 +61,13 @@ function AnalysisTab({
 	filePath,
 	outputPath,
 	inputPaths,
-	fileProgressMap,
 	progressValue,
-	progressText
+	progressText,
+	fileProgressMap
 }) {
+	// Backend service integration for enhanced functionality
+	const { isBackendReady, getBackendStatus } = useBackendService()
+
 	// Limit worker count based on available CPU cores with a sensible upper bound
 	const maxAllowedWorkers = Math.min(navigator.hardwareConcurrency || 4, 16)
 
@@ -100,8 +76,52 @@ function AnalysisTab({
 	const displayName = batchMode ? `Batch (${inputPaths.length} files)` : fileName
 
 	/**
-	 * Determines human-readable description of current extraction mode
-	 * @returns {string} Description of active extraction mode
+	 * Get track counts from analysis result.
+	 */
+	const getTrackCounts = () => {
+		if (!analysisResult) {
+			return { audio: 0, subtitle: 0, video: 0 }
+		}
+
+		if (batchMode) {
+			// For batch mode, use counts from analysis result
+			return {
+				audio: analysisResult.audio_tracks || 0,
+				subtitle: analysisResult.subtitle_tracks || 0,
+				video: analysisResult.video_tracks || 0
+			}
+		} else {
+			// For single file mode, use trackCounts or fallback to direct counts
+			if (analysisResult.trackCounts) {
+				return {
+					audio: analysisResult.trackCounts.audio || 0,
+					subtitle: analysisResult.trackCounts.subtitle || 0,
+					video: analysisResult.trackCounts.video || 0
+				}
+			} else {
+				return {
+					audio: analysisResult.audio_tracks || 0,
+					subtitle: analysisResult.subtitle_tracks || 0,
+					video: analysisResult.video_tracks || 0
+				}
+			}
+		}
+	}
+
+	/**
+	 * Get tracks list for display.
+	 */
+	const getTracksForDisplay = () => {
+		if (!analysisResult || batchMode) {
+			return []
+		}
+
+		// Return tracks from analysis result
+		return analysisResult.tracks || []
+	}
+
+	/**
+	 * Determines human-readable description of current extraction mode.
 	 */
 	const getCurrentModeText = () => {
 		if (extractionOptions.audioOnly) return "Audio only"
@@ -110,6 +130,36 @@ function AnalysisTab({
 		if (extractionOptions.includeVideo) return "All tracks"
 		return "Audio and Subtitles" // Default mode
 	}
+
+	/**
+	 * Check if extraction can proceed.
+	 */
+	const canStartExtraction = () => {
+		const hasFiles = batchMode ? inputPaths.length > 0 : Boolean(filePath)
+		const hasOutput = Boolean(outputPath)
+		const hasAnalysis = Boolean(analysisResult)
+		const hasLanguages = selectedLanguages.length > 0
+		const backendReady = isBackendReady()
+
+		return hasFiles && hasOutput && hasAnalysis && hasLanguages && backendReady && !isExtracting
+	}
+
+	/**
+	 * Get backend status information for display.
+	 */
+	const getBackendStatusInfo = () => {
+		const status = getBackendStatus()
+		return {
+			isReady: status.isReady,
+			message: status.isReady
+				? "Backend services ready"
+				: status.error?.message || "Backend not available"
+		}
+	}
+
+	const trackCounts = getTrackCounts()
+	const tracks = getTracksForDisplay()
+	const backendStatus = getBackendStatusInfo()
 
 	// Display placeholder when no analysis is available yet
 	if (!analysisResult) {
@@ -124,6 +174,13 @@ function AnalysisTab({
 						Return to the file selection tab to analyze{" "}
 						{batchMode ? "a batch" : "a file"}.
 					</div>
+
+					{/* Backend status indicator */}
+					<div className="mt-4 p-3 bg-muted rounded-lg">
+						<div className="text-sm">
+							<strong>Backend Status:</strong> {backendStatus.message}
+						</div>
+					</div>
 				</CardContent>
 				<CardFooter>
 					<Button
@@ -131,6 +188,7 @@ function AnalysisTab({
 						onClick={() => setActiveTab("select")}
 						className="flex items-center gap-2"
 					>
+						<ChevronLeft className="h-4 w-4" />
 						Back to File Selection
 					</Button>
 				</CardFooter>
@@ -152,22 +210,22 @@ function AnalysisTab({
 				<CardContent className="space-y-6">
 					{/* Track summary cards showing counts by type */}
 					<div className="grid grid-cols-3 gap-4 mb-6">
-						<TrackSummaryCard type="audio" count={analysisResult.audio_tracks} />
-						<TrackSummaryCard type="subtitle" count={analysisResult.subtitle_tracks} />
-						<TrackSummaryCard type="video" count={analysisResult.video_tracks} />
+						<TrackSummaryCard type="audio" count={trackCounts.audio} />
+						<TrackSummaryCard type="subtitle" count={trackCounts.subtitle} />
+						<TrackSummaryCard type="video" count={trackCounts.video} />
 					</div>
 
 					{/* Track list - only displayed in single file mode */}
-					{!batchMode && (
+					{!batchMode && tracks.length > 0 && (
 						<div className="mb-6">
 							<div className="bg-gray-100 dark:bg-gray-800 py-2 px-3 font-medium rounded-t-lg">
 								Available Tracks
 							</div>
 							<div className="border rounded-b-lg">
 								<div className="max-h-36 overflow-y-auto">
-									{analyzed.tracks.map((track, idx) => (
+									{tracks.map((track, idx) => (
 										<div
-											key={idx}
+											key={`${track.type}-${track.id}-${idx}`}
 											className="py-2 px-3 hover:bg-gray-50 dark:hover:bg-gray-800 flex items-center justify-between border-b last:border-b-0"
 										>
 											<div className="flex items-center gap-2">
@@ -255,7 +313,7 @@ function AnalysisTab({
 								</div>
 								<div>
 									<span className="font-medium">Sample File:</span>{" "}
-									{batchAnalyzed.sample_file}
+									{batchAnalyzed.sampleFile || batchAnalyzed.sample_file}
 								</div>
 								<div>
 									<span className="font-medium">
@@ -275,27 +333,36 @@ function AnalysisTab({
 							<span className="font-medium">Select Languages to Extract</span>
 						</div>
 						<div className="border rounded-b-lg p-4">
-							<div className="flex flex-wrap gap-2">
-								{availableLanguages.map((lang, idx) => (
-									<Badge
-										key={idx}
-										variant={
-											selectedLanguages.includes(lang) ? "default" : "outline"
-										}
-										className={`cursor-pointer text-sm py-1 px-3 ${
-											selectedLanguages.includes(lang)
-												? "bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300 border-indigo-300"
-												: ""
-										}`}
-										onClick={() => toggleLanguage(lang)}
-									>
-										{lang}
-										{selectedLanguages.includes(lang) && (
-											<Check className="ml-1 h-3 w-3" />
-										)}
-									</Badge>
-								))}
-							</div>
+							{availableLanguages.length > 0 ? (
+								<div className="flex flex-wrap gap-2">
+									{availableLanguages.map((lang, idx) => (
+										<Badge
+											key={`${lang}-${idx}`}
+											variant={
+												selectedLanguages.includes(lang)
+													? "default"
+													: "outline"
+											}
+											className={`cursor-pointer text-sm py-1 px-3 ${
+												selectedLanguages.includes(lang)
+													? "bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300 border-indigo-300"
+													: ""
+											}`}
+											onClick={() => toggleLanguage(lang)}
+										>
+											{lang}
+											{selectedLanguages.includes(lang) && (
+												<Check className="ml-1 h-3 w-3" />
+											)}
+										</Badge>
+									))}
+								</div>
+							) : (
+								<div className="text-sm text-muted-foreground py-2">
+									No languages detected in the analyzed{" "}
+									{batchMode ? "batch" : "file"}.
+								</div>
+							)}
 						</div>
 					</div>
 
@@ -478,6 +545,9 @@ function AnalysisTab({
 										extractionOptions.includeVideo) &&
 									" (letterbox removal)"}
 							</p>
+							<p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+								Backend: {backendStatus.message}
+							</p>
 						</div>
 					</div>
 				</CardContent>
@@ -493,15 +563,8 @@ function AnalysisTab({
 
 					<Button
 						onClick={handleExtractTracks}
-						disabled={
-							(!filePath && !batchMode) ||
-							(!inputPaths.length && batchMode) ||
-							!outputPath ||
-							!analysisResult ||
-							isExtracting ||
-							selectedLanguages.length === 0
-						}
-						className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700"
+						disabled={!canStartExtraction()}
+						className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
 					>
 						{isExtracting ? (
 							<RefreshCw className="h-4 w-4 animate-spin" />
