@@ -74,6 +74,84 @@ function useExtraction(filePath, outputPath, analyzed) {
 					setProgressStage(progressData.stage)
 				}
 
+				// Enhanced progress tracking for batch mode
+				if (batchMode && progressData.details && progressData.details.file_id) {
+					console.log("Batch mode - processing file progress:", progressData.details)
+					setFileProgressMap((prev) => {
+						const newMap = new Map(prev)
+
+						// Extract file-specific data from details
+						const fileId = progressData.details.file_id
+						const filename = progressData.details.filename || fileId
+						const fileProgress = progressData.details.file_progress
+						const fileStage = progressData.details.file_stage
+						const fileMessage = progressData.details.file_message
+
+						console.log(
+							`Updating file progress - File: ${filename}, Progress: ${fileProgress}%, Stage: ${fileStage}, Message: ${fileMessage}`
+						)
+
+						// Update individual file progress
+						const existingFileProgress = newMap.get(fileId) || {
+							filename: filename,
+							progress: 0,
+							stage: "pending",
+							message: "",
+							tracks: { audio: 0, video: 0, subtitle: 0 }
+						}
+
+						// Update file-specific progress data
+						if (fileProgress !== undefined) {
+							existingFileProgress.progress = Math.min(100, Math.max(0, fileProgress))
+						}
+						if (fileStage) {
+							existingFileProgress.stage = fileStage
+						}
+						if (fileMessage) {
+							existingFileProgress.message = fileMessage
+						}
+						if (progressData.details.tracks) {
+							existingFileProgress.tracks = {
+								...existingFileProgress.tracks,
+								...progressData.details.tracks
+							}
+						}
+
+						console.log(`File progress after update:`, existingFileProgress)
+						newMap.set(fileId, existingFileProgress)
+						console.log(`Map size after update: ${newMap.size}`)
+						return newMap
+					})
+				} else if (batchMode && inputPaths.length > 0) {
+					// Initialize file progress map for batch mode if not already done
+					setFileProgressMap((prev) => {
+						if (prev.size === 0 && inputPaths.length > 0) {
+							console.log(
+								"Initializing file progress map for batch mode with paths:",
+								inputPaths
+							)
+							const newMap = new Map()
+							inputPaths.forEach((path, index) => {
+								const filename =
+									path.split("/").pop() ||
+									path.split("\\").pop() ||
+									`File ${index + 1}`
+								console.log(`Adding to map - Key: ${path}, Filename: ${filename}`)
+								newMap.set(path, {
+									filename,
+									progress: 0,
+									stage: "pending",
+									message: "Waiting to start...",
+									tracks: { audio: 0, video: 0, subtitle: 0 }
+								})
+							})
+							console.log(`Initial map size: ${newMap.size}`)
+							return newMap
+						}
+						return prev
+					})
+				}
+
 				// Log progress for debugging
 				console.log("Progress update:", progressData)
 			}
@@ -97,7 +175,7 @@ function useExtraction(filePath, outputPath, analyzed) {
 			}
 			progressCleanupRef.current()
 		}
-	}, [])
+	}, [batchMode, inputPaths])
 
 	/**
 	 * Toggle between single file and batch extraction modes.
@@ -111,7 +189,7 @@ function useExtraction(filePath, outputPath, analyzed) {
 				// Switching from batch mode - cleanup
 				setInputPaths([])
 				setBatchAnalyzed(null)
-				setFileProgressMap({})
+				setFileProgressMap(new Map())
 				return false
 			}
 		})
@@ -334,36 +412,78 @@ function useExtraction(filePath, outputPath, analyzed) {
 
 			// Process successful result using new standardized format
 			if (result && result.success) {
-				// Use new standardized service layer format
-				const extractedCounts = {
-					extracted_audio: result.extractedTracks?.audio || 0,
-					extracted_video: result.extractedTracks?.video || 0,
-					extracted_subtitles: result.extractedTracks?.subtitle || 0
-				}
-				const outputFiles = result.outputFiles || []
-				const processingTime = result.processingTime || 0
+				let formattedResult
 
-				// Create a properly formatted extraction result
-				const formattedResult = {
-					success: true,
-					result: {
-						...extractedCounts,
-						output_files: outputFiles,
-						processing_time: processingTime
-					},
-					processingTime: processingTime,
-					operationId: result.operationId
+				if (batchMode) {
+					// Handle batch processing results - use backend format directly
+					const batchResult = result.result || result
+
+					// Create properly formatted batch result using backend response format
+					formattedResult = {
+						success: true,
+						type: "batch_extraction",
+						result: {
+							totalFiles: batchResult.totalFiles || batchResult.total_files || 0,
+							successfulFiles:
+								batchResult.successfulFiles || batchResult.successful_files || 0,
+							failedFiles: batchResult.failedFiles || batchResult.failed_files || 0,
+							totalTracksExtracted:
+								batchResult.totalTracksExtracted ||
+								batchResult.total_tracks_extracted ||
+								0,
+							extracted_audio: batchResult.extracted_audio || 0,
+							extracted_video: batchResult.extracted_video || 0,
+							extracted_subtitles: batchResult.extracted_subtitles || 0,
+							failedFilesList:
+								batchResult.failedFilesList || batchResult.failed_files_list || [],
+							processing_time:
+								batchResult.processingTime || batchResult.processing_time || 0
+						},
+						processingTime:
+							batchResult.processingTime || batchResult.processing_time || 0,
+						operationId: result.operationId
+					}
+
+					console.log("Batch extraction completed:", {
+						totalFiles: formattedResult.result.totalFiles,
+						successfulFiles: formattedResult.result.successfulFiles,
+						totalTracks: formattedResult.result.totalTracksExtracted,
+						processingTime: formattedResult.processingTime
+					})
+				} else {
+					// Handle single file results - use existing format conversion
+					const extractedCounts = {
+						extracted_audio: result.extractedTracks?.audio || 0,
+						extracted_video: result.extractedTracks?.video || 0,
+						extracted_subtitles: result.extractedTracks?.subtitle || 0
+					}
+					const outputFiles = result.outputFiles || []
+					const processingTime = result.processingTime || 0
+
+					// Create a properly formatted extraction result
+					formattedResult = {
+						success: true,
+						result: {
+							...extractedCounts,
+							output_files: outputFiles,
+							processing_time: processingTime
+						},
+						processingTime: processingTime,
+						operationId: result.operationId
+					}
+
+					console.log("Single extraction completed:", {
+						type: "single",
+						extractedCounts,
+						processingTime: formattedResult.processingTime
+					})
 				}
 
 				setExtractionResult(formattedResult)
 				setProgressValue(100)
-				setProgressText("Extraction completed successfully")
-
-				console.log("Extraction completed:", {
-					type: batchMode ? "batch" : "single",
-					result: formattedResult,
-					processingTime: formattedResult.processingTime
-				})
+				setProgressText(
+					batchMode ? "Batch processing completed" : "Extraction completed successfully"
+				)
 
 				return formattedResult
 			} else {

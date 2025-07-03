@@ -327,6 +327,9 @@ export class TrackProcessorService extends BackendServiceBase {
 			successfulFiles: backendResult.successful_files || 0,
 			failedFiles: backendResult.failed_files || 0,
 			totalTracksExtracted: backendResult.total_tracks_extracted || 0,
+			extracted_audio: backendResult.extracted_audio || 0,
+			extracted_video: backendResult.extracted_video || 0,
+			extracted_subtitles: backendResult.extracted_subtitles || 0,
 			failedFilesList: backendResult.failed_files_list || [],
 			processingTime: backendResult.processing_time || null,
 			languages: parameters.languages,
@@ -391,3 +394,4 @@ export class TrackProcessorService extends BackendServiceBase {
 }
 
 export default TrackProcessorService
+

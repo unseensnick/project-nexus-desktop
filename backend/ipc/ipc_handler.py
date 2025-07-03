@@ -6,6 +6,8 @@ providing a clean interface that doesn't expose internal module structure.
 """
 
 import json
+import threading
+import concurrent.futures
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 import time
@@ -434,23 +436,28 @@ class IPCHandler:
     
     def _batch_extract(self, args: Dict[str, Any], operation_id: Optional[str] = None) -> Dict[str, Any]:
         """
-        Perform batch extraction on multiple files.
+        Perform batch extraction on multiple files using parallel processing.
+        
+        Implements concurrent file processing using ThreadPoolExecutor to utilize
+        multiple worker threads for improved performance. Progress reporting is
+        coordinated across all workers to provide accurate real-time feedback.
         
         Args:
             args: Arguments for batch extraction
             operation_id: Optional operation ID
             
         Returns:
-            Batch extraction results
+            Batch extraction results with aggregated statistics
         """
         try:
             # Get required arguments
             input_paths = args.get("input_paths", [])
             output_dir = args.get("output_dir")
             languages = args.get("languages", ["eng"])
+            max_workers = args.get("max_workers", 1)
             
             if not input_paths:
-                raise ValueError("input_paths is required and cannot be empty")
+                raise ValueError("input_paths is required")
             if not output_dir:
                 raise ValueError("output_dir is required")
             
@@ -460,65 +467,392 @@ class IPCHandler:
             include_video = args.get("include_video", True)
             video_only = args.get("video_only", False)
             remove_letterbox = args.get("remove_letterbox", False)
-            max_workers = args.get("max_workers", 4)
+            
+            # Create consistent extraction options for all files
+            extraction_options = {
+                "audio_only": audio_only,
+                "subtitle_only": subtitle_only,
+                "include_video": include_video,
+                "video_only": video_only,
+                "remove_letterbox": remove_letterbox
+            }
+            
+            self._logger.info(f"Starting batch extraction: {len(input_paths)} files, {max_workers} workers")
+            self._logger.info(f"Extraction settings: {extraction_options}")
+            
+            total_files = len(input_paths)
+            results_lock = threading.Lock()
+            
+            # Initialize results structure
+            results = {
+                "successful_files": 0,
+                "failed_files": 0,
+                "failed_files_list": [],
+                "total_tracks_extracted": 0,
+                "total_audio_extracted": 0,
+                "total_video_extracted": 0,
+                "total_subtitles_extracted": 0
+            }
+            
+            # Progress tracking for parallel workers
+            file_progress = {}
+            completed_files = 0
+            
+            # Initialize progress reporting
+            progress_reporter = create_progress_reporter(operation_id) if operation_id else None
+            
+            # Initialize individual file progress in frontend
+            if progress_reporter:
+                for file_path in input_paths:
+                    filename = Path(file_path).name
+                    
+                    # Send initial file progress data
+                    progress_data = ProgressData(
+                        operation_id=operation_id,
+                        percentage=0.0,
+                        stage=ProgressStage.INITIALIZING,
+                        message=f"Processing {0} of {total_files} files...",
+                        details={
+                            "file_id": file_path,
+                            "file_progress": 0.0,
+                            "file_stage": "pending",
+                            "file_message": "Waiting to start...",
+                            "filename": filename
+                        }
+                    )
+                    progress_reporter.report_progress(progress_data)
+            
+            def update_file_progress(file_path: str, progress: float, stage: str = "processing", message: str = ""):
+                """Update progress for a specific file and calculate overall progress."""
+                with results_lock:
+                    file_progress[file_path] = progress
+                    
+                    # Calculate overall progress
+                    total_progress = sum(file_progress.values())
+                    overall_progress = (total_progress / total_files) if total_files > 0 else 0
+                    
+                    # Get filename for display
+                    filename = Path(file_path).name
+                    
+                    # Report progress through the standard progress system
+                    if progress_reporter:
+                        progress_data = ProgressData(
+                            operation_id=operation_id,
+                            percentage=overall_progress,
+                            stage=ProgressStage.PROCESSING,
+                            message=f"Processing {len(file_progress)} of {total_files} files...",
+                            details={
+                                "file_id": file_path,
+                                "file_progress": progress,
+                                "file_stage": stage,
+                                "file_message": message,
+                                "filename": filename
+                            }
+                        )
+                        progress_reporter.report_progress(progress_data)
+            
+            def process_single_file(file_path: str) -> Dict[str, Any]:
+                """Process a single file with progress tracking."""
+                try:
+                    # Initialize file progress
+                    update_file_progress(file_path, 0.0, "starting", "Analyzing file...")
+                    
+                    # Create individual operation ID for this file
+                    file_operation_id = f"{operation_id}_file_{hash(file_path)}" if operation_id else None
+                    
+                    # Set up file-specific progress callback
+                    def file_progress_callback(stage, percentage, message):
+                        """Handle individual file progress updates."""
+                        # Map stage to string
+                        stage_map = {
+                            ProgressStage.ANALYZING: "analyzing",
+                            ProgressStage.FILTERING: "filtering", 
+                            ProgressStage.EXTRACTING: "extracting",
+                            ProgressStage.COMPLETED: "completed"
+                        }
+                        stage_str = stage_map.get(stage, str(stage))
+                        
+                        # Update file progress
+                        update_file_progress(file_path, percentage, stage_str, message)
+                    
+                    # Use the same logic as single extraction with consistent settings
+                    result = self._extract_tracks_with_progress({
+                        "file_path": file_path,
+                        "output_dir": output_dir,
+                        "languages": languages,
+                        **extraction_options  # Apply consistent settings
+                    }, file_operation_id, file_progress_callback)
+                    
+                    # Mark file as completed
+                    update_file_progress(file_path, 100.0, "completed", "Extraction completed")
+                    
+                    return {
+                        "file_path": file_path,
+                        "success": True,
+                        "result": result
+                    }
+                    
+                except Exception as e:
+                    self._logger.error(f"Failed to process file {file_path}: {e}")
+                    update_file_progress(file_path, 100.0, "failed", f"Error: {str(e)}")
+                    return {
+                        "file_path": file_path,
+                        "success": False,
+                        "error": str(e)
+                    }
+            
+            # Execute parallel processing using ThreadPoolExecutor
+            with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+                # Submit all files for processing
+                future_to_file = {
+                    executor.submit(process_single_file, file_path): file_path 
+                    for file_path in input_paths
+                }
+                
+                # Process completed futures as they finish
+                for future in concurrent.futures.as_completed(future_to_file):
+                    file_path = future_to_file[future]
+                    
+                    try:
+                        file_result = future.result()
+                        
+                        with results_lock:
+                            if file_result["success"]:
+                                extraction_result = file_result["result"]
+                                
+                                results["successful_files"] += 1
+                                
+                                # Aggregate track counts
+                                audio_count = extraction_result.get("extracted_audio", 0)
+                                video_count = extraction_result.get("extracted_video", 0)
+                                subtitle_count = extraction_result.get("extracted_subtitles", 0)
+                                
+                                results["total_audio_extracted"] += audio_count
+                                results["total_video_extracted"] += video_count
+                                results["total_subtitles_extracted"] += subtitle_count
+                                results["total_tracks_extracted"] += (audio_count + video_count + subtitle_count)
+                                
+                                self._logger.info(f"Successfully processed {file_path}: {audio_count}A/{video_count}V/{subtitle_count}S")
+                            else:
+                                results["failed_files"] += 1
+                                results["failed_files_list"].append({
+                                    "file": file_path,
+                                    "error": file_result["error"]
+                                })
+                                self._logger.error(f"Failed to process {file_path}: {file_result['error']}")
+                            
+                            completed_files += 1
+                    
+                    except Exception as e:
+                        self._logger.error(f"Unexpected error processing {file_path}: {e}")
+                        with results_lock:
+                            results["failed_files"] += 1
+                            results["failed_files_list"].append({
+                                "file": file_path,
+                                "error": str(e)
+                            })
+            
+            # Final progress report
+            if progress_reporter:
+                progress_data = ProgressData(
+                    operation_id=operation_id,
+                    percentage=100.0,
+                    stage=ProgressStage.COMPLETED,
+                    message="Batch processing completed"
+                )
+                progress_reporter.report_progress(progress_data)
+            
+            self._logger.info(f"Batch extraction completed: {results['successful_files']}/{total_files} files, "
+                             f"{results['total_tracks_extracted']} total tracks extracted")
+            
+            return {
+                "success": True,
+                "total_files": total_files,
+                "successful_files": results["successful_files"],
+                "failed_files": results["failed_files"],
+                "failed_files_list": results["failed_files_list"],
+                "total_tracks_extracted": results["total_tracks_extracted"],
+                "extracted_audio": results["total_audio_extracted"],
+                "extracted_video": results["total_video_extracted"],
+                "extracted_subtitles": results["total_subtitles_extracted"]
+            }
+            
+        except Exception as e:
+            self._logger.error(f"Batch extraction failed: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "error_type": e.__class__.__name__
+            }
+    
+    def _extract_tracks_with_progress(self, args: Dict[str, Any], operation_id: Optional[str] = None, progress_callback=None) -> Dict[str, Any]:
+        """
+        Extract tracks from a media file with custom progress callback for batch mode.
+        
+        Args:
+            args: Arguments for track extraction
+            operation_id: Optional operation ID for progress tracking
+            progress_callback: Custom progress callback function
+            
+        Returns:
+            Extraction results with processing time
+        """
+        start_time = time.time()
+        
+        try:
+            # Get required arguments
+            file_path = args.get("file_path")
+            output_dir = args.get("output_dir")
+            languages = args.get("languages", ["eng"])
+            
+            if not file_path:
+                raise ValueError("file_path is required")
+            if not output_dir:
+                raise ValueError("output_dir is required")
+            
+            # Get extraction options
+            audio_only = args.get("audio_only", False)
+            subtitle_only = args.get("subtitle_only", False)
+            include_video = args.get("include_video", True)
+            video_only = args.get("video_only", False)
+            remove_letterbox = args.get("remove_letterbox", False)
             
             # Get modules from dependency container
             media_analyzer = self._container.get(MediaAnalyzerModule)
             track_processor = self._container.get(TrackProcessorModule)
             
-            # Process each file
-            total_files = len(input_paths)
-            successful_files = 0
-            failed_files = 0
-            failed_files_list = []
-            total_tracks_extracted = 0
+            # Step 1: Analyze the file (10% of total progress)
+            if progress_callback:
+                progress_callback(ProgressStage.ANALYZING, 5.0, "Analyzing media file...")
             
-            for file_path in input_paths:
-                try:
-                    # Use the same logic as single extraction
-                    result = self._extract_tracks({
-                        "file_path": file_path,
-                        "output_dir": output_dir,
-                        "languages": languages,
-                        "audio_only": audio_only,
-                        "subtitle_only": subtitle_only,
-                        "include_video": include_video,
-                        "video_only": video_only,
-                        "remove_letterbox": remove_letterbox
-                    }, operation_id)
+            self._logger.info(f"Analyzing media file: {file_path}")
+            media_file = media_analyzer.analyze_file(file_path)
+            
+            if progress_callback:
+                progress_callback(ProgressStage.ANALYZING, 10.0, "File analysis complete")
+            
+            # Step 2: Filter tracks (20% of total progress)
+            if progress_callback:
+                progress_callback(ProgressStage.FILTERING, 15.0, "Filtering tracks by language and type...")
+            
+            # Filter tracks based on criteria
+            tracks_to_extract = []
+            
+            for track in media_file.tracks:
+                # Apply language filter
+                if track.language and track.language not in languages:
+                    continue
+                
+                # Apply type filters
+                if video_only and track.type != "video":
+                    continue
+                if audio_only and track.type != "audio":
+                    continue
+                if subtitle_only and track.type != "subtitle":
+                    continue
+                
+                # For general extraction, respect include_video flag
+                if not video_only and not include_video and track.type == "video":
+                    continue
+                
+                tracks_to_extract.append(track)
+            
+            if progress_callback:
+                progress_callback(ProgressStage.FILTERING, 20.0, f"Found {len(tracks_to_extract)} tracks to extract")
+            
+            if not tracks_to_extract:
+                if progress_callback:
+                    progress_callback(ProgressStage.COMPLETED, 100.0, "No tracks found matching criteria")
+                return {
+                    "success": True,
+                    "extracted_audio": 0,
+                    "extracted_video": 0,
+                    "extracted_subtitles": 0,
+                    "output_files": [],
+                    "processing_time": time.time() - start_time,
+                    "message": "No tracks found matching criteria"
+                }
+            
+            # Step 3: Extract tracks (80% of total progress)
+            total_tracks = len(tracks_to_extract)
+            completed_tracks = 0
+            
+            def track_progress_callback(track_progress: float):
+                """Progress callback for individual track extraction"""
+                if progress_callback:
+                    # Calculate overall progress (20% already done, 80% for extraction)
+                    base_progress = 20.0
+                    extraction_progress = 80.0
                     
-                    if result["success"]:
-                        successful_files += 1
-                        total_tracks_extracted += (
-                            result.get("extracted_audio", 0) +
-                            result.get("extracted_video", 0) +
-                            result.get("extracted_subtitles", 0)
-                        )
+                    # Progress for completed tracks
+                    completed_progress = (completed_tracks / total_tracks) * extraction_progress
+                    
+                    # Progress for current track
+                    current_track_progress = (track_progress / 100.0) * (extraction_progress / total_tracks)
+                    
+                    overall_progress = base_progress + completed_progress + current_track_progress
+                    
+                    progress_callback(ProgressStage.EXTRACTING, overall_progress, 
+                                   f"Extracting track {completed_tracks + 1} of {total_tracks} ({track_progress:.1f}%)")
+                    
+            # Extract each track using TrackProcessor module
+            output_files = []
+            extracted_counts = {"audio": 0, "video": 0, "subtitle": 0}
+            
+            for track in tracks_to_extract:
+                try:
+                    # Send initial progress for this track
+                    if progress_callback:
+                        base_progress = 20.0 + (completed_tracks / total_tracks) * 80.0
+                        progress_callback(ProgressStage.EXTRACTING, base_progress, 
+                                       f"Starting {track.type} track {track.id} extraction...")
+                    
+                    result = track_processor.extract_track(
+                        source_file=file_path,
+                        output_directory=output_dir,
+                        track_type=track.type,
+                        track_id=track.id,
+                        remove_letterbox=remove_letterbox if track.type == "video" else False,
+                        progress_callback=track_progress_callback
+                    )
+                    
+                    if result.success:
+                        output_files.append(str(result.output_file))
+                        extracted_counts[track.type] += 1
+                        completed_tracks += 1
+                        
+                        # Send completion progress for this track
+                        if progress_callback:
+                            base_progress = 20.0 + (completed_tracks / total_tracks) * 80.0
+                            progress_callback(ProgressStage.EXTRACTING, base_progress, 
+                                           f"Completed {track.type} track {track.id}")
                     else:
-                        failed_files += 1
-                        failed_files_list.append({
-                            "file": file_path,
-                            "error": result.get("error", "Unknown error")
-                        })
+                        self._logger.warning(f"Failed to extract {track.type} track {track.id}: {result.error_message}")
+                        completed_tracks += 1
                         
                 except Exception as e:
-                    failed_files += 1
-                    failed_files_list.append({
-                        "file": file_path,
-                        "error": str(e)
-                    })
+                    self._logger.error(f"Error extracting {track.type} track {track.id}: {e}")
+                    completed_tracks += 1
+            
+            # Send final progress
+            if progress_callback:
+                progress_callback(ProgressStage.COMPLETED, 100.0, "Extraction completed successfully")
+            
+            processing_time = time.time() - start_time
             
             return {
                 "success": True,
-                "total_files": total_files,
-                "successful_files": successful_files,
-                "failed_files": failed_files,
-                "failed_files_list": failed_files_list,
-                "total_tracks_extracted": total_tracks_extracted
+                "extracted_audio": extracted_counts["audio"],
+                "extracted_video": extracted_counts["video"],
+                "extracted_subtitles": extracted_counts["subtitle"],
+                "output_files": output_files,
+                "processing_time": processing_time
             }
             
         except Exception as e:
-            self._logger.error(f"Batch extraction failed: {e}")
+            self._logger.error(f"Track extraction failed: {e}")
+            if progress_callback:
+                progress_callback(ProgressStage.COMPLETED, 100.0, f"Extraction failed: {str(e)}")
             return {
                 "success": False,
                 "error": str(e),

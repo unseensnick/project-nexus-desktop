@@ -58,6 +58,47 @@ function ProgressCard({
 	// Transform the map object into a sorted array for rendering
 	// This is computed only when fileProgressMap changes to optimize performance
 	const fileProgressArray = useMemo(() => {
+		console.log("ProgressCard: Processing fileProgressMap:", fileProgressMap)
+		console.log("ProgressCard: fileProgressMap is Map?", fileProgressMap instanceof Map)
+		console.log(
+			"ProgressCard: fileProgressMap size:",
+			fileProgressMap instanceof Map ? fileProgressMap.size : "Not a Map"
+		)
+
+		// Handle Map object from useExtraction.js
+		if (fileProgressMap instanceof Map) {
+			const array = Array.from(fileProgressMap.entries())
+				.map(([filePath, fileData], index) => {
+					console.log(`ProgressCard: Processing file ${index + 1}:`, {
+						filePath,
+						fileData,
+						progress: fileData.progress,
+						stage: fileData.stage,
+						message: fileData.message
+					})
+					return {
+						index,
+						fileName:
+							fileData.filename ||
+							filePath.split("/").pop() ||
+							filePath.split("\\").pop() ||
+							`File ${index + 1}`,
+						progress: fileData.progress || 0,
+						status: fileData.message || `${fileData.stage || "waiting"}...`,
+						threadId: fileData.threadId || index + 1,
+						stage: fileData.stage || "pending",
+						tracks: fileData.tracks || { audio: 0, video: 0, subtitle: 0 },
+						filePath: filePath
+					}
+				})
+				.sort((a, b) => a.index - b.index)
+
+			console.log("ProgressCard: Final fileProgressArray:", array)
+			return array
+		}
+
+		// Handle legacy object format for backward compatibility
+		console.log("ProgressCard: Using legacy object format")
 		return (
 			Object.values(fileProgressMap)
 				.sort((a, b) => a.index - b.index)
@@ -274,7 +315,10 @@ function ProgressCard({
 									item.status && item.status.toLowerCase().includes("extracting")
 
 								return (
-									<div key={item.index} className="space-y-1">
+									<div
+										key={item.index}
+										className="space-y-2 p-3 border rounded-lg bg-card"
+									>
 										<div className="flex justify-between text-xs">
 											<span
 												className="font-medium truncate max-w-[70%]"
@@ -296,6 +340,8 @@ function ProgressCard({
 												</span>
 											</div>
 										</div>
+
+										{/* Main file progress */}
 										<Progress
 											value={item.progress}
 											className={`w-full ${isCompleted ? "bg-green-100" : ""}`}
@@ -315,6 +361,76 @@ function ProgressCard({
 												{item.progress}%
 											</span>
 										</div>
+
+										{/* Track-specific progress indicators */}
+										{item.tracks &&
+											(item.tracks.audio > 0 ||
+												item.tracks.video > 0 ||
+												item.tracks.subtitle > 0) && (
+												<div className="mt-2 space-y-1">
+													<div className="text-xs text-muted-foreground mb-1">
+														Track Progress:
+													</div>
+													<div className="grid grid-cols-3 gap-2 text-xs">
+														{item.tracks.audio > 0 && (
+															<div className="space-y-1">
+																<div className="flex justify-between">
+																	<span className="text-blue-600">
+																		Audio
+																	</span>
+																	<span>{item.tracks.audio}</span>
+																</div>
+																<div className="h-1 bg-blue-100 rounded-full">
+																	<div
+																		className="h-1 bg-blue-500 rounded-full transition-all duration-300"
+																		style={{
+																			width: `${Math.min(100, (item.tracks.audio / (item.tracks.audio + item.tracks.video + item.tracks.subtitle)) * 100)}%`
+																		}}
+																	/>
+																</div>
+															</div>
+														)}
+														{item.tracks.video > 0 && (
+															<div className="space-y-1">
+																<div className="flex justify-between">
+																	<span className="text-green-600">
+																		Video
+																	</span>
+																	<span>{item.tracks.video}</span>
+																</div>
+																<div className="h-1 bg-green-100 rounded-full">
+																	<div
+																		className="h-1 bg-green-500 rounded-full transition-all duration-300"
+																		style={{
+																			width: `${Math.min(100, (item.tracks.video / (item.tracks.audio + item.tracks.video + item.tracks.subtitle)) * 100)}%`
+																		}}
+																	/>
+																</div>
+															</div>
+														)}
+														{item.tracks.subtitle > 0 && (
+															<div className="space-y-1">
+																<div className="flex justify-between">
+																	<span className="text-purple-600">
+																		Subtitle
+																	</span>
+																	<span>
+																		{item.tracks.subtitle}
+																	</span>
+																</div>
+																<div className="h-1 bg-purple-100 rounded-full">
+																	<div
+																		className="h-1 bg-purple-500 rounded-full transition-all duration-300"
+																		style={{
+																			width: `${Math.min(100, (item.tracks.subtitle / (item.tracks.audio + item.tracks.video + item.tracks.subtitle)) * 100)}%`
+																		}}
+																	/>
+																</div>
+															</div>
+														)}
+													</div>
+												</div>
+											)}
 									</div>
 								)
 							})}
