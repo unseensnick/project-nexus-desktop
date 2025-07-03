@@ -5,7 +5,7 @@ Handles the conversion of raw FFmpeg/FFprobe output into structured
 Track objects with proper metadata normalization and enhancement.
 """
 
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from core.config_manager import ConfigManager
 from core.logger import LoggerFactory
@@ -43,11 +43,13 @@ class TrackFactory:
         tracks = []
         track_counters = {"audio": 0, "video": 0, "subtitle": 0}
         
-        for stream in streams:
+        for stream_index, stream in enumerate(streams):
             track_type = self._normalize_codec_type(stream.get("codec_type", ""))
             
             if track_type in track_counters:
-                track = self._create_track_from_stream(stream, track_type, track_counters[track_type])
+                track = self._create_track_from_stream(
+                    stream, track_type, track_counters[track_type], stream_index
+                )
                 if track:
                     tracks.append(track)
                     track_counters[track_type] += 1
@@ -55,7 +57,7 @@ class TrackFactory:
         self._logger.debug(f"Created {len(tracks)} tracks from {len(streams)} streams")
         return tracks
     
-    def _create_track_from_stream(self, stream: Dict, track_type: str, track_id: int) -> Track:
+    def _create_track_from_stream(self, stream: Dict, track_type: str, track_id: int, stream_index: int) -> Track:
         """
         Create a single Track from stream data.
         
@@ -63,6 +65,7 @@ class TrackFactory:
             stream: Stream dictionary from FFprobe
             track_type: Normalized track type
             track_id: Sequential ID for this track type
+            stream_index: Original FFmpeg stream index
             
         Returns:
             Track object with normalized metadata
@@ -91,6 +94,7 @@ class TrackFactory:
             id=track_id,
             type=track_type,
             codec=codec,
+            stream_index=stream_index,  # ADDED: Store original FFmpeg stream index
             language=language,
             title=title,
             default=default,
@@ -157,37 +161,36 @@ class TrackFactory:
             if field in tags:
                 title = tags[field]
                 if title and isinstance(title, str):
-                    # Clean up common handler names that aren't useful titles
-                    title = title.strip()
-                    if title.lower() not in ["videohandler", "audiohandler", "subtitlehandler"]:
-                        return title
+                    return title.strip()
         
         return ""
     
-    def _parse_duration(self, duration_str) -> float:
+    def _parse_duration(self, duration_str) -> Optional[float]:
         """
-        Parse duration from string to float.
+        Parse duration from various formats.
         
         Args:
-            duration_str: Duration as string or number
+            duration_str: Duration string or number
             
         Returns:
-            Duration in seconds, or None if invalid
+            Duration in seconds if parseable, None otherwise
         """
         if duration_str is None:
             return None
         
         try:
-            return float(duration_str)
+            if isinstance(duration_str, (int, float)):
+                return float(duration_str)
+            elif isinstance(duration_str, str):
+                return float(duration_str)
         except (ValueError, TypeError):
-            return None
+            pass
+        
+        return None
     
     def _normalize_language_code(self, language: str) -> str:
         """
-        Normalize language code to ISO 639-2 format.
-        
-        This is a simplified implementation. In a complete system,
-        this would use the LanguageHandler module.
+        Normalize language code to standard format.
         
         Args:
             language: Raw language code
@@ -198,21 +201,21 @@ class TrackFactory:
         if not language:
             return ""
         
-        # Basic normalization - convert to lowercase and handle common cases
-        language = language.lower().strip()
+        # Convert to lowercase and strip whitespace
+        normalized = language.lower().strip()
         
-        # Simple mapping for common codes
-        language_map = {
-            "en": "eng",
-            "fr": "fra", 
-            "de": "deu",
-            "es": "spa",
-            "it": "ita",
-            "ja": "jpn",
-            "ko": "kor",
-            "zh": "zho",
-            "ru": "rus",
-            "pt": "por"
+        # Basic language code mapping for common variations
+        language_mapping = {
+            "english": "eng",
+            "japanese": "jpn",
+            "spanish": "spa",
+            "french": "fre",
+            "german": "ger",
+            "italian": "ita",
+            "portuguese": "por",
+            "chinese": "chi",
+            "korean": "kor",
+            "russian": "rus"
         }
         
-        return language_map.get(language, language) 
+        return language_mapping.get(normalized, normalized)

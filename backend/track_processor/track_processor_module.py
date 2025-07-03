@@ -91,7 +91,7 @@ class TrackProcessorModule:
                 )
             
             # Create extraction request
-            request = TrackExtractionRequest.create(
+            request = TrackExtractionRequest(
                 source_file=source_path,
                 output_directory=output_dir,
                 track=target_track,
@@ -260,37 +260,3 @@ class TrackProcessorModule:
             if track.type == track_type and track.id == track_id:
                 return track
         return None
-    
-    def _get_extension_for_track(self, track: Track) -> str:
-        """
-        Get appropriate file extension for a track.
-        
-        Args:
-            track: Track to get extension for
-            
-        Returns:
-            File extension for the track's codec
-        """
-        if track.type == "audio":
-            codec_map = {
-                "aac": "aac",
-                "mp3": "mp3", 
-                "ac3": "ac3",
-                "dts": "dts",
-                "flac": "flac",
-                "opus": "opus"
-            }
-            return codec_map.get(track.codec, "mka")
-        elif track.type == "subtitle":
-            codec_map = {
-                "ass": "ass",
-                "ssa": "ssa", 
-                "srt": "srt",
-                "subrip": "srt",
-                "vtt": "vtt"
-            }
-            return codec_map.get(track.codec, "srt")
-        elif track.type == "video":
-            return "mkv"  # Use MKV container for video
-        else:
-            return "mkv"  # Default container

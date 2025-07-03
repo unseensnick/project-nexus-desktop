@@ -22,6 +22,7 @@ class Track:
     id: int                           # Track index within its type
     type: str                         # Track category: 'audio', 'subtitle', 'video'
     codec: str                        # Codec identifier (e.g., 'aac', 'h264')
+    stream_index: int                 # Original FFmpeg stream index (ADDED)
     language: Optional[str] = None    # ISO 639-2 language code
     title: Optional[str] = None       # Title metadata if available
     default: bool = False             # Whether marked as default track
@@ -90,51 +91,71 @@ class MediaFile:
         """Get all subtitle tracks."""
         return [track for track in self.tracks if track.type == "subtitle"]
     
-    def get_tracks_by_language(self, language: str) -> List[Track]:
+    @property
+    def languages(self) -> dict:
         """
-        Get all tracks matching a specific language.
+        Get available languages by track type.
         
-        Args:
-            language: ISO 639-2 language code
-            
         Returns:
-            List of tracks with matching language
+            Dictionary with language lists for each track type
         """
-        return [track for track in self.tracks if track.language == language]
+        languages = {
+            "audio": list(set(track.language for track in self.audio_tracks if track.language)),
+            "subtitle": list(set(track.language for track in self.subtitle_tracks if track.language)),
+            "video": list(set(track.language for track in self.video_tracks if track.language))
+        }
+        
+        # Sort each language list
+        for track_type in languages:
+            languages[track_type].sort()
+        
+        return languages
     
-    def get_tracks_by_type(self, track_type: str) -> List[Track]:
+    def get_tracks_by_language(self, language: str, track_types: List[str] = None) -> List[Track]:
         """
-        Get all tracks of a specific type.
+        Filter tracks by language and optionally by track types.
         
         Args:
-            track_type: Track type ('audio', 'video', 'subtitle')
+            language: Language code to filter by
+            track_types: Optional list of track types to include
             
         Returns:
-            List of tracks with matching type
+            List of tracks matching the criteria
         """
-        return [track for track in self.tracks if track.type == track_type]
+        if track_types is None:
+            track_types = ["audio", "video", "subtitle"]
+        
+        return [
+            track for track in self.tracks
+            if track.language == language and track.type in track_types
+        ]
     
-    def has_tracks_of_type(self, track_type: str) -> bool:
+    def get_available_languages(self, track_type: str) -> List[str]:
         """
-        Check if file contains tracks of a specific type.
+        Get available languages for a specific track type.
         
         Args:
-            track_type: Track type to check for
+            track_type: Type of tracks to get languages for ('audio', 'video', 'subtitle')
             
         Returns:
-            True if file contains tracks of the specified type
+            List of unique language codes for the specified track type
         """
-        return any(track.type == track_type for track in self.tracks)
-    
-    def get_available_languages(self, track_type: Optional[str] = None) -> set:
-        """
-        Get all available languages in the file.
+        if track_type == "audio":
+            tracks = self.audio_tracks
+        elif track_type == "video":
+            tracks = self.video_tracks
+        elif track_type == "subtitle":
+            tracks = self.subtitle_tracks
+        else:
+            return []
         
-        Args:
-            track_type: Optional filter by track type
-            
-        Returns:
-            Set of available language codes
-        """
-        tracks = self.tracks if track_type is None else self.get_tracks_by_type(track_type)
-        return {track.language for track in tracks if track.language is not None} 
+        # Get unique languages, filtering out None/empty values
+        languages = list(set(
+            track.language for track in tracks 
+            if track.language
+        ))
+        
+        # Sort for consistent output
+        languages.sort()
+        
+        return languages

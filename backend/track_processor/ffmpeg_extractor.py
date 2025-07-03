@@ -137,7 +137,7 @@ class FFmpegExtractor:
         return [
             ffmpeg_path,
             "-i", str(input_file),
-            "-map", f"0:{track.id}",
+            "-map", f"0:{track.stream_index}",  # FIXED: Use stream_index instead of id
             "-c:v", "copy",  # Copy video stream without re-encoding
             "-avoid_negative_ts", "make_zero",
             "-y",  # Overwrite output file
@@ -151,7 +151,7 @@ class FFmpegExtractor:
         return [
             ffmpeg_path,
             "-i", str(input_file),
-            "-map", f"0:{track.id}",
+            "-map", f"0:{track.stream_index}",  # FIXED: Use stream_index instead of id
             "-c:a", "copy",  # Copy audio stream without re-encoding
             "-avoid_negative_ts", "make_zero", 
             "-y",  # Overwrite output file
@@ -168,7 +168,7 @@ class FFmpegExtractor:
             return [
                 ffmpeg_path,
                 "-i", str(input_file),
-                "-map", f"0:{track.id}",
+                "-map", f"0:{track.stream_index}",  # FIXED: Use stream_index instead of id
                 "-c:s", "copy",
                 "-y",
                 str(output_file)
@@ -178,7 +178,7 @@ class FFmpegExtractor:
             return [
                 ffmpeg_path,
                 "-i", str(input_file),
-                "-map", f"0:{track.id}",
+                "-map", f"0:{track.stream_index}",  # FIXED: Use stream_index instead of id
                 "-c:s", "srt",
                 "-y",
                 str(output_file)
@@ -191,7 +191,7 @@ class FFmpegExtractor:
         return [
             ffmpeg_path,
             "-i", str(input_file),
-            "-map", f"0:{track.id}",
+            "-map", f"0:{track.stream_index}",  # FIXED: Use stream_index instead of id
             "-vf", "cropdetect=24:16:0,crop=w=iw-max(0\\,2*max(t\\,b)):h=ih-max(0\\,2*max(l\\,r)):x=max(l\\,0):y=max(t\\,0)",
             "-c:v", "libx264",  # Re-encode for cropping
             "-crf", "18",  # High quality
@@ -217,60 +217,47 @@ class FFmpegExtractor:
         try:
             self._logger.info(f"Executing FFmpeg command: {' '.join(command)}")
             
-            process = subprocess.Popen(
+            # Execute command
+            process = subprocess.run(
                 command,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                universal_newlines=True
+                capture_output=True,
+                text=True,
+                timeout=1800  # 30 minute timeout
             )
-            
-            # Track progress if callback provided
-            if progress_callback:
-                self._track_progress(process, progress_callback)
-            
-            stdout, stderr = process.communicate()
             
             if process.returncode == 0:
                 self._logger.info("FFmpeg extraction completed successfully")
-                if progress_callback:
-                    progress_callback(100.0)
                 return True
             else:
                 self._logger.error(f"FFmpeg failed with return code {process.returncode}")
-                self._logger.error(f"FFmpeg stderr: {stderr}")
+                if process.stderr:
+                    self._logger.error(f"FFmpeg stderr: {process.stderr}")
                 return False
                 
+        except subprocess.TimeoutExpired:
+            self._logger.error("FFmpeg command timed out")
+            return False
         except Exception as e:
-            self._logger.error(f"FFmpeg execution failed: {e}")
+            self._logger.error(f"FFmpeg command execution failed: {e}")
             return False
     
-    def _track_progress(self, process: subprocess.Popen, progress_callback: Callable[[float], None]):
-        """Track FFmpeg progress by parsing stderr output."""
-        duration_pattern = re.compile(r"Duration: (\d{2}):(\d{2}):(\d{2})\.(\d{2})")
-        time_pattern = re.compile(r"time=(\d{2}):(\d{2}):(\d{2})\.(\d{2})")
+    def _parse_progress(self, line: str) -> Optional[float]:
+        """
+        Parse progress information from FFmpeg output.
         
-        total_duration = None
+        Args:
+            line: Line of FFmpeg output
+            
+        Returns:
+            Progress percentage if found, None otherwise
+        """
+        # Look for time progress in FFmpeg output
+        time_match = re.search(r'time=(\d+):(\d+):(\d+\.\d+)', line)
+        if time_match:
+            hours, minutes, seconds = time_match.groups()
+            current_time = int(hours) * 3600 + int(minutes) * 60 + float(seconds)
+            # Would need duration to calculate percentage
+            # For now, just return None - progress tracking can be enhanced later
+            return None
         
-        try:
-            for line in iter(process.stderr.readline, ''):
-                if not line:
-                    break
-                
-                # Extract total duration
-                if total_duration is None:
-                    duration_match = duration_pattern.search(line)
-                    if duration_match:
-                        hours, minutes, seconds, centiseconds = map(int, duration_match.groups())
-                        total_duration = hours * 3600 + minutes * 60 + seconds + centiseconds / 100
-                
-                # Extract current time and calculate progress
-                if total_duration:
-                    time_match = time_pattern.search(line)
-                    if time_match:
-                        hours, minutes, seconds, centiseconds = map(int, time_match.groups())
-                        current_time = hours * 3600 + minutes * 60 + seconds + centiseconds / 100
-                        progress = min(100.0, (current_time / total_duration) * 100)
-                        progress_callback(progress)
-                        
-        except Exception as e:
-            self._logger.warning(f"Progress tracking failed: {e}")
+        return None
