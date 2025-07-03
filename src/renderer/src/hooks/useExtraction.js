@@ -50,48 +50,47 @@ function useExtraction(filePath, outputPath, analyzed) {
 	// Progress cleanup reference
 	const progressCleanupRef = useRef(() => {})
 
-	// Reset progress when starting new extraction
-	useEffect(() => {
-		if (isExtracting) {
-			setProgressValue(0)
-			setProgressText(batchMode ? "Starting batch extraction..." : "Starting extraction...")
-			setFileProgressMap({})
-		}
-	}, [isExtracting, batchMode])
-
 	/**
-	 * Handle progress updates from backend operations.
+	 * Set up progress tracking and cleanup.
 	 */
-	const handleProgressUpdate = useCallback(
-		(progressData) => {
-			if (!progressData) return
+	useEffect(() => {
+		// Set up progress listener for real-time updates
+		const handleProgressUpdate = (progressData) => {
+			if (progressData && typeof progressData === "object") {
+				// Update progress value
+				if (typeof progressData.progress === "number") {
+					const clampedProgress = Math.min(100, Math.max(0, progressData.progress))
+					setProgressValue(clampedProgress)
+				}
 
-			// Update overall progress
-			if (typeof progressData.percentage === "number") {
-				setProgressValue(Math.min(100, Math.max(0, progressData.percentage)))
-			}
+				// Update progress message
+				if (progressData.message) {
+					setProgressText(progressData.message)
+				}
 
-			// Update progress text
-			if (progressData.message) {
-				setProgressText(progressData.message)
+				// Log progress for debugging
+				console.log("Progress update:", progressData)
 			}
+		}
 
-			// Handle batch mode file progress
-			if (batchMode && progressData.fileIndex !== undefined) {
-				setFileProgressMap((prev) => ({
-					...prev,
-					[progressData.fileIndex]: {
-						index: progressData.fileIndex,
-						fileName: progressData.fileName || `File ${progressData.fileIndex}`,
-						progress: progressData.percentage || 0,
-						status: progressData.message || "Processing...",
-						threadId: progressData.threadId || "unknown"
-					}
-				}))
+		// Register IPC progress listener
+		const removeProgressListener = window.electronAPI.onProgressUpdate(handleProgressUpdate)
+
+		// Cleanup progress tracking
+		progressCleanupRef.current = () => {
+			setProgressValue(0)
+			setProgressText("")
+			setFileProgressMap(new Map())
+		}
+
+		// Cleanup on unmount
+		return () => {
+			if (removeProgressListener) {
+				removeProgressListener()
 			}
-		},
-		[batchMode]
-	)
+			progressCleanupRef.current()
+		}
+	}, [])
 
 	/**
 	 * Toggle between single file and batch extraction modes.
@@ -275,6 +274,7 @@ function useExtraction(filePath, outputPath, analyzed) {
 		setIsExtracting(true)
 		setError(null)
 		setProgressValue(0)
+		setProgressText(batchMode ? "Starting batch extraction..." : "Starting extraction...")
 		setExtractionResult(null)
 
 		try {
@@ -290,40 +290,57 @@ function useExtraction(filePath, outputPath, analyzed) {
 							outputDirectory: outputPath,
 							languages: selectedLanguages,
 							...extractionOptions,
-							maxWorkers,
-							progressCallback: handleProgressUpdate
+							maxWorkers
 						})
 					},
 					"Batch extraction workflow"
 				)
 			} else {
-				// Execute single file workflow
+				// Execute single file workflow - use direct Python API for real-time progress
 				result = await executeOperation(
-					"Extraction Workflow",
-					async (services) => {
-						return await services.workflowEngine.executeExtractionWorkflow({
-							sourceFile: filePath,
-							outputDirectory: outputPath,
+					"Track Extraction",
+					async () => {
+						return await window.pythonApi.extractTracks({
+							filePath,
+							outputDir: outputPath,
 							languages: selectedLanguages,
-							...extractionOptions,
-							progressCallback: handleProgressUpdate
+							...extractionOptions
 						})
 					},
-					"Extraction workflow"
+					"Track extraction"
 				)
 			}
 
 			// Process successful result
-			setExtractionResult(result)
-			setProgressValue(100)
-			setProgressText("Extraction completed successfully")
+			if (result && result.success) {
+				// Create a properly formatted extraction result
+				const formattedResult = {
+					success: true,
+					result: {
+						extracted_audio: result.extracted_audio || 0,
+						extracted_video: result.extracted_video || 0,
+						extracted_subtitles: result.extracted_subtitles || 0,
+						output_files: result.output_files || [],
+						processing_time: result.processing_time || result.processingTime || 0
+					},
+					processingTime: result.processing_time || result.processingTime || 0,
+					operationId: result.operationId
+				}
 
-			console.log("Extraction completed:", {
-				type: batchMode ? "batch" : "single",
-				result
-			})
+				setExtractionResult(formattedResult)
+				setProgressValue(100)
+				setProgressText("Extraction completed successfully")
 
-			return result
+				console.log("Extraction completed:", {
+					type: batchMode ? "batch" : "single",
+					result: formattedResult,
+					processingTime: formattedResult.processingTime
+				})
+
+				return formattedResult
+			} else {
+				throw new Error(result?.error || "Extraction failed")
+			}
 		} catch (err) {
 			console.error("Extraction error:", err)
 			setError(`Extraction failed: ${err.message}`)
@@ -342,8 +359,7 @@ function useExtraction(filePath, outputPath, analyzed) {
 		extractionOptions,
 		maxWorkers,
 		executeOperation,
-		isBackendReady,
-		handleProgressUpdate
+		isBackendReady
 	])
 
 	/**
@@ -406,6 +422,15 @@ function useExtraction(filePath, outputPath, analyzed) {
 		setBatchAnalyzed(null)
 		setIsBatchAnalyzing(false)
 	}, [resetExtraction])
+
+	// Reset progress when starting new extraction
+	useEffect(() => {
+		if (isExtracting) {
+			setProgressValue(0)
+			setProgressText(batchMode ? "Starting batch extraction..." : "Starting extraction...")
+			setFileProgressMap(new Map())
+		}
+	}, [isExtracting, batchMode])
 
 	return {
 		// Extraction state

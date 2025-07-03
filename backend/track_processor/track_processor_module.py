@@ -100,7 +100,7 @@ class TrackProcessorModule:
             
             # Execute extraction
             self._logger.info(f"Extracting {track_type} track {track_id} from {source_path}")
-            result = self._execute_extraction(request, progress_callback)
+            result = self._execute_extraction(request, progress_callback, media_file.duration)
             
             if result.success:
                 self._logger.info(f"Successfully extracted track to {result.output_file}")
@@ -189,7 +189,8 @@ class TrackProcessorModule:
     def _execute_extraction(
         self,
         request: TrackExtractionRequest,
-        progress_callback: Optional[Callable[[float], None]] = None
+        progress_callback: Optional[Callable[[float], None]] = None,
+        duration: Optional[float] = None
     ) -> ExtractionResult:
         """
         Execute a track extraction request.
@@ -197,6 +198,7 @@ class TrackProcessorModule:
         Args:
             request: Extraction request to execute
             progress_callback: Optional progress callback function
+            duration: Media file duration in seconds for progress calculation
             
         Returns:
             ExtractionResult containing operation details
@@ -216,14 +218,16 @@ class TrackProcessorModule:
                     request.source_file,
                     output_file,
                     request.track,
-                    progress_callback
+                    progress_callback,
+                    duration
                 )
             else:
                 success = self._ffmpeg_extractor.extract_track(
                     request.source_file,
                     output_file,
                     request.track,
-                    progress_callback
+                    progress_callback,
+                    duration
                 )
             
             processing_time = time.time() - start_time

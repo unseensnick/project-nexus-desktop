@@ -8,6 +8,7 @@
 import ProgressCard from "@/components/ProgressCard"
 import TrackSummaryCard from "@/components/TrackSummaryCard"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
 	Card,
@@ -57,12 +58,59 @@ function ResultsTab({
 		if (!timeInSeconds) return "Unknown"
 
 		if (timeInSeconds < 60) {
-			return `${Math.round(timeInSeconds)}s`
+			return `${Math.round(timeInSeconds * 10) / 10}s`
 		} else {
 			const minutes = Math.floor(timeInSeconds / 60)
 			const seconds = Math.round(timeInSeconds % 60)
 			return `${minutes}m ${seconds}s`
 		}
+	}
+
+	/**
+	 * Extract descriptive information from enhanced filename.
+	 */
+	const parseEnhancedFilename = (filename) => {
+		if (!filename) return { displayName: filename, hasDescription: false }
+
+		const basename = filename.split("/").pop() || filename.split("\\").pop() || filename
+
+		// Look for patterns like "tracktype_id_language_description.ext"
+		const match = basename.match(
+			/^(.+)_(audio|video|subtitle)_(\d+)_([a-z]{3})(?:_(.+?))?\.([^.]+)$/
+		)
+
+		if (match) {
+			const [, source, trackType, trackId, language, description, extension] = match
+			return {
+				displayName: basename,
+				hasDescription: Boolean(description),
+				trackType,
+				trackId: parseInt(trackId),
+				language,
+				description: description ? description.replace(/_/g, " ") : null,
+				extension,
+				sourceFile: source
+			}
+		}
+
+		return { displayName: basename, hasDescription: false }
+	}
+
+	/**
+	 * Format file list with enhanced naming information.
+	 */
+	const formatFileList = (files) => {
+		if (!files || !Array.isArray(files)) return []
+
+		return files.map((file) => {
+			const filepath =
+				typeof file === "string" ? file : file.path || file.name || "Unknown file"
+			const parsed = parseEnhancedFilename(filepath)
+			return {
+				...parsed,
+				fullPath: filepath
+			}
+		})
 	}
 
 	/**
@@ -87,7 +135,11 @@ function ResultsTab({
 					extractionResult.total_tracks_extracted ||
 					0,
 				processingTime:
-					extractionResult.processingTime || extractionResult.processing_time || 0,
+					extractionResult.processingTime ||
+					extractionResult.processing_time ||
+					extractionResult.result?.processingTime ||
+					extractionResult.result?.processing_time ||
+					0,
 				failedFilesList:
 					extractionResult.result?.failedFilesList ||
 					extractionResult.failed_files_list ||
@@ -106,7 +158,12 @@ function ResultsTab({
 						(result.extracted_video || 0) +
 						(result.extracted_subtitles || 0)
 				},
-				processingTime: extractionResult.processingTime || result.processing_time || 0,
+				processingTime:
+					extractionResult.processingTime ||
+					extractionResult.processing_time ||
+					result.processingTime ||
+					result.processing_time ||
+					0,
 				outputFiles: result.outputFiles || result.output_files || []
 			}
 		}
@@ -302,17 +359,46 @@ function ResultsTab({
 						<div className="bg-muted p-4 rounded-lg">
 							<div className="flex items-center gap-2 mb-2">
 								<Clock className="h-4 w-4" />
-								<span className="font-medium">Processing Time</span>
+								<span className="font-medium">Batch Processing Performance</span>
 							</div>
-							<div className="text-2xl font-bold">
-								{formatProcessingTime(resultStats.processingTime)}
+							<div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+								<div>
+									<div className="text-2xl font-bold text-green-600">
+										{formatProcessingTime(resultStats.processingTime)}
+									</div>
+									<div className="text-sm text-muted-foreground">Total Time</div>
+								</div>
+								<div>
+									<div className="text-xl font-semibold">
+										{formatProcessingTime(
+											resultStats.processingTime /
+												Math.max(1, resultStats.totalFiles)
+										)}
+									</div>
+									<div className="text-sm text-muted-foreground">Per File</div>
+								</div>
+								<div>
+									<div className="text-xl font-semibold">
+										{formatProcessingTime(
+											resultStats.processingTime /
+												Math.max(1, resultStats.totalTracks)
+										)}
+									</div>
+									<div className="text-sm text-muted-foreground">Per Track</div>
+								</div>
+								<div>
+									<div className="text-xl font-semibold">
+										{Math.round(
+											(resultStats.totalFiles /
+												(resultStats.processingTime / 60)) *
+												10
+										) / 10}
+									</div>
+									<div className="text-sm text-muted-foreground">Files/min</div>
+								</div>
 							</div>
-							<div className="text-sm text-muted-foreground">
-								Average:{" "}
-								{formatProcessingTime(
-									resultStats.processingTime / Math.max(1, resultStats.totalFiles)
-								)}{" "}
-								per file
+							<div className="mt-2 text-xs text-muted-foreground">
+								Processed with real-time FFmpeg progress and enhanced file naming
 							</div>
 						</div>
 					)}
@@ -418,10 +504,37 @@ function ResultsTab({
 						<div className="bg-muted p-4 rounded-lg">
 							<div className="flex items-center gap-2 mb-2">
 								<Clock className="h-4 w-4" />
-								<span className="font-medium">Processing Time</span>
+								<span className="font-medium">Processing Performance</span>
 							</div>
-							<div className="text-2xl font-bold">
-								{formatProcessingTime(resultStats.processingTime)}
+							<div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+								<div>
+									<div className="text-2xl font-bold text-green-600">
+										{formatProcessingTime(resultStats.processingTime)}
+									</div>
+									<div className="text-sm text-muted-foreground">Total Time</div>
+								</div>
+								<div>
+									<div className="text-xl font-semibold">
+										{formatProcessingTime(
+											resultStats.processingTime /
+												Math.max(1, resultStats.extractedTracks.total)
+										)}
+									</div>
+									<div className="text-sm text-muted-foreground">Per Track</div>
+								</div>
+								<div>
+									<div className="text-xl font-semibold">
+										{Math.round(
+											(resultStats.extractedTracks.total /
+												resultStats.processingTime) *
+												10
+										) / 10}
+									</div>
+									<div className="text-sm text-muted-foreground">Tracks/sec</div>
+								</div>
+							</div>
+							<div className="mt-2 text-xs text-muted-foreground">
+								Enhanced with real-time FFmpeg progress tracking
 							</div>
 						</div>
 					)}
@@ -440,13 +553,50 @@ function ResultsTab({
 					{/* Output files list if available */}
 					{resultStats.outputFiles && resultStats.outputFiles.length > 0 && (
 						<div className="bg-muted p-4 rounded-lg">
-							<div className="font-medium mb-2">Extracted Files</div>
-							<div className="max-h-32 overflow-auto space-y-1">
-								{resultStats.outputFiles.map((file, index) => (
-									<div key={index} className="text-sm">
-										{typeof file === "string"
-											? file
-											: file.path || file.name || "Unknown file"}
+							<div className="font-medium mb-3 flex items-center gap-2">
+								<FileText className="h-4 w-4" />
+								Extracted Files ({resultStats.outputFiles.length})
+							</div>
+							<div className="max-h-48 overflow-auto space-y-2">
+								{formatFileList(resultStats.outputFiles).map((file, index) => (
+									<div key={index} className="bg-background p-3 rounded border">
+										<div className="flex items-start justify-between">
+											<div className="flex-1 min-w-0">
+												<div
+													className="font-medium text-sm truncate"
+													title={file.displayName}
+												>
+													{file.displayName}
+												</div>
+												{file.hasDescription && (
+													<div className="flex items-center gap-2 mt-1">
+														<Badge
+															variant="outline"
+															className="text-xs"
+														>
+															{file.trackType} {file.trackId}
+														</Badge>
+														<Badge
+															variant="secondary"
+															className="text-xs"
+														>
+															{file.language}
+														</Badge>
+														{file.description && (
+															<Badge
+																variant="default"
+																className="text-xs bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
+															>
+																{file.description}
+															</Badge>
+														)}
+													</div>
+												)}
+											</div>
+											<Badge variant="outline" className="text-xs ml-2">
+												.{file.extension || "unknown"}
+											</Badge>
+										</div>
 									</div>
 								))}
 							</div>

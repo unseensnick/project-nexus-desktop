@@ -8,6 +8,7 @@ providing a clean interface that doesn't expose internal module structure.
 import json
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
+import time
 
 from core.dependency_container import DependencyContainer
 from core.logger import LoggerFactory
@@ -165,15 +166,17 @@ class IPCHandler:
     
     def _extract_tracks(self, args: Dict[str, Any], operation_id: Optional[str] = None) -> Dict[str, Any]:
         """
-        Extract tracks from a media file based on language and type filters.
+        Extract tracks from a media file with real-time progress tracking.
         
         Args:
             args: Arguments for track extraction
-            operation_id: Optional operation ID
+            operation_id: Optional operation ID for progress tracking
             
         Returns:
-            Extraction results
+            Extraction results with processing time
         """
+        start_time = time.time()
+        
         try:
             # Get required arguments
             file_path = args.get("file_path")
@@ -196,7 +199,8 @@ class IPCHandler:
             media_analyzer = self._container.get(MediaAnalyzerModule)
             track_processor = self._container.get(TrackProcessorModule)
             
-            # Analyze file first
+            # Analyze the file to get tracks and duration
+            self._logger.info(f"Analyzing media file: {file_path}")
             media_file = media_analyzer.analyze_file(file_path)
             
             # Filter tracks based on criteria
@@ -228,46 +232,92 @@ class IPCHandler:
                     "extracted_video": 0,
                     "extracted_subtitles": 0,
                     "output_files": [],
+                    "processing_time": time.time() - start_time,
                     "message": "No tracks found matching criteria"
                 }
             
+            # Set up progress tracking
+            total_tracks = len(tracks_to_extract)
+            completed_tracks = 0
+            
+            def progress_callback(track_progress: float):
+                """Progress callback for individual track extraction"""
+                if operation_id:
+                    # Calculate overall progress
+                    overall_progress = (completed_tracks * 100 + track_progress) / total_tracks
+                    
+                    # Send progress update
+                    progress_data = {
+                        "operation_id": operation_id,
+                        "progress": overall_progress,
+                        "stage": "extracting",
+                        "track_progress": track_progress,
+                        "completed_tracks": completed_tracks,
+                        "total_tracks": total_tracks,
+                        "message": f"Extracting track {completed_tracks + 1} of {total_tracks}"
+                    }
+                    
+                    # Print progress for the bridge to capture
+                    print(f"PROGRESS:{operation_id}:{overall_progress:.2f}:{progress_data['message']}")
+                    
             # Extract each track using TrackProcessor module
             output_files = []
             extracted_counts = {"audio": 0, "video": 0, "subtitle": 0}
             
             for track in tracks_to_extract:
                 try:
+                    # Send initial progress for this track
+                    if operation_id:
+                        print(f"PROGRESS:{operation_id}:{(completed_tracks * 100) / total_tracks:.2f}:Starting {track.type} track {track.id}")
+                    
                     result = track_processor.extract_track(
                         source_file=file_path,
                         output_directory=output_dir,
                         track_type=track.type,
                         track_id=track.id,
-                        remove_letterbox=remove_letterbox if track.type == "video" else False
+                        remove_letterbox=remove_letterbox if track.type == "video" else False,
+                        progress_callback=progress_callback
                     )
                     
                     if result.success:
                         output_files.append(str(result.output_file))
                         extracted_counts[track.type] += 1
+                        completed_tracks += 1
+                        
+                        # Send completion progress for this track
+                        if operation_id:
+                            print(f"PROGRESS:{operation_id}:{(completed_tracks * 100) / total_tracks:.2f}:Completed {track.type} track {track.id}")
                     else:
                         self._logger.warning(f"Failed to extract {track.type} track {track.id}: {result.error_message}")
+                        completed_tracks += 1
                         
                 except Exception as e:
                     self._logger.error(f"Error extracting {track.type} track {track.id}: {e}")
+                    completed_tracks += 1
+            
+            # Send final progress
+            if operation_id:
+                print(f"PROGRESS:{operation_id}:100.0:Extraction completed")
+            
+            processing_time = time.time() - start_time
             
             return {
                 "success": True,
                 "extracted_audio": extracted_counts["audio"],
                 "extracted_video": extracted_counts["video"],
                 "extracted_subtitles": extracted_counts["subtitle"],
-                "output_files": output_files
+                "output_files": output_files,
+                "processing_time": processing_time
             }
             
         except Exception as e:
             self._logger.error(f"Track extraction failed: {e}")
+            processing_time = time.time() - start_time
             return {
                 "success": False,
                 "error": str(e),
-                "error_type": e.__class__.__name__
+                "error_type": e.__class__.__name__,
+                "processing_time": processing_time
             }
     
     def _extract_specific_track(self, args: Dict[str, Any], operation_id: Optional[str] = None) -> Dict[str, Any]:

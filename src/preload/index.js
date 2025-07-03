@@ -37,7 +37,25 @@ const dialogApi = {
 	 * @param {Object} options - Dialog configuration options
 	 * @returns {Promise<{canceled: boolean, filePath: string}>} Dialog result
 	 */
-	saveFileDialog: (options) => ipcRenderer.invoke("dialog:saveFile", options)
+	saveFileDialog: (options) => ipcRenderer.invoke("dialog:saveFile", options),
+
+	/**
+	 * Progress update listener for real-time updates from backend
+	 * @param {Function} callback - Function to call with progress updates
+	 * @returns {Function} - Cleanup function to remove the listener
+	 */
+	onProgressUpdate: (callback) => {
+		const wrappedCallback = (event, progressData) => {
+			callback(progressData)
+		}
+
+		ipcRenderer.on("python:progress", wrappedCallback)
+
+		// Return cleanup function
+		return () => {
+			ipcRenderer.removeListener("python:progress", wrappedCallback)
+		}
+	}
 }
 
 /**

@@ -306,21 +306,98 @@ function FileSelectionTab({
 				{/* Backend service status */}
 				<div className="bg-muted p-3 rounded-lg">
 					<div className="text-xs">
-						<div className="font-medium mb-1">Backend Status</div>
+						<div className="font-medium mb-2 flex items-center gap-2">
+							<RefreshCw
+								className={`h-3 w-3 ${backendStatus.isReady ? "text-green-500" : "text-red-500"}`}
+							/>
+							Backend Service Status
+						</div>
 						<div className="space-y-1">
-							<div>Services: {backendStatus.isReady ? "✓ Ready" : "✗ Not Ready"}</div>
-							<div>
-								File Validation:{" "}
-								{services?.mediaAnalyzer ? "✓ Available" : "✗ Not Available"}
+							<div className="flex justify-between">
+								<span>Core Services:</span>
+								<span
+									className={
+										backendStatus.isReady ? "text-green-600" : "text-red-600"
+									}
+								>
+									{backendStatus.isReady ? "✓ Ready" : "✗ Not Ready"}
+								</span>
+							</div>
+							<div className="flex justify-between">
+								<span>File Validation:</span>
+								<span
+									className={
+										services?.mediaAnalyzer ? "text-green-600" : "text-red-600"
+									}
+								>
+									{services?.mediaAnalyzer ? "✓ Available" : "✗ Not Available"}
+								</span>
+							</div>
+							<div className="flex justify-between">
+								<span>Real-time Progress:</span>
+								<span
+									className={
+										backendStatus.isReady ? "text-green-600" : "text-gray-500"
+									}
+								>
+									{backendStatus.isReady
+										? "✓ FFmpeg Integration"
+										: "✗ Unavailable"}
+								</span>
+							</div>
+							<div className="flex justify-between">
+								<span>Enhanced Naming:</span>
+								<span
+									className={
+										backendStatus.isReady ? "text-green-600" : "text-gray-500"
+									}
+								>
+									{backendStatus.isReady
+										? "✓ Descriptive Titles"
+										: "✗ Unavailable"}
+								</span>
 							</div>
 							{!backendStatus.isReady && (
-								<div className="text-red-600 dark:text-red-400 mt-2">
+								<div className="text-red-600 dark:text-red-400 mt-2 p-2 bg-red-50 dark:bg-red-950 rounded">
+									<AlertCircle className="h-3 w-3 inline mr-1" />
 									{backendStatus.message}
 								</div>
 							)}
 						</div>
 					</div>
 				</div>
+
+				{/* Enhanced features information when backend is ready */}
+				{backendStatus.isReady && (
+					<div className="bg-green-50 dark:bg-green-950 p-3 rounded-lg border border-green-200 dark:border-green-800">
+						<div className="text-xs">
+							<div className="font-medium mb-2 text-green-800 dark:text-green-200 flex items-center gap-2">
+								<Info className="h-3 w-3" />
+								Enhanced Features Available
+							</div>
+							<div className="space-y-1 text-green-700 dark:text-green-300">
+								<div className="flex items-center gap-1">
+									<span className="w-2 h-2 bg-green-500 rounded-full"></span>
+									<span>
+										Real-time FFmpeg progress with duration-based calculations
+									</span>
+								</div>
+								<div className="flex items-center gap-1">
+									<span className="w-2 h-2 bg-green-500 rounded-full"></span>
+									<span>Enhanced file naming with descriptive track titles</span>
+								</div>
+								<div className="flex items-center gap-1">
+									<span className="w-2 h-2 bg-green-500 rounded-full"></span>
+									<span>Accurate processing time measurements</span>
+								</div>
+								<div className="flex items-center gap-1">
+									<span className="w-2 h-2 bg-green-500 rounded-full"></span>
+									<span>Advanced file format validation</span>
+								</div>
+							</div>
+						</div>
+					</div>
+				)}
 			</CardContent>
 			<CardFooter className="flex justify-between">
 				<div className="text-sm text-muted-foreground">

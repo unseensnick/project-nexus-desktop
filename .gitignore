@@ -54,6 +54,7 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 
 # Python
 venv/
+backend/venv/
 __pycache__/
 *.pyc
 *.pyo

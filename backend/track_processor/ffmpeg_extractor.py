@@ -39,7 +39,8 @@ class FFmpegExtractor:
         input_file: Path,
         output_file: Path,
         track: Track,
-        progress_callback: Optional[Callable[[float], None]] = None
+        progress_callback: Optional[Callable[[float], None]] = None,
+        duration: Optional[float] = None
     ) -> bool:
         """
         Extract a single track from a media file.
@@ -49,6 +50,7 @@ class FFmpegExtractor:
             output_file: Target output file
             track: Track to extract
             progress_callback: Optional progress callback function
+            duration: Media file duration in seconds for progress calculation
             
         Returns:
             True if extraction succeeded, False otherwise
@@ -73,14 +75,15 @@ class FFmpegExtractor:
         else:
             raise ValueError(f"Unsupported track type: {track.type}")
         
-        return self._execute_ffmpeg_command(command, progress_callback)
+        return self._execute_ffmpeg_command(command, progress_callback, duration)
     
     def extract_track_with_letterbox_removal(
         self,
         input_file: Path,
         output_file: Path,
         track: Track,
-        progress_callback: Optional[Callable[[float], None]] = None
+        progress_callback: Optional[Callable[[float], None]] = None,
+        duration: Optional[float] = None
     ) -> bool:
         """
         Extract a video track with letterbox removal.
@@ -90,6 +93,7 @@ class FFmpegExtractor:
             output_file: Target output file
             track: Track to extract (must be video type)
             progress_callback: Optional progress callback function
+            duration: Media file duration in seconds for progress calculation
             
         Returns:
             True if extraction succeeded, False otherwise
@@ -106,7 +110,7 @@ class FFmpegExtractor:
             ffmpeg_path, input_file, output_file, track
         )
         
-        return self._execute_ffmpeg_command(command, progress_callback)
+        return self._execute_ffmpeg_command(command, progress_callback, duration)
     
     def validate_ffmpeg_availability(self) -> bool:
         """
@@ -202,14 +206,16 @@ class FFmpegExtractor:
         ]
     
     def _execute_ffmpeg_command(
-        self, command: List[str], progress_callback: Optional[Callable[[float], None]] = None
+        self, command: List[str], progress_callback: Optional[Callable[[float], None]] = None,
+        duration: Optional[float] = None
     ) -> bool:
         """
-        Execute FFmpeg command with progress tracking.
+        Execute FFmpeg command with real-time progress tracking.
         
         Args:
             command: FFmpeg command to execute
             progress_callback: Optional progress callback function
+            duration: Media duration in seconds for progress calculation
             
         Returns:
             True if command succeeded, False otherwise
@@ -217,47 +223,100 @@ class FFmpegExtractor:
         try:
             self._logger.info(f"Executing FFmpeg command: {' '.join(command)}")
             
-            # Execute command
-            process = subprocess.run(
-                command,
-                capture_output=True,
+            # Add progress output flags to command for real-time tracking
+            enhanced_command = command.copy()
+            if "-progress" not in enhanced_command and progress_callback:
+                enhanced_command.insert(-1, "-progress")  # Insert before output file
+                enhanced_command.insert(-1, "pipe:2")     # Send progress to stderr
+            
+            # Execute command with real-time output capture
+            process = subprocess.Popen(
+                enhanced_command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
                 text=True,
-                timeout=1800  # 30 minute timeout
+                bufsize=1,  # Line buffered
+                universal_newlines=True
             )
             
-            if process.returncode == 0:
+            # Track progress in real-time
+            last_progress = 0
+            
+            # Monitor stderr for progress information
+            while True:
+                stderr_line = process.stderr.readline()
+                if not stderr_line and process.poll() is not None:
+                    break
+                    
+                if stderr_line and progress_callback:
+                    # Parse progress from stderr output
+                    progress = self._parse_progress(stderr_line.strip(), duration)
+                    if progress is not None and progress != last_progress:
+                        progress_callback(progress)
+                        last_progress = progress
+            
+            # Wait for process completion
+            return_code = process.wait()
+            
+            if return_code == 0:
                 self._logger.info("FFmpeg extraction completed successfully")
+                if progress_callback:
+                    progress_callback(100.0)  # Ensure 100% completion
                 return True
             else:
-                self._logger.error(f"FFmpeg failed with return code {process.returncode}")
-                if process.stderr:
-                    self._logger.error(f"FFmpeg stderr: {process.stderr}")
+                # Get any remaining stderr output for error logging
+                remaining_stderr = process.stderr.read()
+                self._logger.error(f"FFmpeg failed with return code {return_code}")
+                if remaining_stderr:
+                    self._logger.error(f"FFmpeg stderr: {remaining_stderr}")
                 return False
                 
         except subprocess.TimeoutExpired:
             self._logger.error("FFmpeg command timed out")
+            if 'process' in locals():
+                process.kill()
             return False
         except Exception as e:
             self._logger.error(f"FFmpeg command execution failed: {e}")
             return False
     
-    def _parse_progress(self, line: str) -> Optional[float]:
+    def _parse_progress(self, line: str, duration: Optional[float] = None) -> Optional[float]:
         """
         Parse progress information from FFmpeg output.
         
         Args:
             line: Line of FFmpeg output
+            duration: Media duration in seconds for percentage calculation
             
         Returns:
             Progress percentage if found, None otherwise
         """
-        # Look for time progress in FFmpeg output
+        # FFmpeg progress output contains key=value pairs
+        if "out_time_ms=" in line:
+            # Parse microseconds from progress output
+            try:
+                ms_match = re.search(r'out_time_ms=(\d+)', line)
+                if ms_match:
+                    current_ms = int(ms_match.group(1))
+                    current_seconds = current_ms / 1_000_000  # Convert microseconds to seconds
+                    
+                    if duration and duration > 0:
+                        progress = min(100.0, (current_seconds / duration) * 100)
+                        return progress
+            except (ValueError, ZeroDivisionError):
+                pass
+        
+        # Fallback: Look for time progress in standard FFmpeg output format
         time_match = re.search(r'time=(\d+):(\d+):(\d+\.\d+)', line)
-        if time_match:
-            hours, minutes, seconds = time_match.groups()
-            current_time = int(hours) * 3600 + int(minutes) * 60 + float(seconds)
-            # Would need duration to calculate percentage
-            # For now, just return None - progress tracking can be enhanced later
-            return None
+        if time_match and duration:
+            try:
+                hours, minutes, seconds = time_match.groups()
+                current_time = int(hours) * 3600 + int(minutes) * 60 + float(seconds)
+                
+                if duration > 0:
+                    progress = min(100.0, (current_time / duration) * 100)
+                    return progress
+            except (ValueError, ZeroDivisionError):
+                pass
         
         return None

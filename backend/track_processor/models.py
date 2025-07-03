@@ -41,12 +41,19 @@ class TrackExtractionRequest:
         # Get appropriate extension for track codec
         extension = self._get_extension_for_codec()
         
-        # Build filename: source_tracktype_trackid_language.extension
+        # Build filename components
         base_name = self.source_file.stem
         track_info = f"{self.track.type}_{self.track.id}"
         
+        # Add language if available
         if self.track.language:
             track_info += f"_{self.track.language}"
+        
+        # Add descriptive title if available (sanitized for filesystem)
+        if self.track.title:
+            # Sanitize title for use in filename
+            sanitized_title = self._sanitize_filename_part(self.track.title)
+            track_info += f"_{sanitized_title}"
         
         return f"{base_name}_{track_info}.{extension}"
     
@@ -75,6 +82,34 @@ class TrackExtractionRequest:
         }
         
         return codec_extensions.get(self.track.codec, "mkv")
+
+    def _sanitize_filename_part(self, text: str) -> str:
+        """
+        Sanitize text for safe use in filenames.
+        
+        Args:
+            text: Text to sanitize
+            
+        Returns:
+            Sanitized text safe for filenames
+        """
+        import re
+        
+        # Replace invalid filename characters with underscores
+        # Keep alphanumeric, spaces, hyphens, and common punctuation
+        sanitized = re.sub(r'[<>:"/\\|?*]', '_', text)
+        
+        # Replace multiple spaces/underscores with single underscore
+        sanitized = re.sub(r'[_\s]+', '_', sanitized)
+        
+        # Remove leading/trailing underscores and spaces
+        sanitized = sanitized.strip('_ ')
+        
+        # Limit length to prevent overly long filenames
+        if len(sanitized) > 50:
+            sanitized = sanitized[:47] + "..."
+        
+        return sanitized
 
 
 @dataclass

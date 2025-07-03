@@ -23,6 +23,7 @@ class PythonBridge {
 	constructor() {
 		this.processManager = new PythonProcessManager()
 		this._module = "PythonBridge"
+		this.operations = new Map()
 	}
 
 	/**
@@ -109,84 +110,97 @@ class PythonBridge {
 	}
 
 	/**
-	 * Executes a Python function via bridge script with JSON-serialized arguments
+	 * Execute Python function with real-time progress tracking support
 	 *
-	 * Spawns a Python process, handles stdout/stderr, parses results, and
-	 * forwards progress updates to the renderer via IPC.
-	 *
-	 * @param {string} functionName - Name of Python function to execute
-	 * @param {Array|Object} args - Arguments to pass to the Python function
-	 * @param {string} [operationId] - Optional tracking ID for long-running operations
-	 * @returns {Promise<any>} Parsed result from the Python function
+	 * @param {string} functionName - Python function to execute
+	 * @param {Object} args - Arguments for the function
+	 * @param {string} operationId - Optional operation ID for progress tracking
+	 * @returns {Promise<Object>} Result from Python function
 	 */
 	executePythonFunction(functionName, args, operationId = null) {
 		return new Promise((resolve, reject) => {
-			const opId = operationId || uuidv4()
-
 			try {
-				// Normalize arguments to ensure proper serialization
-				const formattedArgs =
-					typeof args !== "object" || args === null
-						? [args] // Wrap primitive values in an array
-						: args
+				// Create operation ID if not provided
+				if (!operationId) {
+					operationId = `${functionName}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+				}
 
-				// Convert arguments to JSON string for bridge script
-				const argsJson = JSON.stringify(formattedArgs)
+				// Store operation for progress tracking
+				this.operations.set(operationId, {
+					functionName,
+					args,
+					startTime: Date.now(),
+					progressCallback: null
+				})
 
-				// Spawn Python process with bridge script
-				const pythonProcess = this.processManager.spawnProcess(
-					this.pythonPath,
-					this.bridgeScriptPath,
-					[functionName, argsJson, opId]
-				)
+				console.log(`${this._module}: Executing Python function: ${functionName}`)
+				console.log(`${this._module}: Python arguments: ${JSON.stringify(args)}`)
 
+				// Track output and errors
 				let result = ""
 				let errorOutput = ""
 
-				// Process stdout for both results and progress updates
+				// Create and manage the Python process
+				const pythonProcess = this.processManager.spawnProcess(
+					this._getPythonPath(),
+					this._getBridgeScriptPath(),
+					[functionName, JSON.stringify(args), operationId],
+					operationId
+				)
+
+				// Handle stdout data with progress parsing
 				pythonProcess.stdout.on("data", (data) => {
-					try {
-						const dataStr = data.toString()
+					const output = data.toString()
 
-						// Debug what we're receiving from Python
-						console.log(`${this._module}: Raw Python stdout: "${dataStr}"`)
+					// Check for progress updates
+					const progressLines = output
+						.split("\n")
+						.filter((line) => line.startsWith("PROGRESS:"))
 
-						// Split by newlines to handle multiple messages in one chunk
-						const lines = dataStr.split("\n")
+					progressLines.forEach((line) => {
+						try {
+							// Parse progress line: PROGRESS:operation_id:progress:message
+							const parts = line.split(":")
+							if (parts.length >= 4) {
+								const progressOperationId = parts[1]
+								const progressValue = parseFloat(parts[2])
+								const progressMessage = parts.slice(3).join(":")
 
-						for (const line of lines) {
-							if (line.trim() === "") continue
-
-							// Special handling for progress update messages
-							if (line.startsWith("PROGRESS:")) {
-								try {
-									const progressJson = line.substring(9).trim()
-									console.log(`${this._module}: Progress data: ${progressJson}`)
-									const progressData = JSON.parse(progressJson)
-
-									// Forward valid progress updates to renderer
-									if (progressData && typeof progressData === "object") {
-										this.mainWindow.webContents.send(
-											`python:progress:${opId}`,
-											progressData
-										)
+								// Send progress update to frontend
+								if (progressOperationId === operationId && this.mainWindow) {
+									const progressData = {
+										operationId: progressOperationId,
+										progress: progressValue,
+										message: progressMessage,
+										stage: "extracting"
 									}
-								} catch (err) {
-									console.error(
-										`${this._module}: Error parsing progress data: ${err.message}`
+
+									console.log(
+										`${this._module}: Progress update: ${progressValue}% - ${progressMessage}`
 									)
-									console.error(
-										`${this._module}: Raw progress data: "${line.substring(9)}"`
+									this.mainWindow.webContents.send(
+										"python:progress",
+										progressData
 									)
 								}
-							} else {
-								// Accumulate regular output for final result
-								result += line + "\n"
 							}
+						} catch (err) {
+							console.error(
+								`${this._module}: Error parsing progress line: ${line}`,
+								err
+							)
 						}
-					} catch (err) {
-						console.error(`${this._module}: Error processing Python stdout:`, err)
-						// Don't add this error data to result, continue processing
+					})
+
+					// Filter out progress lines from regular output
+					const cleanOutput = output
+						.split("\n")
+						.filter((line) => !line.startsWith("PROGRESS:"))
+						.join("\n")
+
+					if (cleanOutput.trim()) {
+						result += cleanOutput
+						console.log(`${this._module}: Raw Python stdout: "${cleanOutput}"`)
 					}
 				})
 
@@ -199,6 +213,9 @@ class PythonBridge {
 
 				// Process completion handler
 				pythonProcess.on("close", (code) => {
+					// Clean up operation tracking
+					this.operations.delete(operationId)
+
 					if (code === 0) {
 						try {
 							// Clean up result string and trim any extra whitespace
@@ -207,6 +224,11 @@ class PythonBridge {
 
 							// Parse JSON result from Python
 							const parsedResult = JSON.parse(result)
+
+							// Add operation metadata
+							parsedResult.operationId = operationId
+							parsedResult.processingTime = parsedResult.processing_time || 0
+
 							resolve(parsedResult)
 						} catch (err) {
 							console.error(
@@ -226,6 +248,7 @@ class PythonBridge {
 				// Handle process start errors
 				pythonProcess.on("error", (err) => {
 					console.error(`${this._module}: Failed to start Python process:`, err)
+					this.operations.delete(operationId)
 					reject(new Error(`Failed to start Python process: ${err.message}`))
 				})
 			} catch (err) {
