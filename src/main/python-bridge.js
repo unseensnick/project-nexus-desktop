@@ -419,3 +419,4 @@ const pythonBridge = new PythonBridge()
 export default pythonBridge
 export const initPythonBridge = (mainWindow) => pythonBridge.initialize(mainWindow)
 export const cleanupPythonProcesses = () => pythonBridge.cleanup()
+

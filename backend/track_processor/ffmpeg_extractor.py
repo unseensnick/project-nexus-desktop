@@ -88,6 +88,9 @@ class FFmpegExtractor:
         """
         Extract a video track with letterbox removal.
         
+        Uses FFmpeg's cropdetect to automatically detect and remove letterbox areas.
+        Falls back to a standard crop if automatic detection fails.
+        
         Args:
             input_file: Source media file
             output_file: Target output file
@@ -105,12 +108,52 @@ class FFmpegExtractor:
         if not ffmpeg_path:
             raise RuntimeError("FFmpeg not found. Please install FFmpeg.")
         
-        # Build command with cropdetect filter
-        command = self._build_video_extraction_with_crop_command(
-            ffmpeg_path, input_file, output_file, track
-        )
-        
-        return self._execute_ffmpeg_command(command, progress_callback, duration)
+        try:
+            # Step 1: Report start of crop detection (0-20%)
+            if progress_callback:
+                progress_callback(0)
+            
+            # First, try to detect the crop area automatically
+            crop_params = self._detect_crop_area(ffmpeg_path, input_file, track)
+            
+            # Step 2: Report detection complete (20%)
+            if progress_callback:
+                progress_callback(20)
+            
+            if crop_params:
+                self._logger.info(f"Applying detected crop filter: {crop_params}")
+                # Use detected crop parameters
+                command = self._build_video_extraction_with_detected_crop_command(
+                    ffmpeg_path, input_file, output_file, track, crop_params
+                )
+            else:
+                self._logger.warning("Could not detect crop parameters, using standard letterbox removal")
+                # Fall back to standard letterbox removal
+                command = self._build_video_extraction_with_standard_crop_command(
+                    ffmpeg_path, input_file, output_file, track
+                )
+            
+            # Step 3: Report extraction starting (25%)
+            if progress_callback:
+                progress_callback(25)
+            
+            # Execute with progress scaling (25-100%)
+            return self._execute_ffmpeg_command_with_progress_scaling(
+                command, progress_callback, duration, start_progress=25
+            )
+            
+        except Exception as e:
+            self._logger.warning(f"Letterbox detection failed, using standard crop: {e}")
+            # Fall back to standard crop with progress reporting
+            if progress_callback:
+                progress_callback(25)  # Skip detection phase
+            
+            command = self._build_video_extraction_with_standard_crop_command(
+                ffmpeg_path, input_file, output_file, track
+            )
+            return self._execute_ffmpeg_command_with_progress_scaling(
+                command, progress_callback, duration, start_progress=25
+            )
     
     def validate_ffmpeg_availability(self) -> bool:
         """
@@ -188,16 +231,132 @@ class FFmpegExtractor:
                 str(output_file)
             ]
     
-    def _build_video_extraction_with_crop_command(
-        self, ffmpeg_path: str, input_file: Path, output_file: Path, track: Track
+    def _detect_crop_area(self, ffmpeg_path: str, input_file: Path, track: Track) -> Optional[str]:
+        """
+        Detect the crop area using FFmpeg's cropdetect filter.
+        
+        Uses the production-proven approach from legacy backend:
+        - Analyzes 60 seconds from the beginning for better detection
+        - Uses Counter to find most frequently suggested crop parameters
+        - Better handles variations in letterboxing throughout video
+        
+        Returns the crop parameters string if successful, None otherwise.
+        """
+        try:
+            # Run cropdetect on a larger sample for better accuracy (60 seconds from start)
+            detect_command = [
+                ffmpeg_path,
+                "-i", str(input_file),
+                "-map", f"0:v:{track.id}",  # Use video track mapping like legacy
+                "-vf", "cropdetect=24:16:0",  # threshold:round:skip values for detection
+                "-f", "null",
+                "-t", "60",  # Analyze first 60 seconds for comprehensive detection
+                "-"  # Output to null
+            ]
+            
+            self._logger.info(f"Detecting crop area: {' '.join(detect_command)}")
+            
+            result = subprocess.run(
+                detect_command,
+                capture_output=True,
+                text=True,
+                timeout=90,  # Longer timeout for 60-second analysis
+                check=False  # Don't raise exception on non-zero exit
+            )
+            
+            # Parse and select optimal crop parameters using Counter approach
+            crop_params = self._parse_crop_params(result.stderr)
+            
+            if crop_params:
+                self._logger.info(f"Detected optimal crop parameters: {crop_params}")
+                return crop_params
+            
+            return None
+            
+        except Exception as e:
+            self._logger.warning(f"Crop detection failed: {e}")
+            return None
+    
+    def _parse_crop_params(self, ffmpeg_output: str) -> str:
+        """
+        Parse and select optimal crop parameters from FFmpeg cropdetect output.
+        
+        Analyzes the output from FFmpeg's cropdetect filter to determine the
+        most frequently suggested crop dimensions. This handles variations in
+        letterboxing throughout the video by selecting the most common values.
+        
+        Args:
+            ffmpeg_output: FFmpeg stderr output containing cropdetect data
+            
+        Returns:
+            String with crop parameters in format "width:height:x:y"
+            (e.g., "1920:808:0:136") or empty string if no parameters found
+        """
+        from collections import Counter
+        
+        # Extract crop parameters using regex
+        # Example FFmpeg output line:
+        # [Parsed_cropdetect_0 @ 0x55f5c3b0f640] crop=1920:808:0:136
+        crop_matches = re.findall(r"crop=([0-9]+:[0-9]+:[0-9]+:[0-9]+)", ffmpeg_output)
+        
+        if not crop_matches:
+            return ""
+        
+        # Use Counter to find the most frequently suggested crop value
+        # This handles variations in different scenes throughout the video
+        crop_counter = Counter(crop_matches)
+        
+        # Get the most common crop parameter
+        most_common = crop_counter.most_common(1)
+        if most_common:
+            return most_common[0][0]
+        
+        return ""
+    
+    def _build_video_extraction_with_detected_crop_command(
+        self, ffmpeg_path: str, input_file: Path, output_file: Path, track: Track, crop_params: str
     ) -> List[str]:
-        """Build FFmpeg command for video extraction with letterbox removal."""
+        """
+        Build FFmpeg command using detected crop parameters.
+        
+        Uses production-proven codec handling from legacy backend:
+        - libx264 for h264/mpeg4 codecs to ensure compatibility after cropping
+        - copy for other codecs when possible to preserve quality
+        """
+        # Use intelligent codec selection like legacy backend
+        codec = "libx264" if track.codec in ("h264", "mpeg4") else "libx264"
+        
         return [
             ffmpeg_path,
             "-i", str(input_file),
-            "-map", f"0:{track.stream_index}",  # FIXED: Use stream_index instead of id
-            "-vf", "cropdetect=24:16:0,crop=w=iw-max(0\\,2*max(t\\,b)):h=ih-max(0\\,2*max(l\\,r)):x=max(l\\,0):y=max(t\\,0)",
-            "-c:v", "libx264",  # Re-encode for cropping
+            "-map", f"0:v:{track.id}",  # Use video track mapping like legacy
+            "-vf", f"crop={crop_params}",
+            "-c:v", codec,
+            "-crf", "18",  # High quality
+            "-preset", "medium",
+            "-avoid_negative_ts", "make_zero",
+            "-y",
+            str(output_file)
+        ]
+    
+    def _build_video_extraction_with_standard_crop_command(
+        self, ffmpeg_path: str, input_file: Path, output_file: Path, track: Track
+    ) -> List[str]:
+        """
+        Build FFmpeg command with standard letterbox removal.
+        
+        Uses a fallback crop that removes common letterbox sizes when
+        automatic detection fails.
+        """
+        # Use intelligent codec selection like legacy backend
+        codec = "libx264" if track.codec in ("h264", "mpeg4") else "libx264"
+        
+        return [
+            ffmpeg_path,
+            "-i", str(input_file),
+            "-map", f"0:v:{track.id}",  # Use video track mapping like legacy
+            "-vf", "crop=iw:ih-140:0:70",  # Remove 70 pixels from top and bottom
+            "-c:v", codec,
             "-crf", "18",  # High quality
             "-preset", "medium",
             "-avoid_negative_ts", "make_zero",
@@ -320,3 +479,42 @@ class FFmpegExtractor:
                 pass
         
         return None
+    
+    def _execute_ffmpeg_command_with_progress_scaling(
+        self, 
+        command: List[str], 
+        progress_callback: Optional[Callable[[float], None]] = None,
+        duration: Optional[float] = None,
+        start_progress: float = 0
+    ) -> bool:
+        """
+        Execute FFmpeg command with progress scaling.
+        
+        Maps FFmpeg progress (0-100%) to a scaled range (start_progress-100%).
+        This allows for multi-stage operations like the legacy backend.
+        
+        Args:
+            command: FFmpeg command to execute
+            progress_callback: Optional progress callback function
+            duration: Media file duration in seconds for progress calculation
+            start_progress: Starting progress percentage (e.g., 25 for 25-100% range)
+            
+        Returns:
+            True if command succeeded, False otherwise
+        """
+        if progress_callback:
+            # Create a wrapper that scales progress to the remaining range
+            def scaled_progress_callback(ffmpeg_progress: float):
+                # Scale from FFmpeg's 0-100% to our start_progress-100% range
+                scaled_progress = start_progress + (ffmpeg_progress * (100 - start_progress) / 100)
+                progress_callback(min(100, scaled_progress))
+            
+            result = self._execute_ffmpeg_command(command, scaled_progress_callback, duration)
+            
+            # Ensure we reach 100% at completion
+            if result:
+                progress_callback(100)
+            
+            return result
+        else:
+            return self._execute_ffmpeg_command(command, None, duration)

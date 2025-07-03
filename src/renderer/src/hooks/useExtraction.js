@@ -58,13 +58,9 @@ function useExtraction(filePath, outputPath, analyzed) {
 		// Set up progress listener for real-time updates
 		const handleProgressUpdate = (progressData) => {
 			if (progressData && typeof progressData === "object") {
-				// Update progress value
-				if (
-					typeof progressData.progress === "number" ||
-					typeof progressData.percentage === "number"
-				) {
-					const progress = progressData.percentage || progressData.progress
-					const clampedProgress = Math.min(100, Math.max(0, progress))
+				// Update progress value using new standardized format
+				if (typeof progressData.percentage === "number") {
+					const clampedProgress = Math.min(100, Math.max(0, progressData.percentage))
 					setProgressValue(clampedProgress)
 				}
 
@@ -336,30 +332,16 @@ function useExtraction(filePath, outputPath, analyzed) {
 				)
 			}
 
-			// Process successful result
+			// Process successful result using new standardized format
 			if (result && result.success) {
-				// Handle different result formats (service layer vs direct API)
-				let extractedCounts, outputFiles, processingTime
-
-				if (result.extractedTracks) {
-					// Service layer format
-					extractedCounts = {
-						extracted_audio: result.extractedTracks.audio || 0,
-						extracted_video: result.extractedTracks.video || 0,
-						extracted_subtitles: result.extractedTracks.subtitle || 0
-					}
-					outputFiles = result.outputFiles || []
-					processingTime = result.processingTime || 0
-				} else {
-					// Direct API format (fallback)
-					extractedCounts = {
-						extracted_audio: result.extracted_audio || 0,
-						extracted_video: result.extracted_video || 0,
-						extracted_subtitles: result.extracted_subtitles || 0
-					}
-					outputFiles = result.output_files || []
-					processingTime = result.processing_time || result.processingTime || 0
+				// Use new standardized service layer format
+				const extractedCounts = {
+					extracted_audio: result.extractedTracks?.audio || 0,
+					extracted_video: result.extractedTracks?.video || 0,
+					extracted_subtitles: result.extractedTracks?.subtitle || 0
 				}
+				const outputFiles = result.outputFiles || []
+				const processingTime = result.processingTime || 0
 
 				// Create a properly formatted extraction result
 				const formattedResult = {
@@ -519,9 +501,6 @@ function useExtraction(filePath, outputPath, analyzed) {
 		// Backend status
 		isBackendReady: isBackendReady(),
 
-		// Legacy compatibility properties
-		progressInfo: { percentage: progressValue, message: progressText },
-
 		// Derived state
 		hasResult: Boolean(extractionResult),
 		isSuccessful: Boolean(extractionResult?.success),
@@ -535,3 +514,4 @@ function useExtraction(filePath, outputPath, analyzed) {
 }
 
 export default useExtraction
+
