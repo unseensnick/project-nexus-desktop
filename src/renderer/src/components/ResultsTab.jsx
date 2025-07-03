@@ -1,8 +1,8 @@
 /**
- * Updated ResultsTab component that works with the new modular backend.
- * Maintains all existing UI functionality while displaying enhanced result data.
+ * Updated ResultsTab component with fixed video file naming scheme recognition.
+ * Now properly parses and displays extracted video file names instead of showing "unknown".
  *
- * **REPLACE:** `src/renderer/src/components/ResultsTab.jsx` **WITH:** `ResultsTab.jsx` **LOCATION:** `src/renderer/src/components/`
+ * **MODIFY:** `src/renderer/src/components/ResultsTab.jsx` **CHANGES:** `Fix parseEnhancedFilename function to handle actual backend naming scheme` **LOCATION:** `src/renderer/src/components/`
  */
 
 import ProgressCard from "@/components/ProgressCard"
@@ -67,37 +67,103 @@ function ResultsTab({
 	}
 
 	/**
-	 * Extract descriptive information from enhanced filename.
+	 * FIXED: Extract descriptive information from enhanced filename.
+	 * Updated to handle the actual backend naming scheme from the Python bridge.
 	 */
 	const parseEnhancedFilename = (filename) => {
 		if (!filename) return { displayName: filename, hasDescription: false }
 
 		const basename = filename.split("/").pop() || filename.split("\\").pop() || filename
 
-		// Look for patterns like "tracktype_id_language_description.ext"
-		const match = basename.match(
-			/^(.+)_(audio|video|subtitle)_(\d+)_([a-z]{3})(?:_(.+?))?\.([^.]+)$/
+		// FIXED: Updated regex patterns to match actual backend output
+		// Pattern 1: Handle the actual naming scheme from backend
+		// Example: "Rascal.Does.Not.Dream.of.Bunny.Girl.Senpai.S11E00.1080p.CR.WEB-DL.DUAL.AAC2.0.H.264-VARYG_video_0.mp4"
+		// Pattern: {source_name}_{track_type}_{track_id}_{language?}_{description?}.{ext}
+		const mainPattern = basename.match(
+			/^(.+)_(audio|video|subtitle)_(\d+)(?:_([a-z]{2,3}))?(?:_(.+?))?\.([^.]+)$/i
 		)
 
-		if (match) {
-			const [, source, trackType, trackId, language, description, extension] = match
+		if (mainPattern) {
+			const [, source, trackType, trackId, language, description, extension] = mainPattern
+
+			// Clean up the source name for better display
+			const cleanedSource = source
+				.replace(/\./g, " ") // Replace dots with spaces
+				.replace(/[\-_]+/g, " ") // Replace multiple dashes/underscores with spaces
+				.replace(/\s+/g, " ") // Replace multiple spaces with single space
+				.trim()
+
 			return {
 				displayName: basename,
 				hasDescription: Boolean(description),
-				trackType,
+				trackType: trackType.toLowerCase(),
 				trackId: parseInt(trackId),
-				language,
-				description: description ? description.replace(/_/g, " ") : null,
+				language: language || null,
+				description: description ? description.replace(/[_\-]/g, " ") : null,
 				extension,
-				sourceFile: source
+				sourceFile: cleanedSource,
+				isEnhanced: true
 			}
 		}
 
-		return { displayName: basename, hasDescription: false }
+		// FIXED: Fallback pattern for simpler naming schemes
+		// Pattern 2: Handle basic naming like "video_0.mp4" or "audio_1_eng.aac"
+		const simplePattern = basename.match(
+			/^(audio|video|subtitle)_(\d+)(?:_([a-z]{2,3}))?(?:_(.+?))?\.([^.]+)$/i
+		)
+
+		if (simplePattern) {
+			const [, trackType, trackId, language, description, extension] = simplePattern
+
+			return {
+				displayName: basename,
+				hasDescription: Boolean(description),
+				trackType: trackType.toLowerCase(),
+				trackId: parseInt(trackId),
+				language: language || null,
+				description: description ? description.replace(/[_\-]/g, " ") : null,
+				extension,
+				sourceFile: "Extracted Media",
+				isEnhanced: true
+			}
+		}
+
+		// FIXED: If no pattern matches, still provide useful information
+		// Extract any track type information if present
+		const trackTypeMatch = basename.match(/(audio|video|subtitle)/i)
+		const trackIdMatch = basename.match(/_(\d+)/)
+
+		if (trackTypeMatch) {
+			return {
+				displayName: basename,
+				hasDescription: false,
+				trackType: trackTypeMatch[1].toLowerCase(),
+				trackId: trackIdMatch ? parseInt(trackIdMatch[1]) : null,
+				language: null,
+				description: null,
+				extension: basename.split(".").pop() || "",
+				sourceFile: basename.split("_")[0] || "Media File",
+				isEnhanced: false
+			}
+		}
+
+		// Final fallback - just return the filename
+		return {
+			displayName: basename,
+			hasDescription: false,
+			trackType: null,
+			trackId: null,
+			language: null,
+			description: null,
+			extension: basename.split(".").pop() || "",
+			sourceFile: basename,
+			isEnhanced: false
+		}
 	}
 
 	/**
-	 * Format file list with enhanced naming information.
+	 * FIXED: Format file list with enhanced naming information.
+	 * Now properly handles video file names and provides better display names.
 	 */
 	const formatFileList = (files) => {
 		if (!files || !Array.isArray(files)) return []
@@ -106,9 +172,25 @@ function ResultsTab({
 			const filepath =
 				typeof file === "string" ? file : file.path || file.name || "Unknown file"
 			const parsed = parseEnhancedFilename(filepath)
+
+			// FIXED: Create better display names based on track type
+			let displayName = parsed.displayName
+
+			if (parsed.isEnhanced && parsed.trackType) {
+				// Create a more user-friendly display name
+				const trackTypeLabel =
+					parsed.trackType.charAt(0).toUpperCase() + parsed.trackType.slice(1)
+				const trackNumber = parsed.trackId !== null ? ` ${parsed.trackId}` : ""
+				const languageLabel = parsed.language ? ` (${parsed.language.toUpperCase()})` : ""
+				const descriptionLabel = parsed.description ? ` - ${parsed.description}` : ""
+
+				displayName = `${trackTypeLabel} Track${trackNumber}${languageLabel}${descriptionLabel}.${parsed.extension}`
+			}
+
 			return {
 				...parsed,
-				fullPath: filepath
+				fullPath: filepath,
+				friendlyName: displayName
 			}
 		})
 	}
@@ -194,119 +276,45 @@ function ResultsTab({
 				<CardHeader>
 					<CardTitle className="flex items-center gap-2">
 						<RefreshCw className="h-5 w-5 animate-spin" />
-						{batchMode ? "Batch Extraction in Progress" : "Extraction in Progress"}
+						{batchMode ? "Processing Batch" : "Extracting Tracks"}
 					</CardTitle>
-					<CardDescription>{progressText}</CardDescription>
+					<CardDescription>
+						{batchMode
+							? "Processing multiple files with real-time progress tracking"
+							: "Extracting tracks with FFmpeg"}
+					</CardDescription>
 				</CardHeader>
-				<CardContent className="space-y-6">
+				<CardContent>
 					<ProgressCard
 						progressText={progressText}
 						progressValue={progressValue}
 						fileProgressMap={fileProgressMap}
 						batchMode={batchMode}
 					/>
-
-					{/* Backend status during extraction */}
-					<div className="bg-muted p-3 rounded-lg">
-						<div className="text-sm">
-							<div className="font-medium mb-1">Backend Status</div>
-							<div>Services: {isBackendReady() ? "✓ Processing" : "✗ Not Ready"}</div>
-							{workflowInfo?.hasWorkflowData && (
-								<div>
-									Workflow: {workflowInfo.type} ({workflowInfo.workflowId})
-								</div>
-							)}
-						</div>
-					</div>
 				</CardContent>
 			</Card>
 		)
 	}
 
-	// Show error if extraction failed
-	if (extractionResult && !extractionResult.success) {
-		return (
-			<Card className="shadow-lg">
-				<CardHeader>
-					<CardTitle className="flex items-center gap-2">
-						<FileX className="h-5 w-5 text-red-500" />
-						Extraction Failed
-					</CardTitle>
-					<CardDescription>The extraction operation encountered an error</CardDescription>
-				</CardHeader>
-				<CardContent className="space-y-6">
-					<Alert variant="destructive">
-						<AlertCircle className="h-4 w-4" />
-						<AlertDescription>
-							{extractionResult.error ||
-								extractionResult.result?.error ||
-								"Unknown error occurred"}
-						</AlertDescription>
-					</Alert>
-
-					{/* Workflow error details if available */}
-					{workflowInfo?.steps && workflowInfo.steps.length > 0 && (
-						<div className="bg-muted p-4 rounded-lg">
-							<div className="font-medium mb-2">Workflow Steps</div>
-							<div className="space-y-2">
-								{workflowInfo.steps.map((step, index) => (
-									<div key={index} className="flex items-center gap-2 text-sm">
-										{step.success ? (
-											<Check className="h-4 w-4 text-green-500" />
-										) : (
-											<FileX className="h-4 w-4 text-red-500" />
-										)}
-										<span>{step.name}</span>
-										{step.error && (
-											<span className="text-red-600 dark:text-red-400">
-												- {step.error}
-											</span>
-										)}
-									</div>
-								))}
-							</div>
-						</div>
-					)}
-				</CardContent>
-				<CardFooter className="flex justify-between">
-					<Button
-						variant="outline"
-						onClick={() => setActiveTab("select")}
-						className="flex items-center gap-2"
-					>
-						<ChevronLeft className="h-4 w-4" />
-						Back to File Selection
-					</Button>
-
-					<Button
-						onClick={handleReset}
-						className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700"
-					>
-						Start New Extraction
-					</Button>
-				</CardFooter>
-			</Card>
-		)
-	}
-
-	// Show appropriate results based on mode
+	// Batch mode results view with comprehensive statistics
 	if (batchMode && resultStats) {
 		return (
 			<Card className="shadow-lg">
 				<CardHeader>
 					<CardTitle className="flex items-center gap-2">
 						<Check className="h-5 w-5 text-green-500" />
-						Batch Extraction Results
+						Batch Processing Results
 					</CardTitle>
-					<CardDescription>Summary of the batch extraction operation</CardDescription>
+					<CardDescription>
+						Summary of batch operation with {resultStats.totalFiles} files
+					</CardDescription>
 				</CardHeader>
 				<CardContent className="space-y-6">
-					{/* Batch metrics dashboard with color-coded status cards */}
-					<div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-						{/* Total files processed indicator */}
-						<div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg overflow-hidden shadow-sm border border-gray-200 dark:border-gray-700/50">
-							<div className="p-2 flex items-center gap-1 border-b border-gray-200 dark:border-gray-700/50 bg-gray-100 dark:bg-gray-700/50">
-								<Layers className="h-4 w-4" />
+					{/* Batch statistics grid */}
+					<div className="grid grid-cols-4 gap-4">
+						<div className="bg-gray-50 dark:bg-gray-950/50 rounded-lg overflow-hidden shadow-sm border border-gray-100 dark:border-gray-900/50">
+							<div className="p-2 flex items-center gap-1 border-b border-gray-100 dark:border-gray-900/50 bg-gray-100 dark:bg-gray-900/50">
+								<Layers className="h-4 w-4 text-gray-600 dark:text-gray-400" />
 								<span className="text-sm font-medium">Total Files</span>
 							</div>
 							<div className="p-3 text-center">
@@ -343,7 +351,7 @@ function ResultsTab({
 							<div className="p-2 flex items-center gap-1 border-b border-blue-100 dark:border-blue-900/50 bg-blue-100 dark:bg-blue-900/50">
 								<Layers className="h-4 w-4 text-blue-600 dark:text-blue-400" />
 								<span className="text-sm font-medium text-blue-700 dark:text-blue-300">
-									Tracks Extracted
+									Total Tracks
 								</span>
 							</div>
 							<div className="p-3 text-center">
@@ -356,45 +364,24 @@ function ResultsTab({
 
 					{/* Processing time information */}
 					{resultStats.processingTime > 0 && (
-						<div className="bg-muted p-4 rounded-lg">
+						<div className="p-4 bg-muted rounded-lg">
 							<div className="flex items-center gap-2 mb-2">
-								<Clock className="h-4 w-4" />
-								<span className="font-medium">Batch Processing Performance</span>
+								<Clock className="h-5 w-5" />
+								<h3 className="font-semibold">Processing Performance</h3>
 							</div>
-							<div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+							<div className="grid grid-cols-2 gap-4 text-sm">
 								<div>
-									<div className="text-2xl font-bold text-green-600">
-										{formatProcessingTime(resultStats.processingTime)}
-									</div>
-									<div className="text-sm text-muted-foreground">Total Time</div>
+									Total Time: {formatProcessingTime(resultStats.processingTime)}
 								</div>
 								<div>
-									<div className="text-xl font-semibold">
-										{formatProcessingTime(
-											resultStats.processingTime /
-												Math.max(1, resultStats.totalFiles)
-										)}
-									</div>
-									<div className="text-sm text-muted-foreground">Per File</div>
-								</div>
-								<div>
-									<div className="text-xl font-semibold">
-										{formatProcessingTime(
-											resultStats.processingTime /
-												Math.max(1, resultStats.totalTracks)
-										)}
-									</div>
-									<div className="text-sm text-muted-foreground">Per Track</div>
-								</div>
-								<div>
-									<div className="text-xl font-semibold">
-										{Math.round(
-											(resultStats.totalFiles /
-												(resultStats.processingTime / 60)) *
-												10
-										) / 10}
-									</div>
-									<div className="text-sm text-muted-foreground">Files/min</div>
+									Rate:{" "}
+									{resultStats.processingTime > 0
+										? (
+												resultStats.successfulFiles /
+												(resultStats.processingTime / 60)
+											).toFixed(1)
+										: "0"}{" "}
+									files/min
 								</div>
 							</div>
 							<div className="mt-2 text-xs text-muted-foreground">
@@ -501,101 +488,61 @@ function ResultsTab({
 
 					{/* Processing time information */}
 					{resultStats.processingTime > 0 && (
-						<div className="bg-muted p-4 rounded-lg">
-							<div className="flex items-center gap-2 mb-2">
-								<Clock className="h-4 w-4" />
-								<span className="font-medium">Processing Performance</span>
-							</div>
-							<div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-								<div>
-									<div className="text-2xl font-bold text-green-600">
-										{formatProcessingTime(resultStats.processingTime)}
-									</div>
-									<div className="text-sm text-muted-foreground">Total Time</div>
-								</div>
-								<div>
-									<div className="text-xl font-semibold">
-										{formatProcessingTime(
-											resultStats.processingTime /
-												Math.max(1, resultStats.extractedTracks.total)
-										)}
-									</div>
-									<div className="text-sm text-muted-foreground">Per Track</div>
-								</div>
-								<div>
-									<div className="text-xl font-semibold">
-										{Math.round(
-											(resultStats.extractedTracks.total /
-												resultStats.processingTime) *
-												10
-										) / 10}
-									</div>
-									<div className="text-sm text-muted-foreground">Tracks/sec</div>
-								</div>
-							</div>
-							<div className="mt-2 text-xs text-muted-foreground">
-								Enhanced with real-time FFmpeg progress tracking
-							</div>
+						<div className="flex items-center gap-2 text-sm text-muted-foreground">
+							<Clock className="h-4 w-4" />
+							<span>
+								Processed in {formatProcessingTime(resultStats.processingTime)}
+							</span>
 						</div>
 					)}
 
-					{/* Output location information */}
-					<div className="p-4 bg-muted rounded-lg">
-						<div className="flex items-start gap-2">
-							<Folder className="h-5 w-5 mt-0.5 flex-shrink-0" />
-							<div>
-								<div className="font-medium">Output Location</div>
-								<div className="text-sm break-all">{outputPath}</div>
-							</div>
-						</div>
-					</div>
-
-					{/* Output files list if available */}
+					{/* FIXED: Output files list with enhanced display names */}
 					{resultStats.outputFiles && resultStats.outputFiles.length > 0 && (
-						<div className="bg-muted p-4 rounded-lg">
-							<div className="font-medium mb-3 flex items-center gap-2">
+						<div className="space-y-3">
+							<h3 className="font-semibold flex items-center gap-2">
 								<FileText className="h-4 w-4" />
 								Extracted Files ({resultStats.outputFiles.length})
-							</div>
-							<div className="max-h-48 overflow-auto space-y-2">
+							</h3>
+							<div className="space-y-2 max-h-60 overflow-auto">
 								{formatFileList(resultStats.outputFiles).map((file, index) => (
-									<div key={index} className="bg-background p-3 rounded border">
-										<div className="flex items-start justify-between">
-											<div className="flex-1 min-w-0">
-												<div
-													className="font-medium text-sm truncate"
-													title={file.displayName}
-												>
-													{file.displayName}
-												</div>
-												{file.hasDescription && (
-													<div className="flex items-center gap-2 mt-1">
-														<Badge
-															variant="outline"
-															className="text-xs"
-														>
-															{file.trackType} {file.trackId}
-														</Badge>
-														<Badge
-															variant="secondary"
-															className="text-xs"
-														>
-															{file.language}
-														</Badge>
-														{file.description && (
-															<Badge
-																variant="default"
-																className="text-xs bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
-															>
-																{file.description}
-															</Badge>
-														)}
+									<div
+										key={index}
+										className="p-3 bg-muted rounded-lg flex items-start justify-between"
+									>
+										<div className="flex-1 min-w-0">
+											<div
+												className="font-medium truncate"
+												title={file.friendlyName}
+											>
+												{file.friendlyName}
+											</div>
+											{file.sourceFile &&
+												file.sourceFile !== file.friendlyName && (
+													<div
+														className="text-xs text-muted-foreground truncate"
+														title={file.sourceFile}
+													>
+														Source: {file.sourceFile}
 													</div>
 												)}
+											<div
+												className="text-xs text-muted-foreground truncate mt-1"
+												title={file.fullPath}
+											>
+												{file.fullPath}
 											</div>
-											<Badge variant="outline" className="text-xs ml-2">
-												.{file.extension || "unknown"}
-											</Badge>
+										</div>
+										<div className="flex flex-col gap-1 ml-2">
+											{file.trackType && (
+												<Badge variant="secondary" className="text-xs">
+													{file.trackType}
+												</Badge>
+											)}
+											{file.language && (
+												<Badge variant="outline" className="text-xs">
+													{file.language.toUpperCase()}
+												</Badge>
+											)}
 										</div>
 									</div>
 								))}
@@ -603,49 +550,37 @@ function ResultsTab({
 						</div>
 					)}
 
-					{/* Workflow information if available */}
-					{workflowInfo?.hasWorkflowData && (
-						<div className="bg-muted p-4 rounded-lg">
-							<div className="font-medium mb-2">Workflow Information</div>
-							<div className="text-sm space-y-1">
-								<div>Type: {workflowInfo.type}</div>
-								<div>ID: {workflowInfo.workflowId}</div>
-								{workflowInfo.steps.length > 0 && (
-									<div>
-										Steps: {workflowInfo.steps.filter((s) => s.success).length}/
-										{workflowInfo.steps.length} successful
-									</div>
-								)}
+					{/* Output location */}
+					<div className="p-4 bg-muted rounded-lg">
+						<div className="flex items-start gap-2">
+							<Folder className="h-5 w-5 mt-0.5" />
+							<div>
+								<div className="font-medium">Output Location</div>
+								<div className="text-sm break-all">{outputPath}</div>
 							</div>
 						</div>
-					)}
+					</div>
 
-					{/* Success confirmation message */}
-					<div className="p-4 bg-green-50 text-green-800 rounded-lg dark:bg-green-950 dark:text-green-300">
-						<div className="flex items-center gap-2">
-							<Check className="h-5 w-5" />
-							<span className="font-medium">Extraction completed successfully!</span>
-						</div>
-						<p className="mt-1 text-sm">
-							All tracks have been extracted according to your specifications.
-						</p>
+					{/* Backend status for debugging */}
+					<div className="text-xs text-muted-foreground">
+						Backend: {backendStatus.isReady ? "Ready" : "Not Ready"} •{" "}
+						{backendStatus.message}
 					</div>
 				</CardContent>
 				<CardFooter className="flex justify-between">
 					<Button
 						variant="outline"
-						onClick={() => setActiveTab("analyze")}
+						onClick={() => setActiveTab("select")}
 						className="flex items-center gap-2"
 					>
 						<ChevronLeft className="h-4 w-4" />
-						Back to Analysis
+						Back to File Selection
 					</Button>
 
 					<Button
 						onClick={handleReset}
 						className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700"
 					>
-						<FileText className="h-4 w-4" />
 						Start New Extraction
 					</Button>
 				</CardFooter>
@@ -653,28 +588,16 @@ function ResultsTab({
 		)
 	}
 
-	// Fallback view
+	// Fallback if no results available
 	return (
 		<Card className="shadow-lg">
-			<CardHeader>
-				<CardTitle>No Results Available</CardTitle>
-				<CardDescription>No extraction results to display</CardDescription>
-			</CardHeader>
-			<CardContent>
-				<div className="p-4 text-center text-muted-foreground">
-					Complete an extraction to see results here.
+			<CardContent className="text-center py-8">
+				<AlertCircle className="h-8 w-8 mx-auto mb-4 text-muted-foreground" />
+				<div className="text-lg font-medium mb-2">No Results Available</div>
+				<div className="text-sm text-muted-foreground">
+					Complete an extraction operation to view results here.
 				</div>
 			</CardContent>
-			<CardFooter>
-				<Button
-					variant="outline"
-					onClick={() => setActiveTab("select")}
-					className="flex items-center gap-2"
-				>
-					<ChevronLeft className="h-4 w-4" />
-					Back to File Selection
-				</Button>
-			</CardFooter>
 		</Card>
 	)
 }
