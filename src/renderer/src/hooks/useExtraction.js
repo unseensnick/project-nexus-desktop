@@ -25,6 +25,7 @@ function useExtraction(filePath, outputPath, analyzed) {
 	// Progress tracking state
 	const [progressValue, setProgressValue] = useState(0)
 	const [progressText, setProgressText] = useState("Ready for extraction")
+	const [progressStage, setProgressStage] = useState(null)
 	const [fileProgressMap, setFileProgressMap] = useState({})
 
 	// User configuration state
@@ -58,14 +59,23 @@ function useExtraction(filePath, outputPath, analyzed) {
 		const handleProgressUpdate = (progressData) => {
 			if (progressData && typeof progressData === "object") {
 				// Update progress value
-				if (typeof progressData.progress === "number") {
-					const clampedProgress = Math.min(100, Math.max(0, progressData.progress))
+				if (
+					typeof progressData.progress === "number" ||
+					typeof progressData.percentage === "number"
+				) {
+					const progress = progressData.percentage || progressData.progress
+					const clampedProgress = Math.min(100, Math.max(0, progress))
 					setProgressValue(clampedProgress)
 				}
 
 				// Update progress message
 				if (progressData.message) {
 					setProgressText(progressData.message)
+				}
+
+				// Update progress stage
+				if (progressData.stage) {
+					setProgressStage(progressData.stage)
 				}
 
 				// Log progress for debugging
@@ -80,6 +90,7 @@ function useExtraction(filePath, outputPath, analyzed) {
 		progressCleanupRef.current = () => {
 			setProgressValue(0)
 			setProgressText("")
+			setProgressStage(null)
 			setFileProgressMap(new Map())
 		}
 
@@ -296,15 +307,29 @@ function useExtraction(filePath, outputPath, analyzed) {
 					"Batch extraction workflow"
 				)
 			} else {
-				// Execute single file workflow - use direct Python API for real-time progress
+				// Execute single file workflow using service layer for consistent progress tracking
 				result = await executeOperation(
 					"Track Extraction",
-					async () => {
-						return await window.pythonApi.extractTracks({
+					async (services) => {
+						return await services.trackProcessor.extractTracks({
 							filePath,
 							outputDir: outputPath,
 							languages: selectedLanguages,
-							...extractionOptions
+							...extractionOptions,
+							progressCallback: (progressData) => {
+								// Update local progress state with enhanced data
+								if (progressData.percentage !== undefined) {
+									setProgressValue(progressData.percentage)
+								}
+								if (progressData.message) {
+									setProgressText(progressData.message)
+								}
+								if (progressData.stage) {
+									setProgressStage(progressData.stage)
+								}
+								// Handle any additional progress data like stage information
+								console.log("Progress update:", progressData)
+							}
 						})
 					},
 					"Track extraction"
@@ -438,6 +463,7 @@ function useExtraction(filePath, outputPath, analyzed) {
 		extractionResult,
 		progressValue,
 		progressText,
+		progressStage,
 		error,
 		setError,
 		fileProgressMap,

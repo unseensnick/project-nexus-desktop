@@ -18,11 +18,18 @@ import { Progress } from "./ui/progress"
  * @param {Object} props
  * @param {string} props.progressText - Text description of current operation
  * @param {number} props.progressValue - Current progress percentage (0-100)
+ * @param {string} props.progressStage - Current stage from backend (analyzing, filtering, extracting, etc.)
  * @param {Object} props.fileProgressMap - Map of file IDs to individual progress states
  * @param {boolean} props.batchMode - Whether displaying progress for a batch operation
  * @returns {JSX.Element} The rendered progress card
  */
-function ProgressCard({ progressText, progressValue, fileProgressMap = {}, batchMode = false }) {
+function ProgressCard({
+	progressText,
+	progressValue,
+	progressStage = null,
+	fileProgressMap = {},
+	batchMode = false
+}) {
 	// Track processing time for enhanced progress display
 	const [processingStartTime, setProcessingStartTime] = useState(null)
 	const [elapsedTime, setElapsedTime] = useState(0)
@@ -77,8 +84,32 @@ function ProgressCard({ progressText, progressValue, fileProgressMap = {}, batch
 		return workerThreads.size
 	}, [fileProgressArray, hasMultipleFiles])
 
-	// Determine current processing stage based on progress and text
+	// Determine current processing stage - prioritize backend stage over text-based parsing
 	const currentStage = useMemo(() => {
+		// Use backend stage if available and valid
+		if (progressStage && typeof progressStage === "string") {
+			const normalizedStage = progressStage.toLowerCase()
+			const validStages = [
+				"waiting",
+				"preparing",
+				"analyzing",
+				"filtering",
+				"extracting",
+				"processing",
+				"completed",
+				"initializing",
+				"finalizing"
+			]
+
+			if (validStages.includes(normalizedStage)) {
+				// Map backend stages to component stages
+				if (normalizedStage === "initializing") return "preparing"
+				if (normalizedStage === "finalizing") return "completed"
+				return normalizedStage
+			}
+		}
+
+		// Fallback to text-based parsing for backward compatibility
 		if (!progressText) return "waiting"
 
 		const text = progressText.toLowerCase()
@@ -96,7 +127,7 @@ function ProgressCard({ progressText, progressValue, fileProgressMap = {}, batch
 		}
 
 		return "processing"
-	}, [progressText])
+	}, [progressStage, progressText])
 
 	// Get stage-specific display information
 	const stageInfo = useMemo(() => {

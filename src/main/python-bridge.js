@@ -170,7 +170,8 @@ class PythonBridge {
 								if (progressOperationId === operationId && this.mainWindow) {
 									const progressData = {
 										operationId: progressOperationId,
-										progress: progressValue,
+										percentage: progressValue,
+										progress: progressValue, // Keep for backward compatibility
 										message: progressMessage,
 										stage: "extracting"
 									}
@@ -178,6 +179,14 @@ class PythonBridge {
 									console.log(
 										`${this._module}: Progress update: ${progressValue}% - ${progressMessage}`
 									)
+
+									// Send to operation-specific channel for service layer
+									this.mainWindow.webContents.send(
+										`python:progress:${progressOperationId}`,
+										progressData
+									)
+
+									// Also send to general progress channel for direct component use
 									this.mainWindow.webContents.send(
 										"python:progress",
 										progressData

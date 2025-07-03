@@ -43,6 +43,7 @@ function ResultsTab({
 	isExtracting,
 	progressValue,
 	progressText,
+	progressStage,
 	fileProgressMap,
 	handleReset,
 	setActiveTab,
@@ -288,6 +289,7 @@ function ResultsTab({
 					<ProgressCard
 						progressText={progressText}
 						progressValue={progressValue}
+						progressStage={progressStage}
 						fileProgressMap={fileProgressMap}
 						batchMode={batchMode}
 					/>

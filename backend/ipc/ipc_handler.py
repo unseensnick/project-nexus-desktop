@@ -12,6 +12,7 @@ import time
 
 from core.dependency_container import DependencyContainer
 from core.logger import LoggerFactory
+from core.progress_reporter import create_progress_reporter, ProgressData, ProgressStage
 from media_analyzer import MediaAnalyzerModule
 from track_processor import TrackProcessorModule
 from language_handler import LanguageHandlerModule
@@ -195,13 +196,41 @@ class IPCHandler:
             video_only = args.get("video_only", False)
             remove_letterbox = args.get("remove_letterbox", False)
             
+            # Initialize progress reporting
+            progress_reporter = create_progress_reporter(operation_id) if operation_id else None
+            
             # Get modules from dependency container
             media_analyzer = self._container.get(MediaAnalyzerModule)
             track_processor = self._container.get(TrackProcessorModule)
             
-            # Analyze the file to get tracks and duration
+            # Step 1: Analyze the file (10% of total progress)
+            if progress_reporter:
+                progress_reporter.report_progress(ProgressData(
+                    operation_id=operation_id,
+                    percentage=5.0,
+                    stage=ProgressStage.ANALYZING,
+                    message="Analyzing media file..."
+                ))
+            
             self._logger.info(f"Analyzing media file: {file_path}")
             media_file = media_analyzer.analyze_file(file_path)
+            
+            if progress_reporter:
+                progress_reporter.report_progress(ProgressData(
+                    operation_id=operation_id,
+                    percentage=10.0,
+                    stage=ProgressStage.ANALYZING,
+                    message="File analysis complete"
+                ))
+            
+            # Step 2: Filter tracks (20% of total progress)
+            if progress_reporter:
+                progress_reporter.report_progress(ProgressData(
+                    operation_id=operation_id,
+                    percentage=15.0,
+                    stage=ProgressStage.FILTERING,
+                    message="Filtering tracks by language and type..."
+                ))
             
             # Filter tracks based on criteria
             tracks_to_extract = []
@@ -225,6 +254,14 @@ class IPCHandler:
                 
                 tracks_to_extract.append(track)
             
+            if progress_reporter:
+                progress_reporter.report_progress(ProgressData(
+                    operation_id=operation_id,
+                    percentage=20.0,
+                    stage=ProgressStage.FILTERING,
+                    message=f"Found {len(tracks_to_extract)} tracks to extract"
+                ))
+            
             if not tracks_to_extract:
                 return {
                     "success": True,
@@ -236,29 +273,31 @@ class IPCHandler:
                     "message": "No tracks found matching criteria"
                 }
             
-            # Set up progress tracking
+            # Step 3: Extract tracks (80% of total progress)
             total_tracks = len(tracks_to_extract)
             completed_tracks = 0
             
             def progress_callback(track_progress: float):
                 """Progress callback for individual track extraction"""
-                if operation_id:
-                    # Calculate overall progress
-                    overall_progress = (completed_tracks * 100 + track_progress) / total_tracks
+                if progress_reporter:
+                    # Calculate overall progress (20% already done, 80% for extraction)
+                    base_progress = 20.0
+                    extraction_progress = 80.0
                     
-                    # Send progress update
-                    progress_data = {
-                        "operation_id": operation_id,
-                        "progress": overall_progress,
-                        "stage": "extracting",
-                        "track_progress": track_progress,
-                        "completed_tracks": completed_tracks,
-                        "total_tracks": total_tracks,
-                        "message": f"Extracting track {completed_tracks + 1} of {total_tracks}"
-                    }
+                    # Progress for completed tracks
+                    completed_progress = (completed_tracks / total_tracks) * extraction_progress
                     
-                    # Print progress for the bridge to capture
-                    print(f"PROGRESS:{operation_id}:{overall_progress:.2f}:{progress_data['message']}")
+                    # Progress for current track
+                    current_track_progress = (track_progress / 100.0) * (extraction_progress / total_tracks)
+                    
+                    overall_progress = base_progress + completed_progress + current_track_progress
+                    
+                    progress_reporter.report_progress(ProgressData(
+                        operation_id=operation_id,
+                        percentage=overall_progress,
+                        stage=ProgressStage.EXTRACTING,
+                        message=f"Extracting track {completed_tracks + 1} of {total_tracks} ({track_progress:.1f}%)"
+                    ))
                     
             # Extract each track using TrackProcessor module
             output_files = []
@@ -267,8 +306,14 @@ class IPCHandler:
             for track in tracks_to_extract:
                 try:
                     # Send initial progress for this track
-                    if operation_id:
-                        print(f"PROGRESS:{operation_id}:{(completed_tracks * 100) / total_tracks:.2f}:Starting {track.type} track {track.id}")
+                    if progress_reporter:
+                        base_progress = 20.0 + (completed_tracks / total_tracks) * 80.0
+                        progress_reporter.report_progress(ProgressData(
+                            operation_id=operation_id,
+                            percentage=base_progress,
+                            stage=ProgressStage.EXTRACTING,
+                            message=f"Starting {track.type} track {track.id} extraction..."
+                        ))
                     
                     result = track_processor.extract_track(
                         source_file=file_path,
@@ -285,8 +330,14 @@ class IPCHandler:
                         completed_tracks += 1
                         
                         # Send completion progress for this track
-                        if operation_id:
-                            print(f"PROGRESS:{operation_id}:{(completed_tracks * 100) / total_tracks:.2f}:Completed {track.type} track {track.id}")
+                        if progress_reporter:
+                            base_progress = 20.0 + (completed_tracks / total_tracks) * 80.0
+                            progress_reporter.report_progress(ProgressData(
+                                operation_id=operation_id,
+                                percentage=base_progress,
+                                stage=ProgressStage.EXTRACTING,
+                                message=f"Completed {track.type} track {track.id}"
+                            ))
                     else:
                         self._logger.warning(f"Failed to extract {track.type} track {track.id}: {result.error_message}")
                         completed_tracks += 1
@@ -296,8 +347,13 @@ class IPCHandler:
                     completed_tracks += 1
             
             # Send final progress
-            if operation_id:
-                print(f"PROGRESS:{operation_id}:100.0:Extraction completed")
+            if progress_reporter:
+                progress_reporter.report_progress(ProgressData(
+                    operation_id=operation_id,
+                    percentage=100.0,
+                    stage=ProgressStage.COMPLETED,
+                    message="Extraction completed successfully"
+                ))
             
             processing_time = time.time() - start_time
             

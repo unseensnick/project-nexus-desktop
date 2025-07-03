@@ -72,6 +72,7 @@ function AppContent() {
 		extractionResult,
 		progressValue,
 		progressText,
+		progressStage,
 		fileProgressMap,
 		error: extractionError,
 		selectedLanguages,
@@ -274,6 +275,7 @@ function AppContent() {
 								inputPaths={inputPaths}
 								progressValue={progressValue}
 								progressText={progressText}
+								progressStage={progressStage}
 								fileProgressMap={fileProgressMap}
 							/>
 						</TabsContent>
@@ -287,6 +289,7 @@ function AppContent() {
 									isExtracting={isExtracting}
 									progressValue={progressValue}
 									progressText={progressText}
+									progressStage={progressStage}
 									fileProgressMap={fileProgressMap}
 									handleReset={handleReset}
 									setActiveTab={setActiveTab}

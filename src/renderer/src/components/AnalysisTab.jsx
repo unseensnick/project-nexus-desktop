@@ -63,6 +63,7 @@ function AnalysisTab({
 	inputPaths,
 	progressValue,
 	progressText,
+	progressStage,
 	fileProgressMap
 }) {
 	// Backend service integration for enhanced functionality
@@ -586,6 +587,7 @@ function AnalysisTab({
 				<ProgressCard
 					progressText={progressText}
 					progressValue={progressValue}
+					progressStage={progressStage}
 					fileProgressMap={fileProgressMap}
 					batchMode={batchMode}
 				/>

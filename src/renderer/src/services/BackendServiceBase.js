@@ -127,8 +127,11 @@ export class BackendServiceBase {
 	 */
 	normalizeProgressData(progressData) {
 		return {
-			percentage: progressData.percentage || 0,
+			percentage: progressData.percentage || progressData.progress || 0,
 			message: progressData.message || "Processing...",
+			stage: progressData.stage || "processing",
+			operationId: progressData.operationId || null,
+			timestamp: progressData.timestamp || Date.now(),
 			currentFile: progressData.currentFile || null,
 			totalFiles: progressData.totalFiles || null,
 			fileIndex: progressData.fileIndex || null,
