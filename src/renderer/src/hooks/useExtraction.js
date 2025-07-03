@@ -338,17 +338,38 @@ function useExtraction(filePath, outputPath, analyzed) {
 
 			// Process successful result
 			if (result && result.success) {
+				// Handle different result formats (service layer vs direct API)
+				let extractedCounts, outputFiles, processingTime
+
+				if (result.extractedTracks) {
+					// Service layer format
+					extractedCounts = {
+						extracted_audio: result.extractedTracks.audio || 0,
+						extracted_video: result.extractedTracks.video || 0,
+						extracted_subtitles: result.extractedTracks.subtitle || 0
+					}
+					outputFiles = result.outputFiles || []
+					processingTime = result.processingTime || 0
+				} else {
+					// Direct API format (fallback)
+					extractedCounts = {
+						extracted_audio: result.extracted_audio || 0,
+						extracted_video: result.extracted_video || 0,
+						extracted_subtitles: result.extracted_subtitles || 0
+					}
+					outputFiles = result.output_files || []
+					processingTime = result.processing_time || result.processingTime || 0
+				}
+
 				// Create a properly formatted extraction result
 				const formattedResult = {
 					success: true,
 					result: {
-						extracted_audio: result.extracted_audio || 0,
-						extracted_video: result.extracted_video || 0,
-						extracted_subtitles: result.extracted_subtitles || 0,
-						output_files: result.output_files || [],
-						processing_time: result.processing_time || result.processingTime || 0
+						...extractedCounts,
+						output_files: outputFiles,
+						processing_time: processingTime
 					},
-					processingTime: result.processing_time || result.processingTime || 0,
+					processingTime: processingTime,
 					operationId: result.operationId
 				}
 
