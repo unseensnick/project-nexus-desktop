@@ -23,6 +23,7 @@ Project Nexus is a desktop application built with Electron, React, and Python th
 - **Video Editor**: Basic editing capabilities for cutting, joining, and transforming video
 - **Directory Watcher**: Automatically process new files in watched directories
 - **Media Optimization**: Re-encode files to reduce size while maintaining quality
+- **converter**: Convert media files between formats
 
 ## Prerequisites
 

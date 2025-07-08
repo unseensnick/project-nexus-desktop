@@ -1,8 +1,7 @@
 /**
- * Updated FileSelectionTab component that works with the new modular backend.
- * Maintains all existing UI functionality while using enhanced file validation.
+ * FileSelectionTab with debug logging to identify selection issues.
  *
- * **REPLACE:** `src/renderer/src/components/FileSelectionTab.jsx` **WITH:** `FileSelectionTab.jsx` **LOCATION:** `src/renderer/src/components/`
+ * **MODIFY:** `src/renderer/src/components/FileSelectionTab.jsx` **CHANGES:** `Added console logging to debug selection issues and ensured proper error handling` **LOCATION:** `src/renderer/src/components/`
  */
 
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -16,6 +15,7 @@ import {
 	CardTitle
 } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
 import { useBackendService } from "@/providers/BackendModuleProvider"
 import {
 	AlertCircle,
@@ -30,7 +30,7 @@ import {
 import React from "react"
 
 /**
- * Enhanced FileSelectionTab component with backend service integration.
+ * Enhanced FileSelectionTab component with debug logging and backend service integration.
  * Renders the file selection interface for the extraction workflow.
  */
 function FileSelectionTab({
@@ -45,8 +45,25 @@ function FileSelectionTab({
 	handleSelectInputFiles,
 	handleSelectInputDirectory,
 	handleAnalyzeFile,
-	handleAnalyzeBatch
+	handleAnalyzeBatch,
+	onBatchModeToggle
 }) {
+	console.log("FileSelectionTab props:", {
+		filePath,
+		outputPath,
+		isAnalyzing,
+		isBatchAnalyzing,
+		batchMode,
+		inputPaths: inputPaths?.length || 0,
+		hasHandleSelectFile: typeof handleSelectFile === "function",
+		hasHandleSelectOutputDir: typeof handleSelectOutputDir === "function",
+		hasHandleSelectInputFiles: typeof handleSelectInputFiles === "function",
+		hasHandleSelectInputDirectory: typeof handleSelectInputDirectory === "function",
+		hasHandleAnalyzeFile: typeof handleAnalyzeFile === "function",
+		hasHandleAnalyzeBatch: typeof handleAnalyzeBatch === "function",
+		hasOnBatchModeToggle: typeof onBatchModeToggle === "function"
+	})
+
 	// Backend service integration for enhanced file validation
 	const { isBackendReady, getBackendStatus, services } = useBackendService()
 
@@ -86,7 +103,7 @@ function FileSelectionTab({
 		const backendReady = isBackendReady()
 
 		if (batchMode) {
-			return backendReady && inputPaths.length > 0 && outputPath && !isBatchAnalyzing
+			return backendReady && inputPaths?.length > 0 && outputPath && !isBatchAnalyzing
 		} else {
 			return backendReady && filePath && !isAnalyzing
 		}
@@ -133,6 +150,26 @@ function FileSelectionTab({
 		}
 	}
 
+	/**
+	 * Handle button clicks with logging.
+	 */
+	const handleButtonClick = (handlerName, handler) => {
+		console.log(`Button clicked: ${handlerName}`)
+		console.log(`Handler available: ${typeof handler === "function"}`)
+
+		if (typeof handler === "function") {
+			try {
+				const result = handler()
+				console.log(`Handler ${handlerName} result:`, result)
+				return result
+			} catch (error) {
+				console.error(`Error in handler ${handlerName}:`, error)
+			}
+		} else {
+			console.error(`Handler ${handlerName} is not a function:`, handler)
+		}
+	}
+
 	const backendStatus = getBackendStatusInfo()
 	const fileValidation = getFileValidationStatus()
 	const supportedExtensions = getSupportedExtensions()
@@ -140,12 +177,37 @@ function FileSelectionTab({
 	return (
 		<Card className="shadow-lg">
 			<CardHeader>
-				<CardTitle>Select Files</CardTitle>
-				<CardDescription>
-					{batchMode
-						? "Select multiple files or folders to process in a batch"
-						: "Select the media file you want to process and the output directory"}
-				</CardDescription>
+				<div className="flex items-center justify-between">
+					<div>
+						<CardTitle>Select Files</CardTitle>
+						<CardDescription>
+							{batchMode
+								? "Select multiple files or folders to process in a batch"
+								: "Select the media file you want to process and the output directory"}
+						</CardDescription>
+					</div>
+					<div className="flex items-center space-x-2">
+						<Label htmlFor="batch-mode" className="text-sm font-medium">
+							Batch Mode
+						</Label>
+						<Switch
+							id="batch-mode"
+							checked={batchMode}
+							onCheckedChange={(checked) => {
+								console.log("Batch mode toggle:", checked)
+								if (typeof onBatchModeToggle === "function") {
+									onBatchModeToggle(checked)
+								} else {
+									console.error(
+										"onBatchModeToggle is not a function:",
+										onBatchModeToggle
+									)
+								}
+							}}
+							disabled={isAnalyzing || isBatchAnalyzing}
+						/>
+					</div>
+				</div>
 			</CardHeader>
 			<CardContent className="space-y-6">
 				{/* Backend status indicator */}
@@ -164,7 +226,9 @@ function FileSelectionTab({
 						<div className="flex items-center gap-2">
 							<Button
 								variant="default"
-								onClick={handleSelectFile}
+								onClick={() =>
+									handleButtonClick("handleSelectFile", handleSelectFile)
+								}
 								disabled={!backendStatus.isReady}
 								className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
 							>
@@ -206,7 +270,12 @@ function FileSelectionTab({
 							<div className="flex items-center gap-2">
 								<Button
 									variant="default"
-									onClick={handleSelectInputFiles}
+									onClick={() =>
+										handleButtonClick(
+											"handleSelectInputFiles",
+											handleSelectInputFiles
+										)
+									}
 									disabled={!backendStatus.isReady}
 									className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
 								>
@@ -215,7 +284,12 @@ function FileSelectionTab({
 								</Button>
 								<Button
 									variant="default"
-									onClick={handleSelectInputDirectory}
+									onClick={() =>
+										handleButtonClick(
+											"handleSelectInputDirectory",
+											handleSelectInputDirectory
+										)
+									}
 									disabled={!backendStatus.isReady}
 									className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
 								>
@@ -224,7 +298,7 @@ function FileSelectionTab({
 								</Button>
 							</div>
 							<div className="p-3 bg-gray-100 rounded dark:bg-gray-800">
-								{inputPaths.length > 0 ? (
+								{inputPaths?.length > 0 ? (
 									<div className="flex items-center">
 										<Layers className="h-4 w-4 mr-2 flex-shrink-0" />
 										<span>{inputPaths.length} files selected</span>
@@ -243,7 +317,9 @@ function FileSelectionTab({
 					<div className="flex items-center gap-2">
 						<Button
 							variant="default"
-							onClick={handleSelectOutputDir}
+							onClick={() =>
+								handleButtonClick("handleSelectOutputDir", handleSelectOutputDir)
+							}
 							disabled={!backendStatus.isReady}
 							className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
 						>
@@ -334,110 +410,46 @@ function FileSelectionTab({
 								</span>
 							</div>
 							<div className="flex justify-between">
-								<span>Real-time Progress:</span>
+								<span>Electron API:</span>
 								<span
 									className={
-										backendStatus.isReady ? "text-green-600" : "text-gray-500"
+										window.electronAPI ? "text-green-600" : "text-red-600"
 									}
 								>
-									{backendStatus.isReady
-										? "✓ FFmpeg Integration"
-										: "✗ Unavailable"}
+									{window.electronAPI ? "✓ Available" : "✗ Not Available"}
 								</span>
 							</div>
-							<div className="flex justify-between">
-								<span>Enhanced Naming:</span>
-								<span
-									className={
-										backendStatus.isReady ? "text-green-600" : "text-gray-500"
-									}
-								>
-									{backendStatus.isReady
-										? "✓ Descriptive Titles"
-										: "✗ Unavailable"}
-								</span>
-							</div>
-							{!backendStatus.isReady && (
-								<div className="text-red-600 dark:text-red-400 mt-2 p-2 bg-red-50 dark:bg-red-950 rounded">
-									<AlertCircle className="h-3 w-3 inline mr-1" />
-									{backendStatus.message}
-								</div>
-							)}
 						</div>
 					</div>
 				</div>
-
-				{/* Enhanced features information when backend is ready */}
-				{backendStatus.isReady && (
-					<div className="bg-green-50 dark:bg-green-950 p-3 rounded-lg border border-green-200 dark:border-green-800">
-						<div className="text-xs">
-							<div className="font-medium mb-2 text-green-800 dark:text-green-200 flex items-center gap-2">
-								<Info className="h-3 w-3" />
-								Enhanced Features Available
-							</div>
-							<div className="space-y-1 text-green-700 dark:text-green-300">
-								<div className="flex items-center gap-1">
-									<span className="w-2 h-2 bg-green-500 rounded-full"></span>
-									<span>
-										Real-time FFmpeg progress with duration-based calculations
-									</span>
-								</div>
-								<div className="flex items-center gap-1">
-									<span className="w-2 h-2 bg-green-500 rounded-full"></span>
-									<span>Enhanced file naming with descriptive track titles</span>
-								</div>
-								<div className="flex items-center gap-1">
-									<span className="w-2 h-2 bg-green-500 rounded-full"></span>
-									<span>Accurate processing time measurements</span>
-								</div>
-								<div className="flex items-center gap-1">
-									<span className="w-2 h-2 bg-green-500 rounded-full"></span>
-									<span>Advanced file format validation</span>
-								</div>
-							</div>
-						</div>
-					</div>
-				)}
 			</CardContent>
-			<CardFooter className="flex justify-between">
-				<div className="text-sm text-muted-foreground">
-					{batchMode
-						? "Select files and output directory to proceed"
-						: "Select the file above to proceed with analysis"}
-				</div>
 
-				{/* Contextual analyze button that adapts to current mode */}
-				{batchMode ? (
-					<Button
-						onClick={handleAnalyzeBatch}
-						disabled={!canAnalyze()}
-						className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
-					>
-						{isBatchAnalyzing ? (
+			<CardFooter>
+				<Button
+					onClick={() =>
+						handleButtonClick(
+							batchMode ? "handleAnalyzeBatch" : "handleAnalyzeFile",
+							batchMode ? handleAnalyzeBatch : handleAnalyzeFile
+						)
+					}
+					disabled={!canAnalyze()}
+					className="w-full bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white font-semibold py-2 px-4 rounded-lg shadow-lg transition-all duration-200"
+				>
+					{isAnalyzing || isBatchAnalyzing ? (
+						<div className="flex items-center gap-2">
 							<RefreshCw className="h-4 w-4 animate-spin" />
-						) : (
-							<Info className="h-4 w-4" />
-						)}
-						{isBatchAnalyzing ? "Analyzing..." : "Analyze Batch"}
-					</Button>
-				) : (
-					<Button
-						onClick={handleAnalyzeFile}
-						disabled={!canAnalyze()}
-						className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50"
-					>
-						{isAnalyzing ? (
-							<RefreshCw className="h-4 w-4 animate-spin" />
-						) : (
-							<Info className="h-4 w-4" />
-						)}
-						{isAnalyzing ? "Analyzing..." : "Analyze File"}
-					</Button>
-				)}
+							{batchMode ? "Analyzing Batch..." : "Analyzing..."}
+						</div>
+					) : (
+						<div className="flex items-center gap-2">
+							<File className="h-4 w-4" />
+							{batchMode ? "Analyze Batch" : "Analyze File"}
+						</div>
+					)}
+				</Button>
 			</CardFooter>
 		</Card>
 	)
 }
 
 export default FileSelectionTab
-

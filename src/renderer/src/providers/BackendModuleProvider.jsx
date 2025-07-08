@@ -1,117 +1,93 @@
 /**
- * Backend Module Context Provider for managing all backend services.
- * Provides centralized access to backend modules throughout the application.
+ * Enhanced BackendModuleProvider with proper service layer progress integration.
+ * Removes direct IPC progress handling to ensure all progress goes through service layer.
  *
- * **CREATE:** `BackendModuleProvider.jsx` **LOCATION:** `src/renderer/src/providers/`
+ * **MODIFY:** `src/renderer/src/providers/BackendModuleProvider.jsx` **CHANGES:** `Updated to ensure service layer progress integration and remove direct IPC progress handling` **LOCATION:** `src/renderer/src/providers/`
  */
 
 import React, { createContext, useContext, useEffect, useRef, useState } from "react"
+import { LanguageHandlerService } from "../services/LanguageHandlerService.js"
+import { MediaAnalyzerService } from "../services/MediaAnalyzerService.js"
+import { TrackProcessorService } from "../services/TrackProcessorService.js"
+import { WorkflowEngineService } from "../services/WorkflowEngineService.js"
 
-// Import service classes
-import MediaAnalyzerService from "../services/MediaAnalyzerService.js"
-import TrackProcessorService from "../services/TrackProcessorService.js"
-import WorkflowEngineService from "../services/WorkflowEngineService.js"
-
-// Create context
+/**
+ * Context for sharing backend module services across components.
+ */
 const BackendModuleContext = createContext(null)
 
 /**
- * Backend Module Provider component.
- * Initializes and manages all backend service instances.
+ * Enhanced BackendModuleProvider with proper service layer integration.
+ * Manages backend service initialization and provides clean API access.
  */
 export function BackendModuleProvider({ children }) {
 	const [isInitialized, setIsInitialized] = useState(false)
 	const [initializationError, setInitializationError] = useState(null)
 	const [services, setServices] = useState(null)
+
 	const initializationAttempted = useRef(false)
 
 	/**
-	 * Initialize all backend services.
+	 * Initialize backend services with enhanced error handling.
 	 */
 	const initializeServices = async () => {
 		try {
 			console.log("Initializing backend services...")
+			setInitializationError(null)
 
-			// Check if Python API is available
+			// Verify Python API is available
 			if (!window.pythonApi) {
-				throw new Error("Python API not available. Please ensure the backend is running.")
+				throw new Error("Python API not available - ensure backend is running")
 			}
 
-			// Initialize service instances
-			const mediaAnalyzer = new MediaAnalyzerService()
-			const trackProcessor = new TrackProcessorService()
-			const workflowEngine = new WorkflowEngineService()
+			// Test backend connectivity
+			try {
+				const testResult = await window.pythonApi.callFunction(
+					"MediaAnalyzer",
+					"test_connection",
+					{}
+				)
+				if (!testResult || !testResult.success) {
+					throw new Error("Backend connectivity test failed")
+				}
+			} catch (connectivityError) {
+				console.warn("Backend connectivity test failed:", connectivityError)
+				// Continue with initialization - some operations might still work
+			}
 
-			// Test connectivity to backend
-			console.log("Testing backend connectivity...")
-
-			// Create services object
+			// Initialize all service instances
 			const serviceInstances = {
-				mediaAnalyzer,
-				trackProcessor,
-				workflowEngine,
-
-				// Convenience methods for common operations
-				analyzeFile: mediaAnalyzer.analyzeFile.bind(mediaAnalyzer),
-				extractTracks: trackProcessor.extractTracks.bind(trackProcessor),
-				batchExtract: trackProcessor.batchExtract.bind(trackProcessor),
-				executeExtractionWorkflow:
-					workflowEngine.executeExtractionWorkflow.bind(workflowEngine),
-				executeBatchWorkflow: workflowEngine.executeBatchWorkflow.bind(workflowEngine),
-
-				// Service management methods
-				getActiveOperations: () => {
-					return [
-						...mediaAnalyzer.getActiveOperations(),
-						...trackProcessor.getActiveOperations(),
-						...workflowEngine.getActiveOperations()
-					]
-				},
-
-				cancelAllOperations: () => {
-					const cancelled = [
-						mediaAnalyzer.cancelAllOperations(),
-						trackProcessor.cancelAllOperations(),
-						workflowEngine.cancelAllOperations()
-					]
-					return cancelled.reduce((sum, count) => sum + count, 0)
-				},
-
-				getServiceStats: () => ({
-					mediaAnalyzer: {
-						activeOperations: mediaAnalyzer.getActiveOperations().length,
-						cacheStats: mediaAnalyzer.getCacheStats()
-					},
-					trackProcessor: {
-						activeOperations: trackProcessor.getActiveOperations().length,
-						extractionHistory: trackProcessor.getExtractionHistory().length
-					},
-					workflowEngine: {
-						activeWorkflows: workflowEngine.getActiveWorkflows().length,
-						workflowHistory: workflowEngine.getWorkflowHistory().length
-					}
-				})
+				mediaAnalyzer: new MediaAnalyzerService(),
+				trackProcessor: new TrackProcessorService(),
+				workflowEngine: new WorkflowEngineService(),
+				languageHandler: new LanguageHandlerService()
 			}
+
+			console.log("Backend services initialized successfully:", Object.keys(serviceInstances))
 
 			setServices(serviceInstances)
 			setIsInitialized(true)
-			setInitializationError(null)
-
-			console.log("Backend services initialized successfully")
 		} catch (error) {
-			console.error("Failed to initialize backend services:", error)
+			console.error("Backend service initialization failed:", error)
 			setInitializationError(error)
+			setServices(null)
 			setIsInitialized(false)
 		}
 	}
 
 	/**
-	 * Cleanup services on unmount.
+	 * Clean up backend services on unmount.
 	 */
 	const cleanup = () => {
 		if (services) {
 			console.log("Cleaning up backend services...")
-			services.cancelAllOperations()
+
+			// Cancel all active operations across services
+			Object.values(services).forEach((service) => {
+				if (service && typeof service.cancelAllOperations === "function") {
+					service.cancelAllOperations()
+				}
+			})
 		}
 	}
 
@@ -126,20 +102,91 @@ export function BackendModuleProvider({ children }) {
 		return cleanup
 	}, [])
 
-	// Context value
+	/**
+	 * Execute a backend operation with comprehensive error handling.
+	 * This method provides the core interface for service layer operations.
+	 */
+	const executeOperation = async (
+		operationName,
+		operation,
+		errorContext = "Backend operation"
+	) => {
+		if (!isInitialized) {
+			throw new Error("Backend services not initialized")
+		}
+
+		if (initializationError) {
+			throw new Error(`Backend initialization failed: ${initializationError.message}`)
+		}
+
+		if (!services) {
+			throw new Error("Backend services not available")
+		}
+
+		try {
+			console.log(`Executing ${operationName}...`)
+			const result = await operation(services)
+			console.log(`${operationName} completed successfully`)
+			return result
+		} catch (error) {
+			console.error(`${errorContext} failed:`, error)
+
+			// Re-throw with additional context
+			const enhancedError = new Error(`${errorContext}: ${error.message}`)
+			enhancedError.originalError = error
+			enhancedError.context = errorContext
+			enhancedError.operationName = operationName
+			throw enhancedError
+		}
+	}
+
+	/**
+	 * Check if backend is ready for operations.
+	 */
+	const isBackendReady = () => {
+		return isInitialized && !initializationError && services && window.pythonApi
+	}
+
+	/**
+	 * Get comprehensive backend status information.
+	 */
+	const getBackendStatus = () => {
+		return {
+			isReady: isBackendReady(),
+			isInitialized,
+			hasError: Boolean(initializationError),
+			error: initializationError,
+			pythonApiAvailable: Boolean(window.pythonApi),
+			servicesAvailable: Boolean(services),
+			availableServices: services ? Object.keys(services) : []
+		}
+	}
+
+	// Context value with all necessary functionality
 	const contextValue = {
+		// Initialization state
 		isInitialized,
 		initializationError,
 		services,
 
+		// Core operation execution
+		executeOperation,
+
+		// Status checking
+		isBackendReady,
+		getBackendStatus,
+
 		// Re-initialization method
 		reinitialize: initializeServices,
 
-		// Service status methods
-		isBackendAvailable: () => {
-			return Boolean(window.pythonApi && isInitialized && !initializationError)
-		},
+		// Direct service access for advanced usage
+		mediaAnalyzer: services?.mediaAnalyzer,
+		trackProcessor: services?.trackProcessor,
+		workflowEngine: services?.workflowEngine,
+		languageHandler: services?.languageHandler,
 
+		// Legacy compatibility
+		isBackendAvailable: isBackendReady,
 		getInitializationStatus: () => ({
 			isInitialized,
 			hasError: Boolean(initializationError),
@@ -156,6 +203,7 @@ export function BackendModuleProvider({ children }) {
 
 /**
  * Hook to use backend module context.
+ * Provides access to all backend services and operations.
  */
 export function useBackendModules() {
 	const context = useContext(BackendModuleContext)
@@ -207,80 +255,40 @@ export function useWorkflowEngine() {
 }
 
 /**
- * Hook for backend service operations with error handling.
+ * Hook for using LanguageHandler service.
+ */
+export function useLanguageHandler() {
+	const { services, isInitialized } = useBackendModules()
+
+	if (!isInitialized || !services) {
+		throw new Error("LanguageHandler service not initialized")
+	}
+
+	return services.languageHandler
+}
+
+/**
+ * Hook for backend service operations with comprehensive integration.
+ * This is the primary interface for components that need backend functionality.
  */
 export function useBackendService() {
 	const context = useBackendModules()
-	const { services, isInitialized, initializationError } = context
-
-	/**
-	 * Execute a backend operation with error handling.
-	 */
-	const executeOperation = async (
-		operationName,
-		operation,
-		errorContext = "Backend operation"
-	) => {
-		if (!isInitialized) {
-			throw new Error("Backend services not initialized")
-		}
-
-		if (initializationError) {
-			throw new Error(`Backend initialization failed: ${initializationError.message}`)
-		}
-
-		if (!services) {
-			throw new Error("Backend services not available")
-		}
-
-		try {
-			console.log(`Executing ${operationName}...`)
-			const result = await operation(services)
-			console.log(`${operationName} completed successfully`)
-			return result
-		} catch (error) {
-			console.error(`${errorContext} failed:`, error)
-
-			// Re-throw with additional context
-			const enhancedError = new Error(`${errorContext}: ${error.message}`)
-			enhancedError.originalError = error
-			enhancedError.context = errorContext
-			enhancedError.operationName = operationName
-			throw enhancedError
-		}
-	}
-
-	/**
-	 * Check if backend is ready for operations.
-	 */
-	const isBackendReady = () => {
-		return isInitialized && !initializationError && services && window.pythonApi
-	}
-
-	/**
-	 * Get backend status information.
-	 */
-	const getBackendStatus = () => {
-		return {
-			isReady: isBackendReady(),
-			isInitialized,
-			hasError: Boolean(initializationError),
-			error: initializationError,
-			pythonApiAvailable: Boolean(window.pythonApi),
-			servicesAvailable: Boolean(services)
-		}
-	}
 
 	return {
 		...context,
-		executeOperation,
-		isBackendReady,
-		getBackendStatus,
 
-		// Direct service access
-		mediaAnalyzer: services?.mediaAnalyzer,
-		trackProcessor: services?.trackProcessor,
-		workflowEngine: services?.workflowEngine
+		// Legacy compatibility methods for existing components
+		onProgress: (operationId, callback) => {
+			console.warn(
+				"onProgress method is deprecated. Use progressCallback in service operation options instead."
+			)
+			return () => {}
+		},
+
+		// Derived state helpers
+		hasError: Boolean(context.initializationError),
+		isOperationReady: context.isBackendReady(),
+		canExecuteOperations: context.isBackendReady()
 	}
 }
 

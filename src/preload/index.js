@@ -1,10 +1,7 @@
 /**
- * Preload script that securely exposes main process APIs to the renderer process.
- * Creates a bridge between Electron's main process capabilities (like file dialogs and
- * Python integration) and the renderer process where the React UI runs.
+ * Enhanced preload script with complete Python API methods required by service layer.
  *
- * This script uses contextBridge to expose only the specific APIs needed by the UI
- * without giving direct access to Node.js or Electron internals.
+ * **MODIFY:** `src/preload/index.js` **CHANGES:** `Enhanced Python API to include missing methods required by service layer` **LOCATION:** `src/preload/`
  */
 
 import { electronAPI } from "@electron-toolkit/preload"
@@ -40,6 +37,18 @@ const dialogApi = {
 	saveFileDialog: (options) => ipcRenderer.invoke("dialog:saveFile", options),
 
 	/**
+	 * Shell API for opening paths in the system
+	 */
+	shell: {
+		/**
+		 * Opens a file path in the default system application
+		 * @param {string} path - Path to open
+		 * @returns {Promise<boolean>} - Success status
+		 */
+		openPath: (path) => ipcRenderer.invoke("shell:openPath", path)
+	},
+
+	/**
 	 * Progress update listener for real-time updates from backend
 	 * @param {Function} callback - Function to call with progress updates
 	 * @returns {Function} - Cleanup function to remove the listener
@@ -59,7 +68,7 @@ const dialogApi = {
 }
 
 /**
- * Python API for interacting with Python backend processes
+ * Enhanced Python API for interacting with Python backend processes
  * Provides methods to analyze media files, extract tracks, and monitor progress
  */
 const pythonApi = {
@@ -69,6 +78,7 @@ const pythonApi = {
 	 * @returns {Promise<Object>} - Analysis results with track information
 	 */
 	analyzeFile: (filePath) => {
+		console.log("PythonAPI: analyzeFile called with:", filePath)
 		return ipcRenderer.invoke("python:analyze-file", filePath)
 	},
 
@@ -78,11 +88,60 @@ const pythonApi = {
 	 * @returns {Promise<Object>} - Extraction results including success status and extracted tracks
 	 */
 	extractTracks: (options) => {
+		console.log("PythonAPI: extractTracks called with:", options)
 		return ipcRenderer.invoke("python:extract-tracks", options)
 	},
 
 	/**
-	 * Register a callback for progress updates during extraction
+	 * Extract specific tracks by indices
+	 * @param {Object} options - Options including file path, output directory, and track indices
+	 * @returns {Promise<Object>} - Extraction results
+	 */
+	extractSpecificTrack: (options) => {
+		console.log("PythonAPI: extractSpecificTrack called with:", options)
+		return ipcRenderer.invoke("python:extract-specific-track", options)
+	},
+
+	/**
+	 * Batch extract tracks from multiple files
+	 * @param {Object} options - Batch extraction options
+	 * @returns {Promise<Object>} - Batch extraction results
+	 */
+	batchExtract: (options) => {
+		console.log("PythonAPI: batchExtract called with:", options)
+		return ipcRenderer.invoke("python:batch-extract", options)
+	},
+
+	/**
+	 * Find media files in specified directories
+	 * @param {Array<string>} paths - Array of directory paths to search
+	 * @returns {Promise<Object>} - Search results with found media files
+	 */
+	findMediaFiles: (paths) => {
+		console.log("PythonAPI: findMediaFiles called with:", paths)
+		return ipcRenderer.invoke("python:find-media-files", paths)
+	},
+
+	/**
+	 * Test backend connectivity
+	 * @returns {Promise<Object>} - Connection test result
+	 */
+	testConnection: () => {
+		console.log("PythonAPI: testConnection called")
+		return ipcRenderer.invoke("python:test-connection")
+	},
+
+	/**
+	 * Get backend status information
+	 * @returns {Promise<Object>} - Backend status
+	 */
+	getBackendStatus: () => {
+		console.log("PythonAPI: getBackendStatus called")
+		return ipcRenderer.invoke("python:get-status")
+	},
+
+	/**
+	 * Register a callback for progress updates during operations
 	 * @param {string} operationId - Unique ID for the operation
 	 * @param {Function} callback - Function to call with progress updates
 	 * @returns {Function} - Unsubscribe function to remove the listener
@@ -90,71 +149,211 @@ const pythonApi = {
 	onProgress: (operationId, callback) => {
 		const channel = `python:progress:${operationId}`
 
-		// Remove any existing listeners
+		// Remove any existing listeners for this operation
 		ipcRenderer.removeAllListeners(channel)
 
 		// Add the new listener with error handling
-		ipcRenderer.on(channel, (_, data) => {
+		const wrappedCallback = (_, data) => {
 			try {
 				if (data && typeof data === "object") {
 					callback(data)
 				} else {
-					console.warn(`Received invalid progress data: ${data}`)
+					console.warn(`Received invalid progress data for ${operationId}:`, data)
 				}
 			} catch (error) {
-				console.error("Error in progress callback:", error)
+				console.error(`Error in progress callback for ${operationId}:`, error)
 			}
-		})
+		}
 
-		// Return a function to unsubscribe
+		ipcRenderer.on(channel, wrappedCallback)
+
+		// Also listen to general progress channel for backward compatibility
+		const generalChannel = "python:progress"
+		const generalCallback = (_, data) => {
+			try {
+				if (
+					data &&
+					typeof data === "object" &&
+					(data.operationId === operationId || !data.operationId)
+				) {
+					callback(data)
+				}
+			} catch (error) {
+				console.error(`Error in general progress callback for ${operationId}:`, error)
+			}
+		}
+
+		ipcRenderer.on(generalChannel, generalCallback)
+
+		// Return a function to unsubscribe from both channels
 		return () => {
-			ipcRenderer.removeAllListeners(channel)
+			ipcRenderer.removeListener(channel, wrappedCallback)
+			ipcRenderer.removeListener(generalChannel, generalCallback)
 		}
 	},
 
 	/**
-	 * Extract a specific track from a media file
-	 * @param {Object} options - Extraction options including track ID and type
-	 * @returns {Promise<Object>} - Extraction result for the specific track
+	 * Register a callback for worker-specific progress updates during batch operations
+	 * @param {Function} callback - Function to call with worker progress updates
+	 * @returns {Function} - Unsubscribe function to remove the listener
 	 */
-	extractSpecificTrack: (options) => {
-		return ipcRenderer.invoke("python:extract-specific-track", options)
+	onWorkerProgress: (callback) => {
+		const channel = "python:worker-progress"
+
+		const wrappedCallback = (_, data) => {
+			try {
+				if (data && typeof data === "object") {
+					callback(data)
+				} else {
+					console.warn("Received invalid worker progress data:", data)
+				}
+			} catch (error) {
+				console.error("Error in worker progress callback:", error)
+			}
+		}
+
+		ipcRenderer.on(channel, wrappedCallback)
+
+		// Return a function to unsubscribe
+		return () => {
+			ipcRenderer.removeListener(channel, wrappedCallback)
+		}
 	},
 
 	/**
-	 * Batch extract tracks from multiple media files
-	 * @param {Object} options - Batch extraction options including file paths and worker count
-	 * @returns {Promise<Object>} - Batch extraction results and statistics
+	 * Register listeners for both regular and worker progress updates
+	 * @param {Function} progressCallback - Function for regular progress updates
+	 * @param {Function} workerProgressCallback - Function for worker-specific progress updates
+	 * @returns {Function} - Cleanup function to remove all listeners
 	 */
-	batchExtract: (options) => {
-		return ipcRenderer.invoke("python:batch-extract", options)
+	onAllProgress: (progressCallback, workerProgressCallback) => {
+		const progressCleanup = pythonApi.onProgress("", progressCallback)
+		const workerProgressCleanup = pythonApi.onWorkerProgress(workerProgressCallback)
+
+		return () => {
+			progressCleanup()
+			workerProgressCleanup()
+		}
 	},
 
 	/**
-	 * Find media files in specified paths
-	 * @param {Array<string>} paths - Directories or file paths to search
-	 * @returns {Promise<Object>} - Object containing found media files
+	 * Universal method for calling backend functions (for service layer compatibility)
+	 * @param {string} module - Module name (e.g., "MediaAnalyzer", "TrackProcessor")
+	 * @param {string} functionName - Function name to call
+	 * @param {Object} parameters - Function parameters
+	 * @param {string} operationId - Operation ID for progress tracking
+	 * @returns {Promise<Object>} - Function result
 	 */
-	findMediaFiles: (paths) => {
-		return ipcRenderer.invoke("python:find-media-files", paths)
+	callFunction: async (module, functionName, parameters, operationId) => {
+		console.log(`PythonAPI: callFunction called - ${module}.${functionName}`, parameters)
+
+		// Route to appropriate specific methods based on module and function
+		try {
+			if (module === "MediaAnalyzer") {
+				switch (functionName) {
+					case "analyze_file":
+						return await pythonApi.analyzeFile(
+							parameters.file_path || parameters.filePath
+						)
+					case "analyze_batch":
+						// Fallback for batch analysis
+						if (parameters.file_paths && parameters.file_paths.length > 0) {
+							const result = await pythonApi.analyzeFile(parameters.file_paths[0])
+							return {
+								...result,
+								batch: true,
+								total_files: parameters.file_paths.length
+							}
+						}
+						throw new Error("No files provided for batch analysis")
+					case "find_media_files":
+						return await pythonApi.findMediaFiles(parameters.paths)
+					case "test_connection":
+						return await pythonApi.testConnection()
+					default:
+						throw new Error(`Unknown MediaAnalyzer function: ${functionName}`)
+				}
+			} else if (module === "TrackProcessor") {
+				switch (functionName) {
+					case "extract_tracks":
+						return await pythonApi.extractTracks({
+							...parameters,
+							operationId
+						})
+					case "extract_specific_tracks":
+						return await pythonApi.extractSpecificTrack({
+							...parameters,
+							operationId
+						})
+					case "batch_extract_tracks":
+						return await pythonApi.batchExtract({
+							...parameters,
+							operationId
+						})
+					default:
+						throw new Error(`Unknown TrackProcessor function: ${functionName}`)
+				}
+			} else if (module === "WorkflowEngine") {
+				switch (functionName) {
+					case "execute_extraction_workflow":
+						return await pythonApi.extractTracks({
+							filePath: parameters.source_file,
+							outputDir: parameters.output_directory,
+							languages: parameters.languages,
+							audioOnly: parameters.audio_only,
+							subtitleOnly: parameters.subtitle_only,
+							includeVideo: parameters.include_video,
+							videoOnly: parameters.video_only,
+							removeLetterbox: parameters.remove_letterbox,
+							operationId
+						})
+					case "execute_batch_workflow":
+						return await pythonApi.batchExtract({
+							inputPaths: parameters.input_paths,
+							outputDir: parameters.output_directory,
+							languages: parameters.languages,
+							maxWorkers: parameters.max_workers,
+							audioOnly: parameters.audio_only,
+							subtitleOnly: parameters.subtitle_only,
+							includeVideo: parameters.include_video,
+							videoOnly: parameters.video_only,
+							removeLetterbox: parameters.remove_letterbox,
+							operationId
+						})
+					default:
+						throw new Error(`Unknown WorkflowEngine function: ${functionName}`)
+				}
+			} else {
+				throw new Error(`Unknown module: ${module}`)
+			}
+		} catch (error) {
+			console.error(`Error in callFunction ${module}.${functionName}:`, error)
+			throw error
+		}
 	}
 }
 
-// Expose APIs to renderer based on context isolation status
+// Expose APIs to renderer process through contextBridge
 if (process.contextIsolated) {
 	try {
-		// Expose the APIs through contextBridge when context isolation is enabled
+		// Expose Electron API
 		contextBridge.exposeInMainWorld("electron", electronAPI)
+
+		// Expose custom APIs
 		contextBridge.exposeInMainWorld("api", api)
-		contextBridge.exposeInMainWorld("pythonApi", pythonApi)
 		contextBridge.exposeInMainWorld("electronAPI", dialogApi)
+		contextBridge.exposeInMainWorld("pythonApi", pythonApi)
+
+		console.log("Preload: All APIs exposed successfully")
 	} catch (error) {
-		console.error(error)
+		console.error("Failed to expose APIs:", error)
 	}
 } else {
-	// Fall back to adding properties directly to window when context isolation is disabled
+	// Fallback for non-isolated contexts
 	window.electron = electronAPI
 	window.api = api
-	window.pythonApi = pythonApi
 	window.electronAPI = dialogApi
+	window.pythonApi = pythonApi
+
+	console.log("Preload: APIs set on window object (non-isolated context)")
 }

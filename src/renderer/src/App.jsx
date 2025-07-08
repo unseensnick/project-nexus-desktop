@@ -1,8 +1,7 @@
 /**
- * Updated main application component with new modular backend integration.
- * Maintains all existing UI functionality while using the new backend architecture.
+ * Fixed App.jsx with proper handler integration and batch mode toggle.
  *
- * **REPLACE:** `src/renderer/src/App.jsx` **WITH:** `App.jsx` **LOCATION:** `src/renderer/src/`
+ * **MODIFY:** `src/renderer/src/App.jsx` **CHANGES:** `Added proper batch mode toggle handler and ensured all handlers are correctly passed to components` **LOCATION:** `src/renderer/src/`
  */
 
 import { useEffect, useState } from "react"
@@ -17,12 +16,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 // Import Lucide icons (unchanged)
 import { AlertCircle, FileText, Menu } from "lucide-react"
 
-// Import new hooks that use modular backend
+// Import hooks that use modular backend
 import useExtraction from "./hooks/useExtraction"
 import useFileSelection from "./hooks/useFileSelection"
 import useMediaAnalysis from "./hooks/useMediaAnalysis"
 
-// Import UI components (will be updated to work with new backend)
+// Import UI components
 import AnalysisTab from "@/components/AnalysisTab"
 import { AppSidebar } from "@/components/AppSidebar"
 import FileSelectionTab from "@/components/FileSelectionTab"
@@ -76,7 +75,9 @@ function AppContent() {
 		fileProgressMap,
 		error: extractionError,
 		selectedLanguages,
+		setSelectedLanguages,
 		extractionOptions,
+		updateExtractionOptions,
 		batchMode,
 		toggleBatchMode,
 		inputPaths,
@@ -88,10 +89,9 @@ function AppContent() {
 		handleSelectInputFiles,
 		handleSelectInputDirectory,
 		handleExtractTracks,
-		toggleLanguage,
-		toggleOption,
+		clearProgress,
 		resetExtraction,
-		resetAll
+		getBatchStats
 	} = useExtraction(filePath, outputPath, analyzed)
 
 	// Consolidate errors from different workflow stages
@@ -132,9 +132,54 @@ function AppContent() {
 	const handleReset = () => {
 		resetFileSelection()
 		resetAnalysis()
-		resetAll()
+		resetExtraction()
 		setActiveTab("select")
 		setError(null)
+	}
+
+	/**
+	 * Toggle language selection.
+	 */
+	const toggleLanguage = (language) => {
+		setSelectedLanguages((prev) => {
+			if (prev.includes(language)) {
+				return prev.filter((lang) => lang !== language)
+			} else {
+				return [...prev, language]
+			}
+		})
+	}
+
+	/**
+	 * Toggle extraction option.
+	 */
+	const toggleOption = (option) => {
+		updateExtractionOptions({
+			[option]: !extractionOptions[option]
+		})
+	}
+
+	/**
+	 * Handle batch mode toggle with proper cleanup.
+	 */
+	const handleBatchModeToggle = (enabled) => {
+		console.log("Toggling batch mode to:", enabled)
+
+		if (enabled !== batchMode) {
+			toggleBatchMode()
+
+			// Clear any existing progress when switching modes
+			clearProgress()
+
+			// Reset analysis state when switching modes
+			if (enabled) {
+				// Switching to batch mode - reset single file analysis
+				resetAnalysis()
+			} else {
+				// Switching to single mode - reset batch analysis
+				// This will be handled by the useExtraction hook
+			}
+		}
 	}
 
 	// Determine available languages based on current mode
@@ -142,91 +187,57 @@ function AppContent() {
 		? batchAnalyzed?.languages?.all || []
 		: availableLanguages
 
-	// Show backend initialization error if present
-	if (!isBackendReady()) {
-		const backendStatus = getBackendStatus()
-
-		return (
-			<div className="flex h-screen bg-gray-50 text-gray-900 overflow-hidden dark:bg-gray-900 dark:text-gray-100">
-				<div className="flex-1 flex items-center justify-center p-8">
-					<div className="max-w-md w-full">
-						<Alert variant="destructive">
-							<AlertCircle className="h-4 w-4" />
-							<AlertTitle>Backend Initialization Error</AlertTitle>
-							<AlertDescription>
-								{backendStatus.hasError
-									? backendStatus.error?.message ||
-										"Failed to initialize backend services"
-									: "Backend services are not ready. Please ensure the Python backend is running."}
-							</AlertDescription>
-						</Alert>
-
-						<div className="mt-4 text-sm text-muted-foreground">
-							<p>
-								<strong>Backend Status:</strong>
-							</p>
-							<ul className="list-disc list-inside mt-2 space-y-1">
-								<li>
-									Python API Available:{" "}
-									{backendStatus.pythonApiAvailable ? "✓" : "✗"}
-								</li>
-								<li>
-									Services Initialized: {backendStatus.isInitialized ? "✓" : "✗"}
-								</li>
-								<li>
-									Services Available:{" "}
-									{backendStatus.servicesAvailable ? "✓" : "✗"}
-								</li>
-							</ul>
-						</div>
-					</div>
-				</div>
-			</div>
-		)
-	}
+	// Debug logging
+	console.log("App state:", {
+		batchMode,
+		hasHandleSelectFile: typeof handleSelectFile === "function",
+		hasHandleSelectOutputDir: typeof handleSelectOutputDir === "function",
+		hasHandleSelectInputFiles: typeof handleSelectInputFiles === "function",
+		hasHandleSelectInputDirectory: typeof handleSelectInputDirectory === "function",
+		hasHandleAnalyzeFile: typeof handleAnalyzeFile === "function",
+		hasHandleAnalyzeBatch: typeof handleAnalyzeBatch === "function",
+		hasToggleBatchMode: typeof toggleBatchMode === "function",
+		backendReady: isBackendReady()
+	})
 
 	return (
-		<div className="flex h-screen bg-gray-50 text-gray-900 overflow-hidden dark:bg-gray-900 dark:text-gray-100">
-			{/* Navigation sidebar (unchanged) */}
+		<div className="h-screen flex bg-gradient-to-br from-slate-50 to-blue-50 dark:from-slate-900 dark:to-blue-900">
+			{/* Sidebar */}
 			<AppSidebar collapsed={sidebarCollapsed} />
 
 			{/* Main content area */}
-			<main className="flex-1 flex flex-col overflow-hidden">
-				{/* Application header with sidebar toggle and mode switch */}
-				<header className="bg-white shadow-sm p-4 flex items-center justify-between dark:bg-gray-800 dark:border-b dark:border-gray-700">
-					<div className="flex items-center gap-2">
+			<div className="flex-1 flex flex-col">
+				{/* Top navigation bar */}
+				<header className="bg-white border-b px-6 py-4 flex items-center justify-between dark:bg-gray-800 dark:border-gray-700">
+					<div className="flex items-center gap-4">
 						<Button
 							variant="ghost"
-							size="icon"
-							className="rounded-md hover:bg-gray-100 dark:hover:bg-gray-700"
+							size="sm"
 							onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+							className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
 						>
 							<Menu className="h-5 w-5" />
 						</Button>
-						<h2 className="text-xl font-medium flex items-center gap-2">
-							<FileText className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
-							Track Extraction
-						</h2>
-					</div>
-
-					{/* Batch mode toggle switch */}
-					<div className="flex items-center gap-2">
-						<span className="text-sm text-gray-500 dark:text-gray-400">Batch Mode</span>
-						<Switch
-							checked={batchMode}
-							onCheckedChange={toggleBatchMode}
-							className="w-10 h-5 data-[state=checked]:bg-indigo-600"
-							thumbClassName="size-4"
-						/>
+						<div className="flex items-center gap-2">
+							<FileText className="h-6 w-6 text-blue-600" />
+							<h1 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
+								Project Nexus
+							</h1>
+						</div>
 					</div>
 				</header>
 
-				{/* Tab-based content area */}
+				{/* Main workflow content */}
 				<div className="flex-1 overflow-auto p-6">
-					<Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-						{/* Tab navigation - disabled states prevent skipping steps */}
-						<TabsList className="grid w-full grid-cols-3 mb-8">
-							<TabsTrigger value="select">1. Select Files</TabsTrigger>
+					<Tabs
+						value={activeTab}
+						onValueChange={setActiveTab}
+						className="w-full max-w-6xl mx-auto"
+					>
+						<TabsList className="grid w-full grid-cols-3">
+							<TabsTrigger value="select" className="flex items-center gap-2">
+								1. Select Files
+							</TabsTrigger>
 							<TabsTrigger value="analyze" disabled={!analyzed && !batchAnalyzed}>
 								2. Analyze & Configure
 							</TabsTrigger>
@@ -250,6 +261,7 @@ function AppContent() {
 								handleSelectInputDirectory={handleSelectInputDirectory}
 								handleAnalyzeFile={handleAnalyzeFile}
 								handleAnalyzeBatch={handleAnalyzeBatch}
+								onBatchModeToggle={handleBatchModeToggle}
 							/>
 						</TabsContent>
 
@@ -313,20 +325,20 @@ function AppContent() {
 				<footer className="bg-white border-t p-4 text-sm text-gray-500 flex justify-between dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400">
 					<span>Project Nexus v0.0.1</span>
 					<span className="text-xs">
-						Backend: {isBackendReady() ? "✓ Ready" : "✗ Not Ready"}
+						Backend: {isBackendReady() ? "✓ Connected" : "✗ Disconnected"}
 					</span>
 				</footer>
-			</main>
+			</div>
 		</div>
 	)
 }
 
 /**
- * Main application component with provider wrapping.
+ * Main application component with providers.
  */
 function App() {
 	return (
-		<ThemeProvider>
+		<ThemeProvider defaultTheme="light" storageKey="vite-ui-theme">
 			<BackendModuleProvider>
 				<AppContent />
 			</BackendModuleProvider>

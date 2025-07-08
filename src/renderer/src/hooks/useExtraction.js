@@ -1,15 +1,20 @@
 /**
- * New useExtraction hook that utilizes the TrackProcessor and WorkflowEngine backend modules.
- * Provides track extraction capabilities with proper backend integration.
+ * Enhanced useExtraction hook with improved logging and guaranteed batch result storage.
+ * Uses the new frontend logging system and ensures extraction results are properly handled.
  *
- * **REPLACE:** `src/renderer/src/hooks/useExtraction.js` **WITH:** `useExtraction.js` **LOCATION:** `src/renderer/src/hooks/`
+ * **MODIFY:** `src/renderer/src/hooks/useExtraction.js` **CHANGES:** `Enhanced logging system, simplified progress tracking, removed excessive console logs` **LOCATION:** `src/renderer/src/hooks/`
  */
 
 import { useCallback, useEffect, useRef, useState } from "react"
+import LoggerFactory from "../lib/Logger.js"
 import { useBackendService } from "../providers/BackendModuleProvider.jsx"
 
+// Initialize logger for this hook
+const logger = LoggerFactory.getHookLogger("useExtraction")
+
 /**
- * Hook for managing track extraction operations using backend modules.
+ * Hook for managing track extraction operations using backend modules with proper service layer progress.
+ * Fixed to ensure batch extraction results are properly handled and displayed.
  *
  * @param {string} filePath - Path to the source media file
  * @param {string} outputPath - Path to the output directory
@@ -22,11 +27,11 @@ function useExtraction(filePath, outputPath, analyzed) {
 	const [extractionResult, setExtractionResult] = useState(null)
 	const [error, setError] = useState(null)
 
-	// Progress tracking state
+	// Progress tracking state with fixed structure
 	const [progressValue, setProgressValue] = useState(0)
 	const [progressText, setProgressText] = useState("Ready for extraction")
 	const [progressStage, setProgressStage] = useState(null)
-	const [fileProgressMap, setFileProgressMap] = useState({})
+	const [fileProgressMap, setFileProgressMap] = useState(new Map())
 
 	// User configuration state
 	const [selectedLanguages, setSelectedLanguages] = useState(["eng"])
@@ -46,327 +51,277 @@ function useExtraction(filePath, outputPath, analyzed) {
 	const [isBatchAnalyzing, setIsBatchAnalyzing] = useState(false)
 
 	// Backend service integration
-	const { executeOperation, workflowEngine, mediaAnalyzer, isBackendReady } = useBackendService()
+	const { executeOperation, workflowEngine, trackProcessor, mediaAnalyzer, isBackendReady } =
+		useBackendService()
 
 	// Progress cleanup reference
 	const progressCleanupRef = useRef(() => {})
 
 	/**
-	 * Set up progress tracking and cleanup.
+	 * Simplified initialization for batch mode - only create entries for actual files
+	 */
+	const initializeBatchProgressMap = useCallback((paths) => {
+		logger.debug("Initializing batch progress map", { pathCount: paths.length })
+		const newMap = new Map()
+
+		paths.forEach((path, index) => {
+			const filename = path.split("/").pop() || path.split("\\").pop() || `File ${index + 1}`
+
+			const fileData = {
+				filename,
+				progress: 0,
+				stage: "pending",
+				message: "Waiting to start...",
+				fileId: path
+			}
+
+			logger.debug("Adding file to progress map", { path, filename })
+			newMap.set(path, fileData)
+		})
+
+		logger.info("Initialized batch progress map", { fileCount: newMap.size })
+		setFileProgressMap(newMap)
+		return newMap
+	}, [])
+
+	/**
+	 * Service layer progress callback for single file operations.
+	 */
+	const handleSingleFileProgress = useCallback((progressData) => {
+		logger.debug("Single file progress update", {
+			percentage: progressData.percentage,
+			stage: progressData.stage
+		})
+
+		if (typeof progressData.percentage === "number") {
+			const clampedProgress = Math.min(100, Math.max(0, progressData.percentage))
+			setProgressValue(clampedProgress)
+		}
+
+		if (progressData.message) {
+			setProgressText(progressData.message)
+		}
+
+		if (progressData.stage) {
+			setProgressStage(progressData.stage)
+		}
+	}, [])
+
+	/**
+	 * Simplified worker progress handler
+	 */
+	const handleWorkerProgress = useCallback((workerProgressData) => {
+		logger.debug("Worker progress update", {
+			workerId: workerProgressData.workerId,
+			filename: workerProgressData.filename,
+			progress: workerProgressData.progress
+		})
+
+		const {
+			workerId,
+			filePath: workerFilePath,
+			filename,
+			progress,
+			stage,
+			message
+		} = workerProgressData
+
+		if (workerId && workerFilePath) {
+			setFileProgressMap((prevMap) => {
+				const newMap = new Map(prevMap)
+				const workerFileKey = `${workerId}_${workerFilePath}`
+
+				const displayFilename =
+					filename ||
+					workerFilePath.split("/").pop() ||
+					workerFilePath.split("\\").pop() ||
+					"Unknown File"
+
+				const fileData = {
+					workerId: workerId,
+					filename: displayFilename,
+					fileId: workerFilePath,
+					progress: progress !== undefined ? Math.min(100, Math.max(0, progress)) : 0,
+					stage: stage || "processing",
+					message: message || ""
+				}
+
+				logger.debug("Setting worker progress data", { workerFileKey, fileData })
+				newMap.set(workerFileKey, fileData)
+				return newMap
+			})
+		}
+	}, [])
+
+	/**
+	 * Simplified batch progress callback
+	 */
+	const handleBatchProgress = useCallback((progressData) => {
+		logger.debug("Batch progress update", {
+			percentage: progressData.percentage,
+			stage: progressData.stage,
+			hasDetails: !!progressData.details
+		})
+
+		// Update overall progress
+		if (typeof progressData.percentage === "number") {
+			const clampedProgress = Math.min(100, Math.max(0, progressData.percentage))
+			setProgressValue(clampedProgress)
+		}
+
+		if (progressData.message) {
+			setProgressText(progressData.message)
+		}
+
+		if (progressData.stage) {
+			setProgressStage(progressData.stage)
+		}
+
+		// Handle worker-specific progress with simplified structure
+		if (progressData.details) {
+			const {
+				worker_id: workerId,
+				file_id: fileId,
+				filename,
+				file_progress: fileProgress,
+				file_stage: fileStage,
+				file_message: fileMessage
+			} = progressData.details
+
+			if (workerId && fileId) {
+				setFileProgressMap((prevMap) => {
+					const newMap = new Map(prevMap)
+					const workerFileKey = `${workerId}_${fileId}`
+
+					const displayFilename =
+						filename ||
+						fileId.split("/").pop() ||
+						fileId.split("\\").pop() ||
+						"Processing file..."
+
+					const updatedData = {
+						workerId: workerId,
+						filename: displayFilename,
+						fileId: fileId,
+						progress:
+							fileProgress !== undefined
+								? Math.min(100, Math.max(0, fileProgress))
+								: 0,
+						stage: fileStage || "processing",
+						message: fileMessage || ""
+					}
+
+					logger.debug("Updated worker-file data", { workerFileKey, updatedData })
+					newMap.set(workerFileKey, updatedData)
+					return newMap
+				})
+			}
+		}
+	}, [])
+
+	/**
+	 * Clear progress state.
+	 */
+	const clearProgress = useCallback(() => {
+		setProgressValue(0)
+		setProgressText("Ready for extraction")
+		setProgressStage(null)
+		setFileProgressMap(new Map())
+		logger.debug("Cleared progress state")
+	}, [])
+
+	/**
+	 * Set up progress tracking cleanup on unmount.
 	 */
 	useEffect(() => {
-		// Set up progress listener for real-time updates
-		const handleProgressUpdate = (progressData) => {
-			if (progressData && typeof progressData === "object") {
-				// Update progress value using new standardized format
-				if (typeof progressData.percentage === "number") {
-					const clampedProgress = Math.min(100, Math.max(0, progressData.percentage))
-					setProgressValue(clampedProgress)
-				}
+		progressCleanupRef.current = clearProgress
 
-				// Update progress message
-				if (progressData.message) {
-					setProgressText(progressData.message)
-				}
-
-				// Update progress stage
-				if (progressData.stage) {
-					setProgressStage(progressData.stage)
-				}
-
-				// Enhanced progress tracking for batch mode
-				if (batchMode && progressData.details && progressData.details.file_id) {
-					console.log("Batch mode - processing file progress:", progressData.details)
-					setFileProgressMap((prev) => {
-						const newMap = new Map(prev)
-
-						// Extract file-specific data from details
-						const fileId = progressData.details.file_id
-						const filename = progressData.details.filename || fileId
-						const fileProgress = progressData.details.file_progress
-						const fileStage = progressData.details.file_stage
-						const fileMessage = progressData.details.file_message
-
-						console.log(
-							`Updating file progress - File: ${filename}, Progress: ${fileProgress}%, Stage: ${fileStage}, Message: ${fileMessage}`
-						)
-
-						// Update individual file progress
-						const existingFileProgress = newMap.get(fileId) || {
-							filename: filename,
-							progress: 0,
-							stage: "pending",
-							message: "",
-							tracks: { audio: 0, video: 0, subtitle: 0 }
-						}
-
-						// Update file-specific progress data
-						if (fileProgress !== undefined) {
-							existingFileProgress.progress = Math.min(100, Math.max(0, fileProgress))
-						}
-						if (fileStage) {
-							existingFileProgress.stage = fileStage
-						}
-						if (fileMessage) {
-							existingFileProgress.message = fileMessage
-						}
-						if (progressData.details.tracks) {
-							existingFileProgress.tracks = {
-								...existingFileProgress.tracks,
-								...progressData.details.tracks
-							}
-						}
-
-						console.log(`File progress after update:`, existingFileProgress)
-						newMap.set(fileId, existingFileProgress)
-						console.log(`Map size after update: ${newMap.size}`)
-						return newMap
-					})
-				} else if (batchMode && inputPaths.length > 0) {
-					// Initialize file progress map for batch mode if not already done
-					setFileProgressMap((prev) => {
-						if (prev.size === 0 && inputPaths.length > 0) {
-							console.log(
-								"Initializing file progress map for batch mode with paths:",
-								inputPaths
-							)
-							const newMap = new Map()
-							inputPaths.forEach((path, index) => {
-								const filename =
-									path.split("/").pop() ||
-									path.split("\\").pop() ||
-									`File ${index + 1}`
-								console.log(`Adding to map - Key: ${path}, Filename: ${filename}`)
-								newMap.set(path, {
-									filename,
-									progress: 0,
-									stage: "pending",
-									message: "Waiting to start...",
-									tracks: { audio: 0, video: 0, subtitle: 0 }
-								})
-							})
-							console.log(`Initial map size: ${newMap.size}`)
-							return newMap
-						}
-						return prev
-					})
-				}
-
-				// Log progress for debugging
-				console.log("Progress update:", progressData)
-			}
-		}
-
-		// Register IPC progress listener
-		const removeProgressListener = window.electronAPI.onProgressUpdate(handleProgressUpdate)
-
-		// Cleanup progress tracking
-		progressCleanupRef.current = () => {
-			setProgressValue(0)
-			setProgressText("")
-			setProgressStage(null)
-			setFileProgressMap(new Map())
-		}
-
-		// Cleanup on unmount
 		return () => {
-			if (removeProgressListener) {
-				removeProgressListener()
-			}
 			progressCleanupRef.current()
 		}
-	}, [batchMode, inputPaths])
+	}, [clearProgress])
 
 	/**
-	 * Toggle between single file and batch extraction modes.
-	 */
-	const toggleBatchMode = useCallback(() => {
-		setBatchMode((prev) => {
-			if (!prev) {
-				// Switching to batch mode
-				return true
-			} else {
-				// Switching from batch mode - cleanup
-				setInputPaths([])
-				setBatchAnalyzed(null)
-				setFileProgressMap(new Map())
-				return false
-			}
-		})
-	}, [])
-
-	/**
-	 * Select multiple files for batch processing.
-	 */
-	const handleSelectInputFiles = useCallback(async () => {
-		try {
-			if (!window.electronAPI?.openFileDialog) {
-				throw new Error("File selection not available")
-			}
-
-			const result = await window.electronAPI.openFileDialog({
-				title: "Select Media Files",
-				filters: [
-					{ name: "Media Files", extensions: ["mkv", "mp4", "avi", "mov"] },
-					{ name: "All Files", extensions: ["*"] }
-				],
-				properties: ["openFile", "multiSelections"]
-			})
-
-			if (result?.filePaths?.length > 0) {
-				setInputPaths(result.filePaths)
-				setBatchAnalyzed(null)
-				setError(null)
-				return result.filePaths
-			}
-		} catch (err) {
-			console.error("File selection error:", err)
-			setError(`Error selecting files: ${err.message}`)
-		}
-		return []
-	}, [])
-
-	/**
-	 * Select directory and scan for media files.
-	 */
-	const handleSelectInputDirectory = useCallback(async () => {
-		try {
-			if (!window.electronAPI?.openDirectoryDialog) {
-				throw new Error("Directory selection not available")
-			}
-
-			const result = await window.electronAPI.openDirectoryDialog({
-				title: "Select Directory with Media Files",
-				properties: ["openDirectory"]
-			})
-
-			if (result?.filePaths?.length > 0) {
-				const dirPath = result.filePaths[0]
-
-				if (!isBackendReady()) {
-					throw new Error("Backend services not available")
-				}
-
-				setProgressText("Scanning directory for media files...")
-
-				const filesResult = await executeOperation(
-					"Find Media Files",
-					async (services) => {
-						return await services.mediaAnalyzer.findMediaFiles([dirPath])
-					},
-					"Directory scanning"
-				)
-
-				setInputPaths(filesResult)
-				setBatchAnalyzed(null)
-				setError(null)
-				setProgressText(`Found ${filesResult.length} media files`)
-
-				return filesResult
-			}
-		} catch (err) {
-			console.error("Directory selection error:", err)
-			setError(`Error selecting directory: ${err.message}`)
-		}
-		return []
-	}, [executeOperation, isBackendReady])
-
-	/**
-	 * Analyze batch files (analyze first file as representative).
-	 */
-	const handleAnalyzeBatch = useCallback(async () => {
-		if (inputPaths.length === 0) {
-			setError("Please select input files or directory first")
-			return null
-		}
-
-		if (!outputPath) {
-			setError("Please select an output directory")
-			return null
-		}
-
-		setIsBatchAnalyzing(true)
-		setError(null)
-		setProgressText("Analyzing batch files...")
-
-		try {
-			// Analyze first file as representative of the batch
-			const sampleFile = inputPaths[0]
-
-			const result = await executeOperation(
-				"Batch File Analysis",
-				async (services) => {
-					return await services.mediaAnalyzer.analyzeFile(sampleFile)
-				},
-				"Batch analysis"
-			)
-
-			// Create batch summary
-			const batchSummary = {
-				...result,
-				sampleFile,
-				totalFiles: inputPaths.length,
-				type: "batch_analysis"
-			}
-
-			setBatchAnalyzed(batchSummary)
-			return batchSummary
-		} catch (err) {
-			console.error("Batch analysis error:", err)
-			setError(`Error analyzing batch: ${err.message}`)
-			return null
-		} finally {
-			setIsBatchAnalyzing(false)
-		}
-	}, [inputPaths, outputPath, executeOperation])
-
-	/**
-	 * Execute track extraction workflow.
+	 * Main extraction handler with guaranteed result storage and comprehensive logging
 	 */
 	const handleExtractTracks = useCallback(async () => {
+		logger.info("Starting extraction", {
+			batchMode,
+			hasFiles: batchMode ? inputPaths.length > 0 : !!filePath
+		})
+
 		// Validation
 		if (batchMode) {
 			if (inputPaths.length === 0) {
-				setError("Please select input files or directory first")
+				const error = "Please select input files or directory first"
+				setError(error)
+				logger.error("Batch extraction validation failed", { error })
 				return null
 			}
 		} else {
 			if (!filePath) {
-				setError("Please select a file first")
+				const error = "Please select a file first"
+				setError(error)
+				logger.error("Single file extraction validation failed", { error })
 				return null
 			}
 			if (!analyzed) {
-				setError("Please analyze the file first")
+				const error = "Please analyze the file first"
+				setError(error)
+				logger.error("Single file extraction validation failed", { error })
 				return null
 			}
 		}
 
 		if (!outputPath) {
-			setError("Please select an output directory")
+			const error = "Please select an output directory"
+			setError(error)
+			logger.error("Extraction validation failed", { error })
 			return null
 		}
 
 		if (selectedLanguages.length === 0) {
-			setError("Please select at least one language")
+			const error = "Please select at least one language"
+			setError(error)
+			logger.error("Extraction validation failed", { error })
 			return null
 		}
 
 		if (!isBackendReady()) {
-			setError("Backend services not available")
+			const error = "Backend services not available"
+			setError(error)
+			logger.error("Extraction validation failed", { error })
 			return null
 		}
 
 		setIsExtracting(true)
 		setError(null)
-		setProgressValue(0)
-		setProgressText(batchMode ? "Starting batch extraction..." : "Starting extraction...")
+		clearProgress()
 		setExtractionResult(null)
 
 		try {
 			let result
+			let workerProgressCleanup = null
 
 			if (batchMode) {
-				// Execute batch workflow
+				logger.info("Starting batch extraction", {
+					fileCount: inputPaths.length,
+					maxWorkers,
+					languages: selectedLanguages,
+					options: extractionOptions
+				})
+
+				// Initialize progress map for batch mode
+				initializeBatchProgressMap(inputPaths)
+				setProgressText("Starting batch extraction...")
+
+				// Set up worker progress listener for batch extraction
+				if (window.pythonApi && window.pythonApi.onWorkerProgress) {
+					workerProgressCleanup = window.pythonApi.onWorkerProgress(handleWorkerProgress)
+					logger.debug("Set up worker progress listener")
+				}
+
+				// Execute batch workflow using service layer
 				result = await executeOperation(
 					"Batch Extraction Workflow",
 					async (services) => {
@@ -374,14 +329,31 @@ function useExtraction(filePath, outputPath, analyzed) {
 							inputPaths,
 							outputDirectory: outputPath,
 							languages: selectedLanguages,
+							maxWorkers,
 							...extractionOptions,
-							maxWorkers
+							progressCallback: handleBatchProgress
 						})
 					},
 					"Batch extraction workflow"
 				)
+
+				// Clean up worker progress listener
+				if (workerProgressCleanup) {
+					workerProgressCleanup()
+					logger.debug("Cleaned up worker progress listener")
+				}
+
+				logger.info("Batch extraction completed", { hasResult: !!result })
 			} else {
-				// Execute single file workflow using service layer for consistent progress tracking
+				logger.info("Starting single file extraction", {
+					filePath,
+					languages: selectedLanguages,
+					options: extractionOptions
+				})
+
+				setProgressText("Starting extraction...")
+
+				// Execute single file extraction using service layer
 				result = await executeOperation(
 					"Track Extraction",
 					async (services) => {
@@ -390,246 +362,339 @@ function useExtraction(filePath, outputPath, analyzed) {
 							outputDir: outputPath,
 							languages: selectedLanguages,
 							...extractionOptions,
-							progressCallback: (progressData) => {
-								// Update local progress state with enhanced data
-								if (progressData.percentage !== undefined) {
-									setProgressValue(progressData.percentage)
-								}
-								if (progressData.message) {
-									setProgressText(progressData.message)
-								}
-								if (progressData.stage) {
-									setProgressStage(progressData.stage)
-								}
-								// Handle any additional progress data like stage information
-								console.log("Progress update:", progressData)
-							}
+							progressCallback: handleSingleFileProgress
 						})
 					},
 					"Track extraction"
 				)
+
+				logger.info("Single file extraction completed", { hasResult: !!result })
 			}
 
-			// Process successful result using new standardized format
-			if (result && result.success) {
-				let formattedResult
+			// CRITICAL: Immediate and guaranteed result storage
+			if (result) {
+				logger.info("Storing extraction result", {
+					success: result.success,
+					totalFiles: result.total_files,
+					totalTracks: result.total_tracks_extracted,
+					batchMode
+				})
 
+				// Store result immediately without any processing
+				setExtractionResult(result)
+
+				// Force state update and UI refresh
 				if (batchMode) {
-					// Handle batch processing results - use backend format directly
-					const batchResult = result.result || result
-
-					// Create properly formatted batch result using backend response format
-					formattedResult = {
-						success: true,
-						type: "batch_extraction",
-						result: {
-							totalFiles: batchResult.totalFiles || batchResult.total_files || 0,
-							successfulFiles:
-								batchResult.successfulFiles || batchResult.successful_files || 0,
-							failedFiles: batchResult.failedFiles || batchResult.failed_files || 0,
-							totalTracksExtracted:
-								batchResult.totalTracksExtracted ||
-								batchResult.total_tracks_extracted ||
-								0,
-							extracted_audio: batchResult.extracted_audio || 0,
-							extracted_video: batchResult.extracted_video || 0,
-							extracted_subtitles: batchResult.extracted_subtitles || 0,
-							failedFilesList:
-								batchResult.failedFilesList || batchResult.failed_files_list || [],
-							processing_time:
-								batchResult.processingTime || batchResult.processing_time || 0
-						},
-						processingTime:
-							batchResult.processingTime || batchResult.processing_time || 0,
-						operationId: result.operationId
-					}
-
-					console.log("Batch extraction completed:", {
-						totalFiles: formattedResult.result.totalFiles,
-						successfulFiles: formattedResult.result.successfulFiles,
-						totalTracks: formattedResult.result.totalTracksExtracted,
-						processingTime: formattedResult.processingTime
+					logger.info("Batch extraction successful", {
+						totalFiles: result.total_files,
+						successfulFiles: result.successful_files,
+						totalTracks: result.total_tracks_extracted,
+						extractedAudio: result.extracted_audio,
+						extractedVideo: result.extracted_video,
+						extractedSubtitles: result.extracted_subtitles,
+						workersUsed: result.workers_used
 					})
+
+					setProgressValue(100)
+					setProgressText(
+						`Batch extraction completed: ${result.successful_files || result.successfulFiles || 0} files processed`
+					)
+					setProgressStage("completed")
 				} else {
-					// Handle single file results - use existing format conversion
-					const extractedCounts = {
-						extracted_audio: result.extractedTracks?.audio || 0,
-						extracted_video: result.extractedTracks?.video || 0,
-						extracted_subtitles: result.extractedTracks?.subtitle || 0
-					}
-					const outputFiles = result.outputFiles || []
-					const processingTime = result.processingTime || 0
-
-					// Create a properly formatted extraction result
-					formattedResult = {
-						success: true,
-						result: {
-							...extractedCounts,
-							output_files: outputFiles,
-							processing_time: processingTime
-						},
-						processingTime: processingTime,
-						operationId: result.operationId
-					}
-
-					console.log("Single extraction completed:", {
-						type: "single",
-						extractedCounts,
-						processingTime: formattedResult.processingTime
-					})
+					setProgressValue(100)
+					setProgressText("Extraction completed successfully")
+					setProgressStage("completed")
 				}
 
-				setExtractionResult(formattedResult)
-				setProgressValue(100)
-				setProgressText(
-					batchMode ? "Batch processing completed" : "Extraction completed successfully"
-				)
-
-				return formattedResult
+				logger.info("Extraction result stored successfully")
+				return result
 			} else {
-				throw new Error(result?.error || "Extraction failed")
+				throw new Error("No result returned from extraction operation")
 			}
 		} catch (err) {
-			console.error("Extraction error:", err)
-			setError(`Extraction failed: ${err.message}`)
+			logger.error("Extraction failed", { error: err, batchMode })
+			setError(err.message || "Extraction failed")
+			setProgressValue(0)
+			setProgressText("Extraction failed")
+			setProgressStage("failed")
 			return null
 		} finally {
 			setIsExtracting(false)
-			progressCleanupRef.current()
 		}
 	}, [
 		batchMode,
-		filePath,
 		inputPaths,
-		outputPath,
+		filePath,
 		analyzed,
+		outputPath,
 		selectedLanguages,
+		isBackendReady,
+		clearProgress,
 		extractionOptions,
 		maxWorkers,
 		executeOperation,
-		isBackendReady
+		initializeBatchProgressMap,
+		handleWorkerProgress,
+		handleBatchProgress,
+		handleSingleFileProgress
 	])
 
 	/**
-	 * Toggle language selection.
+	 * Toggle batch mode.
 	 */
-	const toggleLanguage = useCallback((language) => {
-		setSelectedLanguages((prev) => {
-			if (prev.includes(language)) {
-				return prev.filter((lang) => lang !== language)
+	const toggleBatchMode = useCallback(() => {
+		setBatchMode((prev) => {
+			const newMode = !prev
+			logger.info("Toggled batch mode", { newMode })
+			return newMode
+		})
+		clearProgress()
+		setExtractionResult(null)
+		setError(null)
+	}, [clearProgress])
+
+	/**
+	 * Handle file selection for batch mode.
+	 */
+	const handleSelectInputFiles = useCallback(async () => {
+		if (!isBackendReady()) {
+			const error = "Backend services not available"
+			setError(error)
+			logger.error("File selection failed", { error })
+			return []
+		}
+
+		try {
+			clearProgress()
+
+			const result = await executeOperation(
+				"File Selection",
+				async (services) => {
+					return await services.mediaAnalyzer.selectMediaFiles()
+				},
+				"File selection"
+			)
+
+			if (result && result.length > 0) {
+				setInputPaths(result)
+				setBatchAnalyzed(null)
+				setError(null)
+				logger.info("Selected files for batch mode", { fileCount: result.length })
+				return result
 			} else {
-				return [...prev, language]
+				const error = "No media files were selected"
+				setError(error)
+				logger.warn("No files selected", { error })
 			}
-		})
-	}, [])
+		} catch (err) {
+			logger.error("File selection error", { error: err })
+			setError(`Error selecting files: ${err.message}`)
+		}
+		return []
+	}, [executeOperation, isBackendReady, clearProgress])
 
 	/**
-	 * Toggle extraction option with conflict resolution.
+	 * Handle directory selection for batch mode.
 	 */
-	const toggleOption = useCallback((option) => {
+	const handleSelectInputDirectory = useCallback(async () => {
+		if (!isBackendReady()) {
+			const error = "Backend services not available"
+			setError(error)
+			logger.error("Directory selection failed", { error })
+			return []
+		}
+
+		try {
+			clearProgress()
+
+			const result = await executeOperation(
+				"Directory Selection",
+				async (services) => {
+					return await services.mediaAnalyzer.selectMediaDirectory()
+				},
+				"Directory selection"
+			)
+
+			if (result && result.length > 0) {
+				setInputPaths(result)
+				setBatchAnalyzed(null)
+				setError(null)
+				logger.info("Selected directory for batch mode", { fileCount: result.length })
+				return result
+			} else {
+				if (result && result.length === 0) {
+					const error =
+						"No media files found in the selected directory. " +
+						"You can still try batch analysis with the selected directory."
+					setError(error)
+					logger.warn("No files found in directory", { error })
+					clearProgress()
+				}
+			}
+		} catch (err) {
+			logger.error("Directory selection error", { error: err })
+			setError(`Error selecting directory: ${err.message}`)
+		}
+		return []
+	}, [executeOperation, isBackendReady, clearProgress])
+
+	/**
+	 * Analyze batch files for language detection.
+	 */
+	const handleAnalyzeBatch = useCallback(async () => {
+		if (inputPaths.length === 0) {
+			const error = "No files selected for batch analysis"
+			setError(error)
+			logger.error("Batch analysis validation failed", { error })
+			return null
+		}
+
+		if (!isBackendReady()) {
+			const error = "Backend services not available"
+			setError(error)
+			logger.error("Batch analysis failed", { error })
+			return null
+		}
+
+		setIsBatchAnalyzing(true)
+		setError(null)
+		logger.info("Starting batch analysis", { fileCount: inputPaths.length })
+
+		try {
+			const result = await executeOperation(
+				"Batch Analysis",
+				async (services) => {
+					return await services.mediaAnalyzer.analyzeBatch(inputPaths)
+				},
+				"Batch file analysis"
+			)
+
+			setBatchAnalyzed(result)
+			logger.info("Batch analysis completed", { success: !!result })
+			return result
+		} catch (err) {
+			logger.error("Batch analysis failed", { error: err })
+			setError(err.message || "Batch analysis failed")
+			return null
+		} finally {
+			setIsBatchAnalyzing(false)
+		}
+	}, [inputPaths, executeOperation, isBackendReady])
+
+	/**
+	 * Update extraction options.
+	 */
+	const updateExtractionOptions = useCallback((newOptions) => {
 		setExtractionOptions((prev) => {
-			const newOptions = {
-				...prev,
-				[option]: !prev[option]
-			}
-
-			// Handle option conflicts
-			if (option === "videoOnly" && newOptions.videoOnly) {
-				newOptions.audioOnly = false
-				newOptions.subtitleOnly = false
-			}
-
-			if ((option === "audioOnly" || option === "subtitleOnly") && newOptions[option]) {
-				newOptions.videoOnly = false
-			}
-
-			return newOptions
+			const updated = { ...prev, ...newOptions }
+			logger.debug("Updated extraction options", { updated })
+			return updated
 		})
 	}, [])
 
 	/**
-	 * Reset extraction state.
+	 * Get batch processing statistics.
+	 */
+	const getBatchStats = useCallback(() => {
+		if (!batchMode || inputPaths.length === 0) {
+			return null
+		}
+
+		const completedFiles = Array.from(fileProgressMap.values()).filter(
+			(fileData) => fileData.progress === 100
+		).length
+
+		return {
+			totalFiles: inputPaths.length,
+			completedFiles,
+			remainingFiles: inputPaths.length - completedFiles,
+			overallProgress: inputPaths.length > 0 ? (completedFiles / inputPaths.length) * 100 : 0
+		}
+	}, [batchMode, inputPaths.length, fileProgressMap])
+
+	/**
+	 * Reset extraction state to initial values.
 	 */
 	const resetExtraction = useCallback(() => {
+		logger.info("Resetting extraction state")
 		setIsExtracting(false)
 		setExtractionResult(null)
-		setProgressValue(0)
-		setProgressText("Ready for extraction")
 		setError(null)
-		setFileProgressMap({})
-		progressCleanupRef.current()
-	}, [])
+		setSelectedLanguages(["eng"])
+		setExtractionOptions({
+			audioOnly: false,
+			subtitleOnly: false,
+			includeVideo: false,
+			videoOnly: false,
+			removeLetterbox: false
+		})
 
-	/**
-	 * Reset all state including batch mode.
-	 */
-	const resetAll = useCallback(() => {
-		resetExtraction()
-		setBatchMode(false)
+		// Reset batch-specific state
 		setInputPaths([])
 		setBatchAnalyzed(null)
 		setIsBatchAnalyzing(false)
-	}, [resetExtraction])
 
-	// Reset progress when starting new extraction
+		// Clear progress
+		clearProgress()
+	}, [clearProgress])
+
+	// Debug logging for extractionResult state changes
 	useEffect(() => {
-		if (isExtracting) {
-			setProgressValue(0)
-			setProgressText(batchMode ? "Starting batch extraction..." : "Starting extraction...")
-			setFileProgressMap(new Map())
+		if (extractionResult) {
+			logger.debug("Extraction result state changed", {
+				hasResult: !!extractionResult,
+				success: extractionResult.success,
+				totalFiles: extractionResult.total_files,
+				totalTracks: extractionResult.total_tracks_extracted,
+				batchMode
+			})
 		}
-	}, [isExtracting, batchMode])
+	}, [extractionResult, batchMode])
 
 	return {
 		// Extraction state
 		isExtracting,
 		extractionResult,
+		error,
+
+		// Progress state
 		progressValue,
 		progressText,
 		progressStage,
-		error,
-		setError,
 		fileProgressMap,
 
-		// User configuration
+		// Configuration state
 		selectedLanguages,
 		setSelectedLanguages,
 		extractionOptions,
-		setExtractionOptions,
-		toggleLanguage,
-		toggleOption,
+		updateExtractionOptions,
 
-		// Batch mode
+		// Batch mode state
 		batchMode,
-		toggleBatchMode,
 		inputPaths,
 		maxWorkers,
 		setMaxWorkers,
 		batchAnalyzed,
 		isBatchAnalyzing,
-		handleAnalyzeBatch,
+
+		// Action handlers
+		handleExtractTracks,
+		toggleBatchMode,
 		handleSelectInputFiles,
 		handleSelectInputDirectory,
+		handleAnalyzeBatch,
 
-		// Operations
-		handleExtractTracks,
-
-		// Reset functions
+		// Utility methods
+		clearProgress,
+		getBatchStats,
 		resetExtraction,
-		resetAll,
-
-		// Backend status
-		isBackendReady: isBackendReady(),
 
 		// Derived state
-		hasResult: Boolean(extractionResult),
-		isSuccessful: Boolean(extractionResult?.success),
-		canExtract: Boolean(
-			isBackendReady() &&
-				(batchMode ? inputPaths.length > 0 : filePath && analyzed) &&
-				outputPath &&
-				selectedLanguages.length > 0
-		)
+		hasFiles: batchMode ? inputPaths.length > 0 : Boolean(filePath),
+		isReady: batchMode
+			? inputPaths.length > 0 && outputPath && selectedLanguages.length > 0
+			: Boolean(filePath && analyzed && outputPath && selectedLanguages.length > 0),
+		canExtract: !isExtracting && isBackendReady()
 	}
 }
 

@@ -1,14 +1,11 @@
 /**
- * Updated ResultsTab component with fixed video file naming scheme recognition.
- * Now properly parses and displays extracted video file names instead of showing "unknown".
+ * Fixed ResultsTab component with enhanced logging and corrected batch result processing.
+ * Uses the new frontend logging system and properly handles all result formats.
  *
- * **MODIFY:** `src/renderer/src/components/ResultsTab.jsx` **CHANGES:** `Fix parseEnhancedFilename function to handle actual backend naming scheme` **LOCATION:** `src/renderer/src/components/`
+ * **MODIFY:** `src/renderer/src/components/ResultsTab.jsx` **CHANGES:** `Enhanced logging, fixed batch result processing, removed excessive console logs` **LOCATION:** `src/renderer/src/components/`
  */
 
-import ProgressCard from "@/components/ProgressCard"
-import TrackSummaryCard from "@/components/TrackSummaryCard"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
 	Card,
@@ -18,24 +15,17 @@ import {
 	CardHeader,
 	CardTitle
 } from "@/components/ui/card"
-import { useBackendService } from "@/providers/BackendModuleProvider"
-import {
-	AlertCircle,
-	Check,
-	ChevronLeft,
-	Clock,
-	FileText,
-	FileX,
-	Folder,
-	FolderOpen,
-	Layers,
-	RefreshCw
-} from "lucide-react"
-import React from "react"
+import { Check, FolderOpen, RefreshCw, RotateCcw } from "lucide-react"
+import React, { useMemo } from "react"
+import LoggerFactory from "../lib/Logger.js"
+import ProgressCard from "./ProgressCard"
+
+// Initialize logger for this component
+const logger = LoggerFactory.getComponentLogger("ResultsTab")
 
 /**
- * Enhanced ResultsTab component with backend service integration.
- * Displays extraction outcomes for both single-file and batch operations.
+ * ResultsTab component that displays extraction results and provides reset functionality.
+ * Fixed to properly handle batch extraction results and different result formats.
  */
 function ResultsTab({
 	extractionResult,
@@ -49,228 +39,238 @@ function ResultsTab({
 	setActiveTab,
 	batchMode
 }) {
-	// Backend service integration for enhanced result processing
-	const { isBackendReady, getBackendStatus } = useBackendService()
+	logger.debug("ResultsTab render", {
+		hasExtractionResult: !!extractionResult,
+		batchMode,
+		isExtracting,
+		progressValue,
+		resultType: typeof extractionResult
+	})
 
 	/**
-	 * Format processing time for display.
+	 * Handle starting a new extraction with comprehensive state reset.
 	 */
-	const formatProcessingTime = (timeInSeconds) => {
-		if (!timeInSeconds) return "Unknown"
+	const handleStartNewExtraction = () => {
+		logger.info("Starting new extraction - resetting all state")
 
-		if (timeInSeconds < 60) {
-			return `${Math.round(timeInSeconds * 10) / 10}s`
-		} else {
-			const minutes = Math.floor(timeInSeconds / 60)
-			const seconds = Math.round(timeInSeconds % 60)
-			return `${minutes}m ${seconds}s`
+		try {
+			if (typeof handleReset === "function") {
+				handleReset()
+			} else {
+				logger.warn("handleReset function not available")
+			}
+
+			if (typeof setActiveTab === "function") {
+				setActiveTab("select")
+			} else {
+				logger.warn("setActiveTab function not available")
+			}
+
+			logger.info("New extraction setup completed")
+		} catch (error) {
+			logger.error("Error during reset", { error })
 		}
 	}
 
 	/**
-	 * FIXED: Extract descriptive information from enhanced filename.
-	 * Updated to handle the actual backend naming scheme from the Python bridge.
+	 * Open the output directory in the system file explorer.
 	 */
-	const parseEnhancedFilename = (filename) => {
-		if (!filename) return { displayName: filename, hasDescription: false }
-
-		const basename = filename.split("/").pop() || filename.split("\\").pop() || filename
-
-		// FIXED: Updated regex patterns to match actual backend output
-		// Pattern 1: Handle the actual naming scheme from backend
-		// Example: "Rascal.Does.Not.Dream.of.Bunny.Girl.Senpai.S11E00.1080p.CR.WEB-DL.DUAL.AAC2.0.H.264-VARYG_video_0.mp4"
-		// Pattern: {source_name}_{track_type}_{track_id}_{language?}_{description?}.{ext}
-		const mainPattern = basename.match(
-			/^(.+)_(audio|video|subtitle)_(\d+)(?:_([a-z]{2,3}))?(?:_(.+?))?\.([^.]+)$/i
-		)
-
-		if (mainPattern) {
-			const [, source, trackType, trackId, language, description, extension] = mainPattern
-
-			// Clean up the source name for better display
-			const cleanedSource = source
-				.replace(/\./g, " ") // Replace dots with spaces
-				.replace(/[\-_]+/g, " ") // Replace multiple dashes/underscores with spaces
-				.replace(/\s+/g, " ") // Replace multiple spaces with single space
-				.trim()
-
-			return {
-				displayName: basename,
-				hasDescription: Boolean(description),
-				trackType: trackType.toLowerCase(),
-				trackId: parseInt(trackId),
-				language: language || null,
-				description: description ? description.replace(/[_\-]/g, " ") : null,
-				extension,
-				sourceFile: cleanedSource,
-				isEnhanced: true
-			}
+	const handleOpenOutputDirectory = async () => {
+		if (!outputPath) {
+			logger.warn("No output path available")
+			return
 		}
 
-		// FIXED: Fallback pattern for simpler naming schemes
-		// Pattern 2: Handle basic naming like "video_0.mp4" or "audio_1_eng.aac"
-		const simplePattern = basename.match(
-			/^(audio|video|subtitle)_(\d+)(?:_([a-z]{2,3}))?(?:_(.+?))?\.([^.]+)$/i
-		)
-
-		if (simplePattern) {
-			const [, trackType, trackId, language, description, extension] = simplePattern
-
-			return {
-				displayName: basename,
-				hasDescription: Boolean(description),
-				trackType: trackType.toLowerCase(),
-				trackId: parseInt(trackId),
-				language: language || null,
-				description: description ? description.replace(/[_\-]/g, " ") : null,
-				extension,
-				sourceFile: "Extracted Media",
-				isEnhanced: true
+		try {
+			if (window.electronAPI?.shell?.openPath) {
+				const success = await window.electronAPI.shell.openPath(outputPath)
+				if (!success) {
+					logger.error("Failed to open output directory")
+				} else {
+					logger.info("Opened output directory", { path: outputPath })
+				}
+			} else {
+				logger.error("Shell API not available")
 			}
-		}
-
-		// FIXED: If no pattern matches, still provide useful information
-		// Extract any track type information if present
-		const trackTypeMatch = basename.match(/(audio|video|subtitle)/i)
-		const trackIdMatch = basename.match(/_(\d+)/)
-
-		if (trackTypeMatch) {
-			return {
-				displayName: basename,
-				hasDescription: false,
-				trackType: trackTypeMatch[1].toLowerCase(),
-				trackId: trackIdMatch ? parseInt(trackIdMatch[1]) : null,
-				language: null,
-				description: null,
-				extension: basename.split(".").pop() || "",
-				sourceFile: basename.split("_")[0] || "Media File",
-				isEnhanced: false
-			}
-		}
-
-		// Final fallback - just return the filename
-		return {
-			displayName: basename,
-			hasDescription: false,
-			trackType: null,
-			trackId: null,
-			language: null,
-			description: null,
-			extension: basename.split(".").pop() || "",
-			sourceFile: basename,
-			isEnhanced: false
+		} catch (error) {
+			logger.error("Could not open output directory", { error, path: outputPath })
 		}
 	}
 
-	/**
-	 * FIXED: Format file list with enhanced naming information.
-	 * Now properly handles video file names and provides better display names.
-	 */
-	const formatFileList = (files) => {
-		if (!files || !Array.isArray(files)) return []
-
-		return files.map((file) => {
-			const filepath =
-				typeof file === "string" ? file : file.path || file.name || "Unknown file"
-			const parsed = parseEnhancedFilename(filepath)
-
-			// FIXED: Create better display names based on track type
-			let displayName = parsed.displayName
-
-			if (parsed.isEnhanced && parsed.trackType) {
-				// Create a more user-friendly display name
-				const trackTypeLabel =
-					parsed.trackType.charAt(0).toUpperCase() + parsed.trackType.slice(1)
-				const trackNumber = parsed.trackId !== null ? ` ${parsed.trackId}` : ""
-				const languageLabel = parsed.language ? ` (${parsed.language.toUpperCase()})` : ""
-				const descriptionLabel = parsed.description ? ` - ${parsed.description}` : ""
-
-				displayName = `${trackTypeLabel} Track${trackNumber}${languageLabel}${descriptionLabel}.${parsed.extension}`
-			}
-
-			return {
-				...parsed,
-				fullPath: filepath,
-				friendlyName: displayName
-			}
+	// FIXED: Calculate batch statistics with enhanced logging and proper result processing
+	const resultStats = useMemo(() => {
+		logger.debug("Processing extraction result", {
+			hasResult: !!extractionResult,
+			batchMode,
+			resultType: typeof extractionResult
 		})
-	}
 
-	/**
-	 * Get result statistics for display.
-	 */
-	const getResultStats = () => {
-		if (!extractionResult) return null
+		if (!extractionResult) {
+			logger.debug("No extraction result available")
+			return null
+		}
 
-		if (batchMode) {
-			// Batch mode statistics
+		// For single file mode, process single file results
+		if (!batchMode) {
+			logger.debug("Processing single file results")
 			return {
-				totalFiles:
-					extractionResult.result?.totalFiles || extractionResult.total_files || 0,
-				successfulFiles:
-					extractionResult.result?.successfulFiles ||
-					extractionResult.successful_files ||
-					0,
-				failedFiles:
-					extractionResult.result?.failedFiles || extractionResult.failed_files || 0,
-				totalTracks:
-					extractionResult.result?.totalTracksExtracted ||
-					extractionResult.total_tracks_extracted ||
-					0,
-				processingTime:
-					extractionResult.processingTime ||
-					extractionResult.processing_time ||
-					extractionResult.result?.processingTime ||
-					extractionResult.result?.processing_time ||
-					0,
-				failedFilesList:
-					extractionResult.result?.failedFilesList ||
-					extractionResult.failed_files_list ||
-					[]
+				isSingleFile: true,
+				success: extractionResult.success || false,
+				extractedAudio: extractionResult.extracted_audio || 0,
+				extractedVideo: extractionResult.extracted_video || 0,
+				extractedSubtitles: extractionResult.extracted_subtitles || 0,
+				outputFiles: extractionResult.output_files || [],
+				processingTime: extractionResult.processing_time || 0
 			}
-		} else {
-			// Single file statistics
-			const result = extractionResult.result || extractionResult
-			return {
-				extractedTracks: result.extractedTracks || {
-					audio: result.extracted_audio || 0,
-					video: result.extracted_video || 0,
-					subtitle: result.extracted_subtitles || 0,
-					total:
+		}
+
+		logger.debug("Processing batch results...")
+
+		// FIXED: Enhanced batch result detection with detailed logging
+		const hasSuccess = extractionResult.hasOwnProperty("success")
+		const hasTotalFiles = extractionResult.hasOwnProperty("total_files")
+		const hasSuccessfulFiles = extractionResult.hasOwnProperty("successful_files")
+		const hasTotalTracks = extractionResult.hasOwnProperty("total_tracks_extracted")
+
+		logger.debug("Batch result property check", {
+			hasSuccess,
+			hasTotalFiles,
+			hasSuccessfulFiles,
+			hasTotalTracks,
+			successValue: extractionResult.success,
+			totalFiles: extractionResult.total_files,
+			successfulFiles: extractionResult.successful_files,
+			totalTracks: extractionResult.total_tracks_extracted
+		})
+
+		// FIXED: Primary detection - Direct backend response format
+		if (hasSuccess && hasTotalFiles) {
+			logger.info("Using primary backend batch format", {
+				success: extractionResult.success,
+				totalFiles: extractionResult.total_files,
+				successfulFiles: extractionResult.successful_files,
+				totalTracks: extractionResult.total_tracks_extracted
+			})
+
+			const stats = {
+				isBatchResult: true,
+				totalFiles: extractionResult.total_files || 0,
+				successfulFiles: extractionResult.successful_files || 0,
+				failedFiles: extractionResult.failed_files || 0,
+				totalTracks: extractionResult.total_tracks_extracted || 0,
+				audioTracks: extractionResult.extracted_audio || 0,
+				videoTracks: extractionResult.extracted_video || 0,
+				subtitleTracks: extractionResult.extracted_subtitles || 0,
+				workersUsed: extractionResult.workers_used || 0,
+				workerSummary: extractionResult.worker_summary || {},
+				failedFilesList: extractionResult.failed_files_list || []
+			}
+
+			logger.info("Processed batch stats successfully", stats)
+			return stats
+		}
+
+		// FIXED: Secondary detection - camelCase properties
+		if (
+			extractionResult.hasOwnProperty("totalFiles") ||
+			extractionResult.hasOwnProperty("successfulFiles") ||
+			extractionResult.hasOwnProperty("totalTracksExtracted")
+		) {
+			logger.info("Using secondary camelCase batch format")
+
+			const stats = {
+				isBatchResult: true,
+				totalFiles: extractionResult.totalFiles || 0,
+				successfulFiles: extractionResult.successfulFiles || 0,
+				failedFiles: extractionResult.failedFiles || 0,
+				totalTracks: extractionResult.totalTracksExtracted || 0,
+				audioTracks: extractionResult.extractedAudio || 0,
+				videoTracks: extractionResult.extractedVideo || 0,
+				subtitleTracks: extractionResult.extractedSubtitles || 0,
+				workersUsed: extractionResult.workersUsed || 0,
+				workerSummary: extractionResult.workerSummary || {},
+				failedFilesList: extractionResult.failedFilesList || []
+			}
+
+			logger.info("Processed camelCase batch stats", stats)
+			return stats
+		}
+
+		// FIXED: Handle results array format (legacy)
+		if (extractionResult.results && Array.isArray(extractionResult.results)) {
+			logger.info("Using results array format (legacy)")
+			const totalFiles = extractionResult.results.length
+			const successfulFiles = extractionResult.results.filter(
+				(result) => result.success
+			).length
+			const failedFiles = totalFiles - successfulFiles
+
+			const stats = {
+				isBatchResult: true,
+				totalFiles,
+				successfulFiles,
+				failedFiles,
+				totalTracks: extractionResult.results.reduce((sum, result) => {
+					return (
+						sum +
 						(result.extracted_audio || 0) +
 						(result.extracted_video || 0) +
 						(result.extracted_subtitles || 0)
-				},
-				processingTime:
-					extractionResult.processingTime ||
-					extractionResult.processing_time ||
-					result.processingTime ||
-					result.processing_time ||
-					0,
-				outputFiles: result.outputFiles || result.output_files || []
+					)
+				}, 0),
+				audioTracks: extractionResult.results.reduce(
+					(sum, result) => sum + (result.extracted_audio || 0),
+					0
+				),
+				videoTracks: extractionResult.results.reduce(
+					(sum, result) => sum + (result.extracted_video || 0),
+					0
+				),
+				subtitleTracks: extractionResult.results.reduce(
+					(sum, result) => sum + (result.extracted_subtitles || 0),
+					0
+				),
+				workersUsed: extractionResult.workers_used || 0,
+				workerSummary: extractionResult.worker_summary || {},
+				failedFilesList: extractionResult.results.filter((r) => !r.success)
 			}
+
+			logger.info("Processed results array batch stats", stats)
+			return stats
 		}
-	}
 
-	/**
-	 * Get workflow information if available.
-	 */
-	const getWorkflowInfo = () => {
-		if (!extractionResult) return null
+		// FIXED: If batch mode but no recognizable batch format, log detailed structure
+		logger.error("Unrecognized batch result format", {
+			extractionResult,
+			objectKeys: Object.keys(extractionResult),
+			hasOwnProperties: {
+				success: extractionResult.hasOwnProperty("success"),
+				total_files: extractionResult.hasOwnProperty("total_files"),
+				totalFiles: extractionResult.hasOwnProperty("totalFiles"),
+				results: extractionResult.hasOwnProperty("results")
+			}
+		})
 
+		// Fallback: treat as single file result but log the issue
+		logger.warn("Batch mode active but using fallback single file processing")
 		return {
-			workflowId: extractionResult.workflowId,
-			type: extractionResult.type,
-			steps: extractionResult.steps || [],
-			hasWorkflowData: Boolean(extractionResult.workflowId)
+			isSingleFile: true,
+			success: extractionResult.success || false,
+			extractedAudio: extractionResult.extracted_audio || 0,
+			extractedVideo: extractionResult.extracted_video || 0,
+			extractedSubtitles: extractionResult.extracted_subtitles || 0,
+			outputFiles: extractionResult.output_files || [],
+			processingTime: extractionResult.processing_time || 0
 		}
-	}
+	}, [batchMode, extractionResult])
 
-	const resultStats = getResultStats()
-	const workflowInfo = getWorkflowInfo()
-	const backendStatus = getBackendStatus()
+	logger.debug("ResultsTab render decision", {
+		isExtracting,
+		hasResultStats: !!resultStats,
+		willRenderResults: resultStats && !isExtracting
+	})
 
-	// Display extraction progress view while operation is running
+	// If currently extracting, show progress
 	if (isExtracting) {
 		return (
 			<Card className="shadow-lg">
@@ -281,8 +281,8 @@ function ResultsTab({
 					</CardTitle>
 					<CardDescription>
 						{batchMode
-							? "Processing multiple files with real-time progress tracking"
-							: "Extracting tracks with FFmpeg"}
+							? "Processing multiple files with parallel workers"
+							: "Extracting tracks from media file"}
 					</CardDescription>
 				</CardHeader>
 				<CardContent>
@@ -298,308 +298,289 @@ function ResultsTab({
 		)
 	}
 
-	// Batch mode results view with comprehensive statistics
-	if (batchMode && resultStats) {
-		return (
-			<Card className="shadow-lg">
-				<CardHeader>
-					<CardTitle className="flex items-center gap-2">
-						<Check className="h-5 w-5 text-green-500" />
-						Batch Processing Results
-					</CardTitle>
-					<CardDescription>
-						Summary of batch operation with {resultStats.totalFiles} files
-					</CardDescription>
-				</CardHeader>
-				<CardContent className="space-y-6">
-					{/* Batch statistics grid */}
-					<div className="grid grid-cols-4 gap-4">
-						<div className="bg-gray-50 dark:bg-gray-950/50 rounded-lg overflow-hidden shadow-sm border border-gray-100 dark:border-gray-900/50">
-							<div className="p-2 flex items-center gap-1 border-b border-gray-100 dark:border-gray-900/50 bg-gray-100 dark:bg-gray-900/50">
-								<Layers className="h-4 w-4 text-gray-600 dark:text-gray-400" />
-								<span className="text-sm font-medium">Total Files</span>
-							</div>
-							<div className="p-3 text-center">
-								<span className="text-3xl font-bold">{resultStats.totalFiles}</span>
-							</div>
-						</div>
-						<div className="bg-green-50 dark:bg-green-950/50 rounded-lg overflow-hidden shadow-sm border border-green-100 dark:border-green-900/50">
-							<div className="p-2 flex items-center gap-1 border-b border-green-100 dark:border-green-900/50 bg-green-100 dark:bg-green-900/50">
-								<Check className="h-4 w-4 text-green-600 dark:text-green-400" />
-								<span className="text-sm font-medium text-green-700 dark:text-green-300">
-									Successful
-								</span>
-							</div>
-							<div className="p-3 text-center">
-								<span className="text-3xl font-bold text-green-800 dark:text-green-200">
+	// If we have results, display them
+	if (resultStats) {
+		logger.debug("Rendering results with stats", { resultStats })
+
+		// Render batch results
+		if (resultStats.isBatchResult) {
+			return (
+				<Card className="shadow-lg">
+					<CardHeader>
+						<CardTitle className="flex items-center gap-2">
+							<Check className="h-5 w-5 text-green-600" />
+							Batch Extraction Complete
+						</CardTitle>
+						<CardDescription>
+							Successfully processed {resultStats.successfulFiles} of{" "}
+							{resultStats.totalFiles} files
+							{resultStats.workersUsed > 0 &&
+								` using ${resultStats.workersUsed} workers`}
+						</CardDescription>
+					</CardHeader>
+					<CardContent className="space-y-6">
+						{/* File Processing Summary */}
+						<div className="grid grid-cols-3 gap-4">
+							<div className="bg-green-50 dark:bg-green-950/50 rounded-lg p-4 text-center border border-green-100 dark:border-green-900/50">
+								<div className="text-2xl font-bold text-green-800 dark:text-green-200">
 									{resultStats.successfulFiles}
-								</span>
+								</div>
+								<div className="text-sm text-green-600 dark:text-green-400">
+									Files Processed
+								</div>
 							</div>
-						</div>
-						<div className="bg-red-50 dark:bg-red-950/50 rounded-lg overflow-hidden shadow-sm border border-red-100 dark:border-red-900/50">
-							<div className="p-2 flex items-center gap-1 border-b border-red-100 dark:border-red-900/50 bg-red-100 dark:bg-red-900/50">
-								<FileX className="h-4 w-4 text-red-600 dark:text-red-400" />
-								<span className="text-sm font-medium text-red-700 dark:text-red-300">
-									Failed
-								</span>
-							</div>
-							<div className="p-3 text-center">
-								<span className="text-3xl font-bold text-red-800 dark:text-red-200">
-									{resultStats.failedFiles}
-								</span>
-							</div>
-						</div>
-						<div className="bg-blue-50 dark:bg-blue-950/50 rounded-lg overflow-hidden shadow-sm border border-blue-100 dark:border-blue-900/50">
-							<div className="p-2 flex items-center gap-1 border-b border-blue-100 dark:border-blue-900/50 bg-blue-100 dark:bg-blue-900/50">
-								<Layers className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-								<span className="text-sm font-medium text-blue-700 dark:text-blue-300">
-									Total Tracks
-								</span>
-							</div>
-							<div className="p-3 text-center">
-								<span className="text-3xl font-bold text-blue-800 dark:text-blue-200">
+							{resultStats.failedFiles > 0 && (
+								<div className="bg-red-50 dark:bg-red-950/50 rounded-lg p-4 text-center border border-red-100 dark:border-red-900/50">
+									<div className="text-2xl font-bold text-red-800 dark:text-red-200">
+										{resultStats.failedFiles}
+									</div>
+									<div className="text-sm text-red-600 dark:text-red-400">
+										Failed Files
+									</div>
+								</div>
+							)}
+							<div className="bg-blue-50 dark:bg-blue-950/50 rounded-lg p-4 text-center border border-blue-100 dark:border-blue-900/50">
+								<div className="text-2xl font-bold text-blue-800 dark:text-blue-200">
 									{resultStats.totalTracks}
-								</span>
-							</div>
-						</div>
-					</div>
-
-					{/* Processing time information */}
-					{resultStats.processingTime > 0 && (
-						<div className="p-4 bg-muted rounded-lg">
-							<div className="flex items-center gap-2 mb-2">
-								<Clock className="h-5 w-5" />
-								<h3 className="font-semibold">Processing Performance</h3>
-							</div>
-							<div className="grid grid-cols-2 gap-4 text-sm">
-								<div>
-									Total Time: {formatProcessingTime(resultStats.processingTime)}
 								</div>
-								<div>
-									Rate:{" "}
-									{resultStats.processingTime > 0
-										? (
-												resultStats.successfulFiles /
-												(resultStats.processingTime / 60)
-											).toFixed(1)
-										: "0"}{" "}
-									files/min
+								<div className="text-sm text-blue-600 dark:text-blue-400">
+									Total Tracks
 								</div>
 							</div>
-							<div className="mt-2 text-xs text-muted-foreground">
-								Processed with real-time FFmpeg progress and enhanced file naming
+						</div>
+
+						{/* Track Type Breakdown */}
+						<div className="grid grid-cols-3 gap-4">
+							<div className="bg-green-50 dark:bg-green-950/50 rounded-lg p-4 text-center border border-green-100 dark:border-green-900/50">
+								<div className="text-2xl font-bold text-green-800 dark:text-green-200">
+									{resultStats.audioTracks}
+								</div>
+								<div className="text-sm text-green-600 dark:text-green-400">
+									Audio Tracks
+								</div>
+							</div>
+							<div className="bg-purple-50 dark:bg-purple-950/50 rounded-lg p-4 text-center border border-purple-100 dark:border-purple-900/50">
+								<div className="text-2xl font-bold text-purple-800 dark:text-purple-200">
+									{resultStats.videoTracks}
+								</div>
+								<div className="text-sm text-purple-600 dark:text-purple-400">
+									Video Tracks
+								</div>
+							</div>
+							<div className="bg-orange-50 dark:bg-orange-950/50 rounded-lg p-4 text-center border border-orange-100 dark:border-orange-900/50">
+								<div className="text-2xl font-bold text-orange-800 dark:text-orange-200">
+									{resultStats.subtitleTracks}
+								</div>
+								<div className="text-sm text-orange-600 dark:text-orange-400">
+									Subtitle Tracks
+								</div>
 							</div>
 						</div>
-					)}
 
-					{/* Output location information panel */}
-					<div className="p-4 bg-muted rounded-lg">
-						<div className="flex items-start gap-2">
-							<FolderOpen className="h-5 w-5 mt-0.5 flex-shrink-0" />
-							<div>
-								<div className="font-medium">Output Location</div>
-								<div className="text-sm break-all">{outputPath}</div>
-							</div>
-						</div>
-					</div>
-
-					{/* Workflow information if available */}
-					{workflowInfo?.hasWorkflowData && (
-						<div className="bg-muted p-4 rounded-lg">
-							<div className="font-medium mb-2">Workflow Information</div>
-							<div className="text-sm space-y-1">
-								<div>Type: {workflowInfo.type}</div>
-								<div>ID: {workflowInfo.workflowId}</div>
-								{workflowInfo.steps.length > 0 && (
-									<div>
-										Steps: {workflowInfo.steps.filter((s) => s.success).length}/
-										{workflowInfo.steps.length} successful
+						{/* Worker Summary if available */}
+						{resultStats.workersUsed > 0 &&
+							resultStats.workerSummary &&
+							Object.keys(resultStats.workerSummary).length > 0 && (
+								<div className="bg-muted p-4 rounded-lg">
+									<h4 className="font-medium mb-3">Worker Performance</h4>
+									<div className="grid grid-cols-2 gap-4">
+										{Object.entries(resultStats.workerSummary).map(
+											([workerId, workerData]) => (
+												<div
+													key={workerId}
+													className="flex justify-between p-2 bg-background rounded border"
+												>
+													<span className="text-sm font-medium">
+														{workerId}
+													</span>
+													<span className="text-sm text-muted-foreground">
+														{workerData.completed_files ||
+															workerData.files_processed ||
+															0}{" "}
+														files
+													</span>
+												</div>
+											)
+										)}
 									</div>
-								)}
-							</div>
-						</div>
-					)}
+								</div>
+							)}
 
-					{/* Conditionally displayed error section for failed files */}
-					{resultStats.failedFilesList && resultStats.failedFilesList.length > 0 && (
-						<div className="p-4 bg-red-50 text-red-800 rounded-lg dark:bg-red-950 dark:text-red-100">
-							<div className="flex items-center gap-2 mb-2">
-								<FileX className="h-5 w-5" />
-								<h3 className="font-semibold">Failed Files</h3>
-							</div>
-							<div className="max-h-60 overflow-auto">
-								{resultStats.failedFilesList.map((failedItem, index) => {
-									// Handle different error formats
-									const [file, error] = Array.isArray(failedItem)
-										? failedItem
-										: [
-												failedItem.file || failedItem,
-												failedItem.error || "Unknown error"
-											]
-
-									return (
-										<div key={index} className="mb-1 text-sm">
-											<span className="font-medium">{file}</span>: {error}
+						{/* Failed Files List if any */}
+						{resultStats.failedFiles > 0 && resultStats.failedFilesList.length > 0 && (
+							<div className="bg-red-50 dark:bg-red-950/50 p-4 rounded-lg border border-red-100 dark:border-red-900/50">
+								<h4 className="font-medium mb-3 text-red-800 dark:text-red-200">
+									Failed Files
+								</h4>
+								<div className="space-y-2 max-h-40 overflow-y-auto">
+									{resultStats.failedFilesList.map((failedFile, index) => (
+										<div
+											key={index}
+											className="text-sm text-red-700 dark:text-red-300"
+										>
+											{typeof failedFile === "string"
+												? failedFile
+												: failedFile.file_path ||
+													failedFile.filePath ||
+													`File ${index + 1}`}
 										</div>
-									)
-								})}
+									))}
+								</div>
+							</div>
+						)}
+					</CardContent>
+					<CardFooter className="flex gap-2">
+						<Button
+							onClick={handleStartNewExtraction}
+							className="flex items-center gap-2"
+							variant="default"
+						>
+							<RotateCcw className="h-4 w-4" />
+							Start New Extraction
+						</Button>
+						{outputPath && (
+							<Button
+								onClick={handleOpenOutputDirectory}
+								variant="outline"
+								className="flex items-center gap-2"
+							>
+								<FolderOpen className="h-4 w-4" />
+								Open Output Directory
+							</Button>
+						)}
+					</CardFooter>
+				</Card>
+			)
+		}
+
+		// Render single file results
+		if (resultStats.isSingleFile) {
+			const hasOutputFiles = resultStats.outputFiles && resultStats.outputFiles.length > 0
+
+			return (
+				<Card className="shadow-lg">
+					<CardHeader>
+						<CardTitle className="flex items-center gap-2">
+							<Check className="h-5 w-5 text-green-600" />
+							Extraction Complete
+						</CardTitle>
+						<CardDescription>
+							Successfully extracted{" "}
+							{resultStats.extractedAudio +
+								resultStats.extractedVideo +
+								resultStats.extractedSubtitles}{" "}
+							tracks
+						</CardDescription>
+					</CardHeader>
+					<CardContent className="space-y-6">
+						{/* Track extraction summary */}
+						<div className="grid grid-cols-3 gap-4">
+							<div className="bg-green-50 dark:bg-green-950/50 rounded-lg p-4 text-center border border-green-100 dark:border-green-900/50">
+								<div className="text-2xl font-bold text-green-800 dark:text-green-200">
+									{resultStats.extractedAudio}
+								</div>
+								<div className="text-sm text-green-600 dark:text-green-400">
+									Audio Tracks
+								</div>
+							</div>
+							<div className="bg-purple-50 dark:bg-purple-950/50 rounded-lg p-4 text-center border border-purple-100 dark:border-purple-900/50">
+								<div className="text-2xl font-bold text-purple-800 dark:text-purple-200">
+									{resultStats.extractedVideo}
+								</div>
+								<div className="text-sm text-purple-600 dark:text-purple-400">
+									Video Tracks
+								</div>
+							</div>
+							<div className="bg-orange-50 dark:bg-orange-950/50 rounded-lg p-4 text-center border border-orange-100 dark:border-orange-900/50">
+								<div className="text-2xl font-bold text-orange-800 dark:text-orange-200">
+									{resultStats.extractedSubtitles}
+								</div>
+								<div className="text-sm text-orange-600 dark:text-orange-400">
+									Subtitle Tracks
+								</div>
 							</div>
 						</div>
-					)}
-				</CardContent>
-				<CardFooter className="flex justify-between">
-					<Button
-						variant="outline"
-						onClick={() => setActiveTab("select")}
-						className="flex items-center gap-2"
-					>
-						<ChevronLeft className="h-4 w-4" />
-						Back to File Selection
-					</Button>
 
-					<Button
-						onClick={handleReset}
-						className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700"
-					>
-						Start New Extraction
-					</Button>
-				</CardFooter>
-			</Card>
-		)
-	} else if (resultStats) {
-		// Single file results view with track type breakdown
-		return (
-			<Card className="shadow-lg">
-				<CardHeader>
-					<CardTitle className="flex items-center gap-2">
-						<Check className="h-5 w-5 text-green-500" />
-						Extraction Results
-					</CardTitle>
-					<CardDescription>Summary of the extracted tracks</CardDescription>
-				</CardHeader>
-				<CardContent className="space-y-6">
-					{/* Track type summary cards for audio, subtitle and video */}
-					<div className="grid grid-cols-3 gap-4">
-						<TrackSummaryCard type="audio" count={resultStats.extractedTracks.audio} />
-						<TrackSummaryCard
-							type="subtitle"
-							count={resultStats.extractedTracks.subtitle}
-						/>
-						<TrackSummaryCard type="video" count={resultStats.extractedTracks.video} />
-					</div>
-
-					{/* Processing time information */}
-					{resultStats.processingTime > 0 && (
-						<div className="flex items-center gap-2 text-sm text-muted-foreground">
-							<Clock className="h-4 w-4" />
-							<span>
-								Processed in {formatProcessingTime(resultStats.processingTime)}
-							</span>
-						</div>
-					)}
-
-					{/* FIXED: Output files list with enhanced display names */}
-					{resultStats.outputFiles && resultStats.outputFiles.length > 0 && (
-						<div className="space-y-3">
-							<h3 className="font-semibold flex items-center gap-2">
-								<FileText className="h-4 w-4" />
-								Extracted Files ({resultStats.outputFiles.length})
-							</h3>
-							<div className="space-y-2 max-h-60 overflow-auto">
-								{formatFileList(resultStats.outputFiles).map((file, index) => (
-									<div
-										key={index}
-										className="p-3 bg-muted rounded-lg flex items-start justify-between"
-									>
-										<div className="flex-1 min-w-0">
-											<div
-												className="font-medium truncate"
-												title={file.friendlyName}
-											>
-												{file.friendlyName}
-											</div>
-											{file.sourceFile &&
-												file.sourceFile !== file.friendlyName && (
-													<div
-														className="text-xs text-muted-foreground truncate"
-														title={file.sourceFile}
-													>
-														Source: {file.sourceFile}
-													</div>
-												)}
-											<div
-												className="text-xs text-muted-foreground truncate mt-1"
-												title={file.fullPath}
-											>
-												{file.fullPath}
-											</div>
+						{/* Output files list */}
+						{hasOutputFiles && (
+							<div className="bg-muted p-4 rounded-lg">
+								<h4 className="font-medium mb-3">Extracted Files</h4>
+								<div className="space-y-2 max-h-60 overflow-y-auto">
+									{resultStats.outputFiles.map((file, index) => (
+										<div
+											key={index}
+											className="flex items-center justify-between p-2 bg-background rounded border"
+										>
+											<span className="text-sm font-mono truncate">
+												{file.split(/[\\/]/).pop()}
+											</span>
+											<span className="text-xs text-muted-foreground ml-2">
+												{file.split(".").pop()?.toUpperCase()}
+											</span>
 										</div>
-										<div className="flex flex-col gap-1 ml-2">
-											{file.trackType && (
-												<Badge variant="secondary" className="text-xs">
-													{file.trackType}
-												</Badge>
-											)}
-											{file.language && (
-												<Badge variant="outline" className="text-xs">
-													{file.language.toUpperCase()}
-												</Badge>
-											)}
-										</div>
-									</div>
-								))}
+									))}
+								</div>
 							</div>
-						</div>
-					)}
+						)}
 
-					{/* Output location */}
-					<div className="p-4 bg-muted rounded-lg">
-						<div className="flex items-start gap-2">
-							<Folder className="h-5 w-5 mt-0.5" />
-							<div>
-								<div className="font-medium">Output Location</div>
-								<div className="text-sm break-all">{outputPath}</div>
+						{/* Processing time */}
+						{resultStats.processingTime && (
+							<div className="text-center text-sm text-muted-foreground">
+								Processing completed in {resultStats.processingTime.toFixed(2)}{" "}
+								seconds
 							</div>
-						</div>
-					</div>
-
-					{/* Backend status for debugging */}
-					<div className="text-xs text-muted-foreground">
-						Backend: {backendStatus.isReady ? "Ready" : "Not Ready"} •{" "}
-						{backendStatus.message}
-					</div>
-				</CardContent>
-				<CardFooter className="flex justify-between">
-					<Button
-						variant="outline"
-						onClick={() => setActiveTab("select")}
-						className="flex items-center gap-2"
-					>
-						<ChevronLeft className="h-4 w-4" />
-						Back to File Selection
-					</Button>
-
-					<Button
-						onClick={handleReset}
-						className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700"
-					>
-						Start New Extraction
-					</Button>
-				</CardFooter>
-			</Card>
-		)
+						)}
+					</CardContent>
+					<CardFooter className="flex gap-2">
+						<Button
+							onClick={handleStartNewExtraction}
+							className="flex items-center gap-2"
+							variant="default"
+						>
+							<RotateCcw className="h-4 w-4" />
+							Start New Extraction
+						</Button>
+						{outputPath && (
+							<Button
+								onClick={handleOpenOutputDirectory}
+								variant="outline"
+								className="flex items-center gap-2"
+							>
+								<FolderOpen className="h-4 w-4" />
+								Open Output Directory
+							</Button>
+						)}
+					</CardFooter>
+				</Card>
+			)
+		}
 	}
 
-	// Fallback if no results available
+	// Fallback view if no results
+	logger.debug("Rendering fallback no results view")
 	return (
 		<Card className="shadow-lg">
-			<CardContent className="text-center py-8">
-				<AlertCircle className="h-8 w-8 mx-auto mb-4 text-muted-foreground" />
-				<div className="text-lg font-medium mb-2">No Results Available</div>
-				<div className="text-sm text-muted-foreground">
-					Complete an extraction operation to view results here.
-				</div>
+			<CardHeader>
+				<CardTitle>No Results</CardTitle>
+				<CardDescription>No extraction results to display</CardDescription>
+			</CardHeader>
+			<CardContent>
+				<Alert>
+					<AlertDescription>
+						There are no extraction results to show. Please run an extraction first.
+					</AlertDescription>
+				</Alert>
 			</CardContent>
+			<CardFooter>
+				<Button
+					onClick={handleStartNewExtraction}
+					className="flex items-center gap-2"
+					variant="default"
+				>
+					<RotateCcw className="h-4 w-4" />
+					Start New Extraction
+				</Button>
+			</CardFooter>
 		</Card>
 	)
 }

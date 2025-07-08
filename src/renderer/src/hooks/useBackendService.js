@@ -1,8 +1,6 @@
 /**
- * New useBackendService hook that provides direct access to backend operations.
- * Replaces the old usePythonApi hook with proper modular backend integration.
- *
- * **REPLACE:** `src/renderer/src/hooks/usePythonApi.js` **WITH:** `useBackendService.js` **LOCATION:** `src/renderer/src/hooks/`
+ * Enhanced useBackendService hook with YAGNI compliance.
+ * Removes operation statistics that aren't displayed in UI, keeps all functional methods.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react"
@@ -11,14 +9,11 @@ import { useBackendService as useBackendModules } from "../providers/BackendModu
 /**
  * Hook for direct backend service operations with state management.
  * Provides a clean interface for components that need backend access.
- *
- * @returns {Object} Backend service methods and state
  */
 function useBackendService() {
 	const [isLoading, setIsLoading] = useState(false)
 	const [error, setError] = useState(null)
 	const [progress, setProgress] = useState(null)
-	const [operationHistory, setOperationHistory] = useState([])
 
 	// Get backend modules
 	const {
@@ -73,18 +68,6 @@ function useBackendService() {
 				// Execute operation
 				const result = await executeOperation(operationName, operation, errorContext)
 
-				// Add to operation history
-				setOperationHistory((prev) => [
-					{
-						id: operationId,
-						name: operationName,
-						success: true,
-						timestamp: new Date().toISOString(),
-						duration: Date.now() - parseInt(operationId.split("_")[1])
-					},
-					...prev.slice(0, 19) // Keep last 20 operations
-				])
-
 				// Clear progress on success
 				if (showProgress) {
 					setProgress({ percentage: 100, message: `${operationName} completed` })
@@ -95,19 +78,6 @@ function useBackendService() {
 			} catch (err) {
 				// Handle error
 				setError(err)
-
-				// Add failed operation to history
-				setOperationHistory((prev) => [
-					{
-						id: operationId,
-						name: operationName,
-						success: false,
-						error: err.message,
-						timestamp: new Date().toISOString(),
-						duration: Date.now() - parseInt(operationId.split("_")[1])
-					},
-					...prev.slice(0, 19)
-				])
 
 				throw err
 			} finally {
@@ -164,7 +134,7 @@ function useBackendService() {
 	)
 
 	/**
-	 * Extract a specific track.
+	 * Extract a specific track from a media file.
 	 */
 	const extractSpecificTrack = useCallback(
 		async (extractionOptions, options = {}) => {
@@ -187,17 +157,17 @@ function useBackendService() {
 	)
 
 	/**
-	 * Execute batch extraction.
+	 * Batch extract tracks from multiple files.
 	 */
 	const batchExtract = useCallback(
-		async (batchOptions, options = {}) => {
+		async (extractionOptions, options = {}) => {
 			return await executeWithStateManagement(
 				"Batch Extraction",
 				async () => {
 					if (!trackProcessor) {
 						throw new Error("TrackProcessor service not available")
 					}
-					return await trackProcessor.batchExtract(batchOptions)
+					return await trackProcessor.batchExtract(extractionOptions)
 				},
 				{
 					errorContext: "Batch extraction",
@@ -291,36 +261,6 @@ function useBackendService() {
 		setProgress(null)
 	}, [])
 
-	/**
-	 * Get operation statistics.
-	 */
-	const getOperationStats = useCallback(() => {
-		const successful = operationHistory.filter((op) => op.success).length
-		const failed = operationHistory.filter((op) => !op.success).length
-		const averageDuration =
-			operationHistory.length > 0
-				? operationHistory.reduce((sum, op) => sum + op.duration, 0) /
-					operationHistory.length
-				: 0
-
-		return {
-			total: operationHistory.length,
-			successful,
-			failed,
-			successRate:
-				operationHistory.length > 0 ? (successful / operationHistory.length) * 100 : 0,
-			averageDuration: Math.round(averageDuration),
-			activeOperations: activeOperationsRef.current.size
-		}
-	}, [operationHistory])
-
-	/**
-	 * Clear operation history.
-	 */
-	const clearOperationHistory = useCallback(() => {
-		setOperationHistory([])
-	}, [])
-
 	// Clear progress after delays
 	useEffect(() => {
 		if (progress && progress.percentage === 100) {
@@ -336,7 +276,6 @@ function useBackendService() {
 		isLoading,
 		error,
 		progress,
-		operationHistory,
 
 		// Backend status
 		isBackendReady: isBackendReady(),
@@ -355,8 +294,6 @@ function useBackendService() {
 		executeWithStateManagement,
 		clearError,
 		clearProgress,
-		getOperationStats,
-		clearOperationHistory,
 
 		// Direct service access
 		services: {
@@ -367,11 +304,10 @@ function useBackendService() {
 
 		// Legacy compatibility methods for existing components
 		onProgress: (operationId, callback) => {
-			// Legacy progress tracking - not needed with new backend
 			console.warn(
 				"onProgress method is deprecated. Use progressCallback in operation options instead."
 			)
-			return () => {} // Return empty cleanup function
+			return () => {}
 		},
 
 		// Derived state

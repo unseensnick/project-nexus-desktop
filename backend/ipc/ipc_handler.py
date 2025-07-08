@@ -436,11 +436,10 @@ class IPCHandler:
     
     def _batch_extract(self, args: Dict[str, Any], operation_id: Optional[str] = None) -> Dict[str, Any]:
         """
-        Perform batch extraction on multiple files using parallel processing.
+        Perform batch extraction on multiple files using parallel processing with proper worker tracking.
         
-        Implements concurrent file processing using ThreadPoolExecutor to utilize
-        multiple worker threads for improved performance. Progress reporting is
-        coordinated across all workers to provide accurate real-time feedback.
+        Implements concurrent file processing using ThreadPoolExecutor with unique worker IDs
+        to provide accurate individual worker progress reporting to the frontend.
         
         Args:
             args: Arguments for batch extraction
@@ -494,86 +493,116 @@ class IPCHandler:
                 "total_subtitles_extracted": 0
             }
             
-            # Progress tracking for parallel workers
-            file_progress = {}
-            completed_files = 0
+            # Worker and progress tracking
+            worker_progress = {}  # {worker_id: {file_path: progress}}
+            file_to_worker = {}   # {file_path: worker_id}
+            worker_counter = 0
             
             # Initialize progress reporting
             progress_reporter = create_progress_reporter(operation_id) if operation_id else None
             
-            # Initialize individual file progress in frontend
-            if progress_reporter:
-                for file_path in input_paths:
-                    filename = Path(file_path).name
-                    
-                    # Send initial file progress data
-                    progress_data = ProgressData(
-                        operation_id=operation_id,
-                        percentage=0.0,
-                        stage=ProgressStage.INITIALIZING,
-                        message=f"Processing {0} of {total_files} files...",
-                        details={
-                            "file_id": file_path,
-                            "file_progress": 0.0,
-                            "file_stage": "pending",
-                            "file_message": "Waiting to start...",
-                            "filename": filename
-                        }
-                    )
-                    progress_reporter.report_progress(progress_data)
-            
-            def update_file_progress(file_path: str, progress: float, stage: str = "processing", message: str = ""):
-                """Update progress for a specific file and calculate overall progress."""
+            def assign_worker_id() -> str:
+                """Assign a unique worker ID."""
+                nonlocal worker_counter
                 with results_lock:
-                    file_progress[file_path] = progress
+                    worker_counter += 1
+                    return f"worker_{worker_counter}"
+            
+            def update_worker_progress(worker_id: str, file_path: str, progress: float, stage: str = "processing", message: str = ""):
+                """Update progress for a specific worker processing a specific file."""
+                with results_lock:
+                    # Initialize worker progress if not exists
+                    if worker_id not in worker_progress:
+                        worker_progress[worker_id] = {}
                     
-                    # Calculate overall progress
-                    total_progress = sum(file_progress.values())
+                    # Update worker's file progress
+                    worker_progress[worker_id][file_path] = progress
+                    
+                    # Calculate overall progress across all workers
+                    total_progress = 0
+                    completed_files = 0
+                    
+                    for worker_files in worker_progress.values():
+                        for file_progress in worker_files.values():
+                            total_progress += file_progress
+                            if file_progress >= 100.0:
+                                completed_files += 1
+                    
                     overall_progress = (total_progress / total_files) if total_files > 0 else 0
                     
                     # Get filename for display
                     filename = Path(file_path).name
                     
-                    # Report progress through the standard progress system
+                    self._logger.debug(f"Worker {worker_id} progress: {filename} = {progress:.1f}% ({stage})")
+                    
+                    # Send worker-specific progress directly to frontend
+                    worker_progress_message = f"WORKER_PROGRESS:{operation_id}:{worker_id}:{file_path}:{progress:.2f}:{stage}:{message}:{filename}"
+                    print(worker_progress_message, flush=True)
+                    
+                    # Report overall progress with worker-specific information
                     if progress_reporter:
                         progress_data = ProgressData(
                             operation_id=operation_id,
                             percentage=overall_progress,
                             stage=ProgressStage.PROCESSING,
-                            message=f"Processing {len(file_progress)} of {total_files} files...",
+                            message=f"Processing {completed_files} of {total_files} files...",
                             details={
+                                "worker_id": worker_id,
                                 "file_id": file_path,
+                                "filename": filename,
                                 "file_progress": progress,
                                 "file_stage": stage,
                                 "file_message": message,
-                                "filename": filename
+                                "total_files": total_files,
+                                "completed_files": completed_files,
+                                "worker_progress": {
+                                    worker_id: {
+                                        "current_file": file_path,
+                                        "current_filename": filename,
+                                        "progress": progress,
+                                        "stage": stage,
+                                        "message": message
+                                    }
+                                }
                             }
                         )
                         progress_reporter.report_progress(progress_data)
             
-            def process_single_file(file_path: str) -> Dict[str, Any]:
-                """Process a single file with progress tracking."""
+            def process_single_file_with_worker(file_path: str) -> Dict[str, Any]:
+                """Process a single file with unique worker ID tracking."""
+                # Assign unique worker ID to this thread
+                worker_id = assign_worker_id()
+                
+                # Record file-to-worker mapping
+                with results_lock:
+                    file_to_worker[file_path] = worker_id
+                
+                import threading
+                thread_id = threading.current_thread().ident
+                self._logger.info(f"[{worker_id}|Thread-{thread_id}] Starting processing file: {Path(file_path).name}")
+                
                 try:
-                    # Initialize file progress
-                    update_file_progress(file_path, 0.0, "starting", "Analyzing file...")
+                    # Initialize worker progress
+                    update_worker_progress(worker_id, file_path, 0.0, "starting", "Analyzing file...")
                     
                     # Create individual operation ID for this file
                     file_operation_id = f"{operation_id}_file_{hash(file_path)}" if operation_id else None
                     
-                    # Set up file-specific progress callback
-                    def file_progress_callback(stage, percentage, message):
-                        """Handle individual file progress updates."""
-                        # Map stage to string
+                    # Set up worker-specific progress callback
+                    def worker_progress_callback(stage, percentage, message):
+                        """Handle individual worker progress updates."""
+                        # Map stage enum to string for frontend
                         stage_map = {
                             ProgressStage.ANALYZING: "analyzing",
                             ProgressStage.FILTERING: "filtering", 
                             ProgressStage.EXTRACTING: "extracting",
-                            ProgressStage.COMPLETED: "completed"
+                            ProgressStage.COMPLETED: "completed",
+                            ProgressStage.PROCESSING: "processing"
                         }
                         stage_str = stage_map.get(stage, str(stage))
                         
-                        # Update file progress
-                        update_file_progress(file_path, percentage, stage_str, message)
+                        # Update worker progress
+                        update_worker_progress(worker_id, file_path, percentage, stage_str, message)
                     
                     # Use the same logic as single extraction with consistent settings
                     result = self._extract_tracks_with_progress({
@@ -581,33 +610,40 @@ class IPCHandler:
                         "output_dir": output_dir,
                         "languages": languages,
                         **extraction_options  # Apply consistent settings
-                    }, file_operation_id, file_progress_callback)
+                    }, file_operation_id, worker_progress_callback)
                     
-                    # Mark file as completed
-                    update_file_progress(file_path, 100.0, "completed", "Extraction completed")
+                    # Mark worker as completed
+                    update_worker_progress(worker_id, file_path, 100.0, "completed", "Extraction completed")
+                    
+                    self._logger.info(f"[{worker_id}|Thread-{thread_id}] Completed processing file: {Path(file_path).name}")
                     
                     return {
+                        "worker_id": worker_id,
                         "file_path": file_path,
                         "success": True,
                         "result": result
                     }
                     
                 except Exception as e:
-                    self._logger.error(f"Failed to process file {file_path}: {e}")
-                    update_file_progress(file_path, 100.0, "failed", f"Error: {str(e)}")
+                    self._logger.error(f"[{worker_id}|Thread-{thread_id}] Failed to process file {file_path}: {e}")
+                    update_worker_progress(worker_id, file_path, 100.0, "failed", f"Error: {str(e)}")
                     return {
+                        "worker_id": worker_id,
                         "file_path": file_path,
                         "success": False,
                         "error": str(e)
                     }
             
             # Execute parallel processing using ThreadPoolExecutor
+            self._logger.info(f"Starting parallel processing with {max_workers} workers for {len(input_paths)} files")
             with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
                 # Submit all files for processing
                 future_to_file = {
-                    executor.submit(process_single_file, file_path): file_path 
+                    executor.submit(process_single_file_with_worker, file_path): file_path 
                     for file_path in input_paths
                 }
+                
+                self._logger.info(f"Submitted {len(future_to_file)} files for parallel processing")
                 
                 # Process completed futures as they finish
                 for future in concurrent.futures.as_completed(future_to_file):
@@ -615,6 +651,8 @@ class IPCHandler:
                     
                     try:
                         file_result = future.result()
+                        worker_id = file_result.get("worker_id", "unknown")
+                        self._logger.info(f"[{worker_id}] Received result for file: {Path(file_path).name}")
                         
                         with results_lock:
                             if file_result["success"]:
@@ -632,16 +670,15 @@ class IPCHandler:
                                 results["total_subtitles_extracted"] += subtitle_count
                                 results["total_tracks_extracted"] += (audio_count + video_count + subtitle_count)
                                 
-                                self._logger.info(f"Successfully processed {file_path}: {audio_count}A/{video_count}V/{subtitle_count}S")
+                                self._logger.info(f"[{worker_id}] Successfully processed {file_path}: {audio_count}A/{video_count}V/{subtitle_count}S")
                             else:
                                 results["failed_files"] += 1
                                 results["failed_files_list"].append({
                                     "file": file_path,
-                                    "error": file_result["error"]
+                                    "error": file_result["error"],
+                                    "worker_id": worker_id
                                 })
-                                self._logger.error(f"Failed to process {file_path}: {file_result['error']}")
-                            
-                            completed_files += 1
+                                self._logger.error(f"[{worker_id}] Failed to process {file_path}: {file_result['error']}")
                     
                     except Exception as e:
                         self._logger.error(f"Unexpected error processing {file_path}: {e}")
@@ -649,7 +686,8 @@ class IPCHandler:
                             results["failed_files"] += 1
                             results["failed_files_list"].append({
                                 "file": file_path,
-                                "error": str(e)
+                                "error": str(e),
+                                "worker_id": "unknown"
                             })
             
             # Final progress report
@@ -658,12 +696,26 @@ class IPCHandler:
                     operation_id=operation_id,
                     percentage=100.0,
                     stage=ProgressStage.COMPLETED,
-                    message="Batch processing completed"
+                    message="Batch processing completed",
+                    details={
+                        "total_files": total_files,
+                        "successful_files": results["successful_files"],
+                        "failed_files": results["failed_files"],
+                        "total_tracks_extracted": results["total_tracks_extracted"],
+                        "workers_used": len(worker_progress),
+                        "worker_summary": {
+                            worker_id: {
+                                "files_processed": len(files),
+                                "completed_files": len([f for f, p in files.items() if p >= 100.0])
+                            }
+                            for worker_id, files in worker_progress.items()
+                        }
+                    }
                 )
                 progress_reporter.report_progress(progress_data)
             
             self._logger.info(f"Batch extraction completed: {results['successful_files']}/{total_files} files, "
-                             f"{results['total_tracks_extracted']} total tracks extracted")
+                             f"{results['total_tracks_extracted']} total tracks extracted using {len(worker_progress)} workers")
             
             return {
                 "success": True,
@@ -674,7 +726,15 @@ class IPCHandler:
                 "total_tracks_extracted": results["total_tracks_extracted"],
                 "extracted_audio": results["total_audio_extracted"],
                 "extracted_video": results["total_video_extracted"],
-                "extracted_subtitles": results["total_subtitles_extracted"]
+                "extracted_subtitles": results["total_subtitles_extracted"],
+                "workers_used": len(worker_progress),
+                "worker_summary": {
+                    worker_id: {
+                        "files_processed": len(files),
+                        "completed_files": len([f for f, p in files.items() if p >= 100.0])
+                    }
+                    for worker_id, files in worker_progress.items()
+                }
             }
             
         except Exception as e:

@@ -1,7 +1,7 @@
 /**
- * Fixed WorkflowEngine Service with proper workflow object methods.
+ * Enhanced WorkflowEngineService with proper service layer progress integration.
  *
- * **REPLACE:** `src/renderer/src/services/WorkflowEngineService.js` **WITH:** `WorkflowEngineService.js` **LOCATION:** `src/renderer/src/services/`
+ * **MODIFY:** `src/renderer/src/services/WorkflowEngineService.js` **CHANGES:** `Updated to use service layer progress tracking for batch workflows` **LOCATION:** `src/renderer/src/services/`
  */
 
 import { BackendServiceBase } from "./BackendServiceBase.js"
@@ -15,18 +15,79 @@ export class WorkflowEngineService extends BackendServiceBase {
 
 	/**
 	 * Call backend function through workflow engine endpoints.
-	 * Note: WorkflowEngine operations will be implemented as the backend develops
 	 */
 	async callBackendFunction(functionName, parameters, operationId) {
-		// For now, workflow operations are not directly exposed via IPC
-		// They will be accessed through composite operations
-		throw new Error(`WorkflowEngine function ${functionName} not yet available via IPC`)
+		if (!window.pythonApi) {
+			throw new Error("Python API not available")
+		}
+
+		console.log(`WorkflowEngineService: Calling ${functionName} with params:`, parameters)
+
+		// Route workflow operations to appropriate Python API methods
+		switch (functionName) {
+			case "execute_extraction_workflow":
+				// Single file extraction workflow - use extractTracks
+				return await window.pythonApi.extractTracks({
+					filePath: parameters.source_file,
+					outputDir: parameters.output_directory,
+					languages: parameters.languages,
+					audioOnly: parameters.audio_only,
+					subtitleOnly: parameters.subtitle_only,
+					includeVideo: parameters.include_video,
+					videoOnly: parameters.video_only,
+					removeLetterbox: parameters.remove_letterbox,
+					operationId
+				})
+
+			case "execute_batch_workflow":
+				// Batch workflow - use batchExtract if available, otherwise fallback
+				if (window.pythonApi.batchExtract) {
+					return await window.pythonApi.batchExtract({
+						inputPaths: parameters.input_paths,
+						outputDir: parameters.output_directory,
+						languages: parameters.languages,
+						maxWorkers: parameters.max_workers,
+						audioOnly: parameters.audio_only,
+						subtitleOnly: parameters.subtitle_only,
+						includeVideo: parameters.include_video,
+						videoOnly: parameters.video_only,
+						removeLetterbox: parameters.remove_letterbox,
+						operationId
+					})
+				} else {
+					// Fallback: sequential processing using extractTracks
+					console.warn("batchExtract not available, using sequential processing")
+					const results = []
+					for (const inputPath of parameters.input_paths) {
+						const result = await window.pythonApi.extractTracks({
+							filePath: inputPath,
+							outputDir: parameters.output_directory,
+							languages: parameters.languages,
+							audioOnly: parameters.audio_only,
+							subtitleOnly: parameters.subtitle_only,
+							includeVideo: parameters.include_video,
+							videoOnly: parameters.video_only,
+							removeLetterbox: parameters.remove_letterbox,
+							operationId: `${operationId}_${inputPath}`
+						})
+						results.push(result)
+					}
+
+					return {
+						success: true,
+						results: results,
+						totalFiles: parameters.input_paths.length,
+						successfulFiles: results.filter((r) => r.success).length
+					}
+				}
+
+			default:
+				throw new Error(`Unknown WorkflowEngine function: ${functionName}`)
+		}
 	}
 
 	/**
-	 * Execute a complete extraction workflow for a single file.
-	 * This orchestrates file analysis, language filtering, and track extraction.
-	 *
+	 * Execute a complete extraction workflow for a single file with service layer progress.
 	 * @param {Object} options - Workflow options
 	 * @param {string} options.sourceFile - Source media file path
 	 * @param {string} options.outputDirectory - Output directory
@@ -35,7 +96,7 @@ export class WorkflowEngineService extends BackendServiceBase {
 	 * @param {boolean} options.subtitleOnly - Extract only subtitle tracks
 	 * @param {boolean} options.includeVideo - Include video tracks
 	 * @param {boolean} options.videoOnly - Extract only video tracks
-	 * @param {boolean} options.removeLetterbox - Remove letterboxing from video
+	 * @param {boolean} options.removeLetterbox - Remove letterboxing
 	 * @param {Function} options.progressCallback - Progress callback function
 	 * @returns {Promise<Object>} - Workflow execution result
 	 */
@@ -64,110 +125,61 @@ export class WorkflowEngineService extends BackendServiceBase {
 			throw new Error("At least one language must be specified")
 		}
 
-		const workflowId = this.generateOperationId()
-		const workflow = this.createWorkflowTracker(workflowId, "extraction", options)
+		const operationId = this.generateOperationId()
+		const workflow = this.createWorkflowTracker(operationId, "extraction", options)
 
 		try {
-			// Step 1: Analyze file
-			this.addStepToWorkflow(workflow, "analysis", "File Analysis")
-			this.updateWorkflowProgress(workflow, progressCallback, 10, "Analyzing media file...")
-
-			// Import services (these should be injected in a real implementation)
-			const { MediaAnalyzerService } = await import("./MediaAnalyzerService.js")
-			const { TrackProcessorService } = await import("./TrackProcessorService.js")
-
-			const mediaAnalyzer = new MediaAnalyzerService()
-			const trackProcessor = new TrackProcessorService()
-
-			const analysisResult = await mediaAnalyzer.analyzeFile(sourceFile)
-			this.completeWorkflowStep(workflow, "analysis", true, analysisResult)
-			this.updateWorkflowProgress(workflow, progressCallback, 30, "Analysis complete")
-
-			// Step 2: Language filtering (simulated for now)
-			this.addStepToWorkflow(workflow, "filtering", "Language Filtering")
-			this.updateWorkflowProgress(
-				workflow,
-				progressCallback,
-				40,
-				"Filtering tracks by language..."
+			// Use service layer progress tracking
+			const result = await this.executeBackendFunction(
+				"execute_extraction_workflow",
+				{
+					source_file: sourceFile,
+					output_directory: outputDirectory,
+					languages: languages,
+					audio_only: audioOnly,
+					subtitle_only: subtitleOnly,
+					include_video: includeVideo,
+					video_only: videoOnly,
+					remove_letterbox: removeLetterbox
+				},
+				{
+					operationId,
+					progressCallback: (progressData) => {
+						this.updateWorkflowProgress(
+							workflow,
+							progressCallback,
+							progressData.percentage,
+							progressData.message
+						)
+						if (progressCallback) {
+							progressCallback(progressData)
+						}
+					}
+				}
 			)
 
-			const filteredTracks = this.filterTracksByLanguageAndType(analysisResult, languages, {
-				audioOnly,
-				subtitleOnly,
-				includeVideo,
-				videoOnly
-			})
-
-			this.completeWorkflowStep(workflow, "filtering", true, { filteredTracks })
-			this.updateWorkflowProgress(workflow, progressCallback, 50, "Track filtering complete")
-
-			if (filteredTracks.length === 0) {
-				this.completeWorkflow(workflow, true, {
-					message: "No tracks found matching criteria",
-					tracksExtracted: 0
-				})
-				return this.processWorkflowResult(workflow)
-			}
-
-			// Step 3: Track extraction
-			this.addStepToWorkflow(workflow, "extraction", "Track Extraction")
-			this.updateWorkflowProgress(workflow, progressCallback, 60, "Extracting tracks...")
-
-			const extractionProgressCallback = (progress) => {
-				const overallProgress = 60 + progress * 0.4 // 60-100% range
-				this.updateWorkflowProgress(
-					workflow,
-					progressCallback,
-					overallProgress,
-					"Extracting tracks..."
-				)
-			}
-
-			const extractionResult = await trackProcessor.extractTracks({
-				filePath: sourceFile,
-				outputDir: outputDirectory,
-				languages,
-				audioOnly,
-				subtitleOnly,
-				includeVideo,
-				videoOnly,
-				removeLetterbox,
-				progressCallback: extractionProgressCallback
-			})
-
-			this.completeWorkflowStep(workflow, "extraction", true, extractionResult)
-			this.updateWorkflowProgress(workflow, progressCallback, 100, "Workflow complete")
-
-			// Complete workflow
-			this.completeWorkflow(workflow, true, extractionResult)
-
-			// Store workflow history
-			this.addWorkflowHistory(workflow)
-
+			this.completeWorkflow(workflow, true, result)
 			return this.processWorkflowResult(workflow)
 		} catch (error) {
 			this.completeWorkflow(workflow, false, null, error.message)
-			this.addWorkflowHistory(workflow)
-			throw this.createServiceError(error, "executeExtractionWorkflow")
+			throw error
 		} finally {
-			this.activeWorkflows.delete(workflowId)
+			this.activeWorkflows.delete(operationId)
 		}
 	}
 
 	/**
-	 * Execute a batch processing workflow for multiple files.
-	 *
+	 * Execute batch workflow for multiple files with enhanced progress tracking.
 	 * @param {Object} options - Batch workflow options
-	 * @param {Array<string>} options.inputPaths - Input file/directory paths
+	 * @param {Array<string>} options.inputPaths - Array of input file paths
 	 * @param {string} options.outputDirectory - Output directory
 	 * @param {Array<string>} options.languages - Languages to extract
+	 * @param {number} options.maxWorkers - Maximum number of workers
 	 * @param {boolean} options.audioOnly - Extract only audio tracks
 	 * @param {boolean} options.subtitleOnly - Extract only subtitle tracks
 	 * @param {boolean} options.includeVideo - Include video tracks
 	 * @param {boolean} options.videoOnly - Extract only video tracks
-	 * @param {boolean} options.removeLetterbox - Remove letterboxing from video
-	 * @param {number} options.maxWorkers - Maximum worker threads
+	 * @param {boolean} options.removeLetterbox - Remove letterboxing
 	 * @param {Function} options.progressCallback - Progress callback function
 	 * @returns {Promise<Object>} - Batch workflow execution result
 	 */
@@ -176,14 +188,27 @@ export class WorkflowEngineService extends BackendServiceBase {
 			inputPaths,
 			outputDirectory,
 			languages,
+			maxWorkers = 4,
 			audioOnly = false,
 			subtitleOnly = false,
 			includeVideo = false,
 			videoOnly = false,
 			removeLetterbox = false,
-			maxWorkers = 1,
 			progressCallback = null
 		} = options
+
+		console.log("=== WorkflowEngineService: executeBatchWorkflow ===")
+		console.log("Input paths:", inputPaths)
+		console.log("Output directory:", outputDirectory)
+		console.log("Languages:", languages)
+		console.log("Max workers:", maxWorkers)
+		console.log("Options:", {
+			audioOnly,
+			subtitleOnly,
+			includeVideo,
+			videoOnly,
+			removeLetterbox
+		})
 
 		if (!inputPaths || inputPaths.length === 0) {
 			throw new Error("Input paths are required for batch workflow")
@@ -197,147 +222,77 @@ export class WorkflowEngineService extends BackendServiceBase {
 			throw new Error("At least one language must be specified")
 		}
 
-		const workflowId = this.generateOperationId()
-		const workflow = this.createWorkflowTracker(workflowId, "batch", options)
+		const operationId = this.generateOperationId()
+		console.log("Generated operation ID:", operationId)
+
+		const workflow = this.createWorkflowTracker(operationId, "batch", options)
 
 		try {
-			// Step 1: File discovery
-			this.addStepToWorkflow(workflow, "discovery", "File Discovery")
-			this.updateWorkflowProgress(workflow, progressCallback, 5, "Discovering media files...")
+			console.log("Calling backend function: execute_batch_workflow")
 
-			const { MediaAnalyzerService } = await import("./MediaAnalyzerService.js")
-			const { TrackProcessorService } = await import("./TrackProcessorService.js")
+			// Use service layer progress tracking with enhanced batch support
+			const result = await this.executeBackendFunction(
+				"execute_batch_workflow",
+				{
+					input_paths: inputPaths,
+					output_directory: outputDirectory,
+					languages: languages,
+					max_workers: maxWorkers,
+					audio_only: audioOnly,
+					subtitle_only: subtitleOnly,
+					include_video: includeVideo,
+					video_only: videoOnly,
+					remove_letterbox: removeLetterbox
+				},
+				{
+					operationId,
+					progressCallback: (progressData) => {
+						// Update workflow progress
+						this.updateWorkflowProgress(
+							workflow,
+							progressCallback,
+							progressData.percentage,
+							progressData.message
+						)
 
-			const mediaAnalyzer = new MediaAnalyzerService()
-			const trackProcessor = new TrackProcessorService()
-
-			const mediaFiles = await mediaAnalyzer.findMediaFiles(inputPaths)
-			this.completeWorkflowStep(workflow, "discovery", true, {
-				mediaFiles,
-				count: mediaFiles.length
-			})
-			this.updateWorkflowProgress(
-				workflow,
-				progressCallback,
-				15,
-				`Found ${mediaFiles.length} media files`
+						// Pass through the progress data with all details for batch tracking
+						if (progressCallback) {
+							progressCallback(progressData)
+						}
+					}
+				}
 			)
 
-			if (mediaFiles.length === 0) {
-				this.completeWorkflow(workflow, true, {
-					message: "No media files found in specified paths",
-					totalFiles: 0,
-					successfulFiles: 0,
-					failedFiles: 0
-				})
-				return this.processWorkflowResult(workflow)
-			}
+			console.log("Backend function completed with result:", result)
 
-			// Step 2: Batch processing
-			this.addStepToWorkflow(workflow, "batch_processing", "Batch Processing")
-			this.updateWorkflowProgress(
-				workflow,
-				progressCallback,
-				20,
-				"Starting batch extraction..."
-			)
+			this.completeWorkflow(workflow, true, result)
+			const processedResult = this.processWorkflowResult(workflow)
 
-			const batchProgressCallback = (progress) => {
-				const overallProgress = 20 + progress * 0.8 // 20-100% range
-				this.updateWorkflowProgress(
-					workflow,
-					progressCallback,
-					overallProgress,
-					"Processing files..."
-				)
-			}
-
-			const batchResult = await trackProcessor.batchExtract({
-				inputPaths: mediaFiles,
-				outputDir: outputDirectory,
-				languages,
-				audioOnly,
-				subtitleOnly,
-				includeVideo,
-				videoOnly,
-				removeLetterbox,
-				maxWorkers,
-				progressCallback: batchProgressCallback
-			})
-
-			this.completeWorkflowStep(workflow, "batch_processing", true, batchResult)
-			this.updateWorkflowProgress(workflow, progressCallback, 100, "Batch workflow complete")
-
-			// Complete workflow
-			this.completeWorkflow(workflow, true, batchResult)
-
-			// Store workflow history
-			this.addWorkflowHistory(workflow)
-
-			return this.processWorkflowResult(workflow)
+			console.log("Processed workflow result:", processedResult)
+			return processedResult
 		} catch (error) {
+			console.error("Batch workflow failed:", error)
 			this.completeWorkflow(workflow, false, null, error.message)
-			this.addWorkflowHistory(workflow)
-			throw this.createServiceError(error, "executeBatchWorkflow")
+			throw error
 		} finally {
-			this.activeWorkflows.delete(workflowId)
+			this.activeWorkflows.delete(operationId)
 		}
 	}
 
 	/**
-	 * Filter tracks by language and type requirements.
-	 */
-	filterTracksByLanguageAndType(analysisResult, languages, options) {
-		if (!analysisResult || !analysisResult.tracks) {
-			return []
-		}
-
-		const { audioOnly, subtitleOnly, includeVideo, videoOnly } = options
-
-		// Determine track types to include
-		let trackTypes = []
-		if (videoOnly) {
-			trackTypes = ["video"]
-		} else if (audioOnly) {
-			trackTypes = ["audio"]
-		} else if (subtitleOnly) {
-			trackTypes = ["subtitle"]
-		} else if (includeVideo) {
-			trackTypes = ["audio", "subtitle", "video"]
-		} else {
-			trackTypes = ["audio", "subtitle"] // Default
-		}
-
-		// Filter tracks
-		return analysisResult.tracks.filter((track) => {
-			// Check track type
-			if (!trackTypes.includes(track.type)) {
-				return false
-			}
-
-			// Check language (include tracks with no language for video)
-			if (track.type === "video" || !track.language) {
-				return true
-			}
-
-			return languages.includes(track.language)
-		})
-	}
-
-	/**
-	 * Create workflow tracker for monitoring progress.
+	 * Create workflow tracker for monitoring workflow execution.
 	 */
 	createWorkflowTracker(workflowId, type, options) {
 		const workflow = {
 			id: workflowId,
-			type,
-			options,
+			type: type,
+			options: options,
 			startTime: Date.now(),
 			endTime: null,
-			steps: [],
 			success: false,
 			result: null,
 			error: null,
+			steps: [],
 			currentStep: null
 		}
 
@@ -346,50 +301,19 @@ export class WorkflowEngineService extends BackendServiceBase {
 	}
 
 	/**
-	 * Add step to workflow.
-	 */
-	addStepToWorkflow(workflow, stepId, stepName) {
-		const step = {
-			id: stepId,
-			name: stepName,
-			startTime: Date.now(),
-			endTime: null,
-			success: false,
-			result: null,
-			error: null
-		}
-
-		workflow.steps.push(step)
-		workflow.currentStep = step
-		return step
-	}
-
-	/**
-	 * Complete workflow step.
-	 */
-	completeWorkflowStep(workflow, stepId, success, result = null, error = null) {
-		const step = workflow.steps.find((s) => s.id === stepId)
-		if (step) {
-			step.endTime = Date.now()
-			step.success = success
-			step.result = result
-			step.error = error
-		}
-	}
-
-	/**
-	 * Complete entire workflow.
+	 * Complete workflow execution.
 	 */
 	completeWorkflow(workflow, success, result = null, error = null) {
 		workflow.endTime = Date.now()
 		workflow.success = success
 		workflow.result = result
 		workflow.error = error
-		workflow.currentStep = null
+
+		this.addWorkflowHistory(workflow)
 	}
 
 	/**
-	 * Update workflow progress and notify callback.
+	 * Update workflow progress with proper callback handling.
 	 */
 	updateWorkflowProgress(workflow, progressCallback, percentage, message) {
 		if (progressCallback) {

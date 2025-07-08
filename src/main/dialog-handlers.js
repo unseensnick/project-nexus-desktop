@@ -7,7 +7,7 @@
  * through IPC, maintaining proper window ownership and security boundaries.
  */
 
-import { dialog } from "electron"
+import { dialog, shell } from "electron"
 
 /**
  * Initializes and registers dialog-related IPC handlers
@@ -64,5 +64,23 @@ export function initDialogHandlers(ipcMain) {
 		const result = await dialog.showSaveDialog(window, options)
 
 		return result
+	})
+
+	/**
+	 * Handler for opening paths in the system
+	 * Opens a file or directory in the default system application
+	 */
+	ipcMain.handle("shell:openPath", async (event, path) => {
+		try {
+			// Open the path using the system's default application
+			const result = await shell.openPath(path)
+
+			// If openPath returns an empty string, it was successful
+			// If it returns an error message, it failed
+			return result === ""
+		} catch (error) {
+			console.error("Error opening path:", error)
+			return false
+		}
 	})
 }

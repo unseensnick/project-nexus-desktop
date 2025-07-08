@@ -1,8 +1,8 @@
 /**
- * New useFileSelection hook with enhanced backend integration.
- * Provides file and directory selection with validation using backend services.
+ * Fixed useFileSelection hook with proper service layer integration.
+ * Ensures all handlers are correctly exposed and work with enhanced backend architecture.
  *
- * **REPLACE:** `src/renderer/src/hooks/useFileSelection.js` **WITH:** `useFileSelection.js` **LOCATION:** `src/renderer/src/hooks/`
+ * **MODIFY:** `src/renderer/src/hooks/useFileSelection.js` **CHANGES:** `Fixed to work with enhanced service layer architecture and ensure handlers are properly exposed` **LOCATION:** `src/renderer/src/hooks/`
  */
 
 import { useCallback, useState } from "react"
@@ -10,6 +10,7 @@ import { useBackendService } from "../providers/BackendModuleProvider.jsx"
 
 /**
  * Hook for managing file and directory selection with backend validation.
+ * Fixed to work properly with the enhanced service layer architecture.
  *
  * @returns {Object} File selection state and handler methods
  */
@@ -19,7 +20,7 @@ function useFileSelection() {
 	const [error, setError] = useState(null)
 	const [isValidating, setIsValidating] = useState(false)
 
-	// Backend service integration for file validation
+	// Backend service integration - using the correct hook method
 	const { mediaAnalyzer, isBackendReady } = useBackendService()
 
 	/**
@@ -58,7 +59,7 @@ function useFileSelection() {
 			}
 
 			try {
-				return mediaAnalyzer.isSupportedFile(path)
+				return await mediaAnalyzer.isSupportedFile(path)
 			} catch (err) {
 				console.warn("File validation failed:", err)
 				return false
@@ -72,6 +73,8 @@ function useFileSelection() {
 	 */
 	const handleSelectFile = useCallback(async () => {
 		try {
+			console.log("handleSelectFile called")
+
 			// Check if Electron API is available
 			if (!window.electronAPI?.openFileDialog) {
 				throw new Error("File selection dialog not available")
@@ -112,6 +115,8 @@ function useFileSelection() {
 				properties: ["openFile"]
 			})
 
+			console.log("File dialog result:", result)
+
 			// Process result
 			if (result?.filePaths?.length > 0) {
 				const selectedPath = result.filePaths[0]
@@ -148,6 +153,8 @@ function useFileSelection() {
 	 */
 	const handleSelectOutputDir = useCallback(async () => {
 		try {
+			console.log("handleSelectOutputDir called")
+
 			// Check if Electron API is available
 			if (!window.electronAPI?.openDirectoryDialog) {
 				throw new Error("Directory selection dialog not available")
@@ -158,6 +165,8 @@ function useFileSelection() {
 				title: "Select Output Directory",
 				properties: ["openDirectory"]
 			})
+
+			console.log("Directory dialog result:", result)
 
 			// Process result
 			if (result?.filePaths?.length > 0) {
@@ -185,7 +194,7 @@ function useFileSelection() {
 			if (!path) {
 				setFilePath("")
 				setError(null)
-				return
+				return true
 			}
 
 			setIsValidating(true)
@@ -221,7 +230,6 @@ function useFileSelection() {
 			return true
 		}
 
-		// Basic validation - check if path looks valid
 		try {
 			// Simple path validation
 			if (path.length === 0) {
@@ -276,7 +284,9 @@ function useFileSelection() {
 		// Clear any cached analysis for the file if backend is available
 		if (mediaAnalyzer && filePath) {
 			try {
-				mediaAnalyzer.clearAnalysisCache(filePath)
+				if (typeof mediaAnalyzer.clearAnalysisCache === "function") {
+					mediaAnalyzer.clearAnalysisCache(filePath)
+				}
 			} catch (err) {
 				console.warn("Failed to clear analysis cache:", err)
 			}
@@ -298,39 +308,33 @@ function useFileSelection() {
 		}
 	}, [filePath, outputPath, getFileName, getFileExtension, isSelectionValid, isValidating, error])
 
+	// Return object with all necessary exports
 	return {
 		// Core state
 		filePath,
-		setFilePath: setFilePathWithValidation,
 		outputPath,
-		setOutputPath: setOutputPathWithValidation,
 		error,
-		setError,
 		isValidating,
 
-		// Selection handlers
+		// Essential handlers (MUST be included)
 		handleSelectFile,
 		handleSelectOutputDir,
+
+		// Utility setters
+		setFilePath: setFilePathWithValidation,
+		setOutputPath: setOutputPathWithValidation,
+		setError,
 
 		// Utility methods
 		getFileName,
 		getFileExtension,
 		isSelectionValid,
 		getSelectionSummary,
-
-		// Reset function
 		resetFileSelection,
 
 		// Backend integration status
 		isBackendReady: isBackendReady(),
 		hasBackendValidation: Boolean(mediaAnalyzer),
-
-		// Legacy compatibility
-		// Direct setters for components that expect them
-		setFilePathDirect: setFilePath,
-		setOutputPathDirect: setOutputPath,
-
-		// Validation status
 		canValidateFiles: Boolean(mediaAnalyzer),
 
 		// Selection status flags
@@ -340,9 +344,12 @@ function useFileSelection() {
 
 		// File information
 		selectedFileName: getFileName(),
-		selectedFileExtension: getFileExtension()
+		selectedFileExtension: getFileExtension(),
+
+		// Direct setters for legacy compatibility
+		setFilePathDirect: setFilePath,
+		setOutputPathDirect: setOutputPath
 	}
 }
 
 export default useFileSelection
-

@@ -1,7 +1,7 @@
 /**
- * Fixed Python Bridge with correct path to backend/ipc/bridge.py
+ * Complete Python Bridge with all required IPC handlers for service layer integration.
  *
- * **REPLACE:** `src/main/python-bridge.js` **WITH:** `python-bridge.js` **LOCATION:** `src/main/`
+ * **MODIFY:** `src/main/python-bridge.js` **CHANGES:** `Added missing IPC handlers for test-connection, get-status, and improved error handling` **LOCATION:** `src/main/`
  */
 
 import { ipcMain } from "electron"
@@ -12,9 +12,7 @@ import PythonProcessManager from "./python-process-manager"
 
 /**
  * Manages bidirectional communication with Python backend processes
- *
- * Creates a standardized interface for invoking Python functions, handling results,
- * processing real-time progress updates, and managing error conditions.
+ * Enhanced with complete IPC handler coverage for service layer integration.
  */
 class PythonBridge {
 	/**
@@ -28,10 +26,6 @@ class PythonBridge {
 
 	/**
 	 * Sets up the bridge with required paths and window reference
-	 *
-	 * @param {electron.BrowserWindow} mainWindow - Reference to main application window for IPC
-	 * @returns {PythonBridge} - Current instance for method chaining
-	 * @throws {Error} If bridge script cannot be found
 	 */
 	initialize(mainWindow) {
 		this.mainWindow = mainWindow
@@ -46,7 +40,7 @@ class PythonBridge {
 			throw new Error(`Python bridge script not found at: ${this.bridgeScriptPath}`)
 		}
 
-		// Register IPC handlers for frontend API calls
+		// Register all IPC handlers for frontend API calls
 		this.setupHandlers()
 
 		console.log(`${this._module}: Initialized with Python: ${this.pythonPath}`)
@@ -57,65 +51,212 @@ class PythonBridge {
 
 	/**
 	 * Determines appropriate Python executable path based on environment
-	 *
-	 * Uses bundled Python in production builds and system Python in development,
-	 * with platform-specific defaults and environment variable overrides.
-	 *
-	 * @returns {string} Path to Python executable
 	 */
 	_getPythonPath() {
-		const isProd = process.env.NODE_ENV === "production"
+		// Environment variable override
+		if (process.env.PYTHON_PATH) {
+			return process.env.PYTHON_PATH
+		}
 
-		if (isProd) {
-			// In production, use bundled Python
-			return path.join(process.resourcesPath, "python", "python")
+		// Platform-specific defaults
+		if (process.platform === "win32") {
+			return "python" // Let Windows find it via PATH
 		} else {
-			// In development, check for environment variable override first
-			const pythonPathEnv = process.env.PYTHON_PATH
-			if (pythonPathEnv) {
-				return pythonPathEnv
-			}
-
-			// Fall back to platform-specific defaults
-			if (process.platform === "win32") {
-				return "python" // On Windows, just use 'python'
-			} else {
-				return "python3" // On Unix/Linux/Mac, use 'python3'
-			}
+			return "python3" // Use python3 on Unix-like systems
 		}
 	}
 
 	/**
-	 * Determines path to Python bridge script based on environment
-	 * FIXED: Now points to the correct location at backend/ipc/bridge.py
-	 *
-	 * @returns {string} Path to bridge.py script
+	 * Gets the path to the Python bridge script
 	 */
 	_getBridgeScriptPath() {
-		const isProd = process.env.NODE_ENV === "production"
-
-		if (isProd) {
-			return path.join(process.resourcesPath, "python", "bridge.py")
-		} else {
-			// FIXED: Updated to point to backend/ipc/bridge.py instead of backend/bridge.py
-			return path.join(__dirname, "..", "..", "backend", "ipc", "bridge.py")
-		}
+		return path.join(__dirname, "..", "..", "backend", "ipc", "bridge.py")
 	}
 
 	/**
-	 * Registers IPC handlers for Python function calls
+	 * Convert frontend parameter names to Python snake_case convention
+	 */
+	_convertToPythonParams(options) {
+		const converted = {}
+
+		// Direct mapping for already correct names
+		const directMappings = [
+			"file_path",
+			"output_dir",
+			"output_directory",
+			"languages",
+			"audio_only",
+			"subtitle_only",
+			"include_video",
+			"video_only",
+			"remove_letterbox",
+			"input_paths",
+			"max_workers",
+			"track_indices",
+			"paths"
+		]
+
+		// Camel case to snake case conversions
+		const conversions = {
+			filePath: "file_path",
+			outputDir: "output_dir",
+			outputDirectory: "output_directory",
+			audioOnly: "audio_only",
+			subtitleOnly: "subtitle_only",
+			includeVideo: "include_video",
+			videoOnly: "video_only",
+			removeLetterbox: "remove_letterbox",
+			inputPaths: "input_paths",
+			maxWorkers: "max_workers",
+			trackIndices: "track_indices"
+		}
+
+		// Apply conversions
+		for (const [key, value] of Object.entries(options)) {
+			if (directMappings.includes(key)) {
+				converted[key] = value
+			} else if (conversions[key]) {
+				converted[conversions[key]] = value
+			} else {
+				// Keep unknown keys as-is but log them
+				console.warn(`${this._module}: Unknown parameter: ${key}`)
+				converted[key] = value
+			}
+		}
+
+		return converted
+	}
+
+	/**
+	 * Register all IPC handlers for the complete API surface
 	 */
 	setupHandlers() {
-		this._setupRealHandlers()
+		console.log(`${this._module}: Setting up IPC handlers...`)
+
+		// Core Media Analysis Handler
+		ipcMain.handle("python:analyze-file", async (_, filePath) => {
+			console.log(`${this._module}: Analyzing file: ${filePath}`)
+			try {
+				return await this.executePythonFunction("analyze_file", { file_path: filePath })
+			} catch (err) {
+				console.error(`${this._module}: Error analyzing file:`, err)
+				return { success: false, error: err.message }
+			}
+		})
+
+		// Track Extraction Handler
+		ipcMain.handle("python:extract-tracks", async (_, options) => {
+			console.log(`${this._module}: Extracting tracks from: ${options.filePath}`)
+			console.log(`${this._module}: Original extraction options from UI:`, options)
+
+			try {
+				// Separate operation ID from other parameters
+				const { operationId, ...optionsForPython } = options
+
+				// Convert parameter naming convention
+				const pythonOptions = this._convertToPythonParams(optionsForPython)
+				console.log(`${this._module}: Converted Python options:`, pythonOptions)
+
+				return await this.executePythonFunction(
+					"extract_tracks",
+					pythonOptions,
+					operationId
+				)
+			} catch (err) {
+				console.error(`${this._module}: Error extracting tracks:`, err)
+				return { success: false, error: err.message }
+			}
+		})
+
+		// Specific Track Extraction Handler
+		ipcMain.handle("python:extract-specific-track", async (_, options) => {
+			console.log(`${this._module}: Extracting specific track from: ${options.filePath}`)
+
+			try {
+				const { operationId, ...optionsForPython } = options
+				const pythonOptions = this._convertToPythonParams(optionsForPython)
+
+				return await this.executePythonFunction(
+					"extract_specific_track",
+					pythonOptions,
+					operationId
+				)
+			} catch (err) {
+				console.error(`${this._module}: Error extracting specific track:`, err)
+				return { success: false, error: err.message }
+			}
+		})
+
+		// Batch Extraction Handler
+		ipcMain.handle("python:batch-extract", async (_, options) => {
+			console.log(
+				`${this._module}: Batch extracting from ${options.inputPaths?.length || 0} paths`
+			)
+
+			try {
+				const { operationId, ...optionsForPython } = options
+				const pythonOptions = this._convertToPythonParams(optionsForPython)
+
+				return await this.executePythonFunction("batch_extract", pythonOptions, operationId)
+			} catch (err) {
+				console.error(`${this._module}: Error in batch extraction:`, err)
+				return { success: false, error: err.message }
+			}
+		})
+
+		// Media File Discovery Handler
+		ipcMain.handle("python:find-media-files", async (_, paths) => {
+			console.log(`${this._module}: Finding media files in ${paths?.length || 0} paths`)
+			try {
+				// Ensure paths is an array
+				const pathsArray = Array.isArray(paths) ? paths : [paths]
+				return await this.executePythonFunction("find_media_files_in_paths", {
+					paths: pathsArray
+				})
+			} catch (err) {
+				console.error(`${this._module}: Error finding media files:`, err)
+				return { success: false, error: err.message }
+			}
+		})
+
+		// Backend Connection Test Handler
+		ipcMain.handle("python:test-connection", async () => {
+			console.log(`${this._module}: Testing backend connection`)
+			try {
+				// Use the bridge script test functionality
+				return await this.executePythonFunction("test", {})
+			} catch (err) {
+				console.error(`${this._module}: Connection test failed:`, err)
+				return { success: false, error: err.message }
+			}
+		})
+
+		// Backend Status Handler
+		ipcMain.handle("python:get-status", async () => {
+			console.log(`${this._module}: Getting backend status`)
+			try {
+				// Return current status information
+				return {
+					success: true,
+					status: "ready",
+					pythonPath: this.pythonPath,
+					bridgeScript: this.bridgeScriptPath,
+					activeOperations: this.operations.size,
+					processManager: {
+						activeProcesses: this.processManager.getActiveProcessCount()
+					}
+				}
+			} catch (err) {
+				console.error(`${this._module}: Error getting status:`, err)
+				return { success: false, error: err.message }
+			}
+		})
+
+		console.log(`${this._module}: All IPC handlers registered successfully`)
 	}
 
 	/**
-	 * Execute Python function with real-time progress tracking support
-	 *
-	 * @param {string} functionName - Python function to execute
-	 * @param {Object} args - Arguments for the function
-	 * @param {string} operationId - Optional operation ID for progress tracking
-	 * @returns {Promise<Object>} Result from Python function
+	 * Execute a Python function with comprehensive error handling and progress tracking
 	 */
 	executePythonFunction(functionName, args, operationId = null) {
 		return new Promise((resolve, reject) => {
@@ -152,7 +293,63 @@ class PythonBridge {
 				pythonProcess.stdout.on("data", (data) => {
 					const output = data.toString()
 
-					// Check for progress updates
+					// Check for worker-specific progress updates
+					const workerProgressLines = output
+						.split("\n")
+						.filter((line) => line.startsWith("WORKER_PROGRESS:"))
+
+					workerProgressLines.forEach((line) => {
+						try {
+							// Parse worker progress line: WORKER_PROGRESS:operation_id:worker_id:file_path:progress:stage:message:filename
+							const parts = line.split(":")
+							if (parts.length >= 8) {
+								const progressOperationId = parts[1]
+								const workerId = parts[2]
+								const filePath = parts[3]
+								const progressValue = parseFloat(parts[4])
+								const stage = parts[5]
+								const message = parts[6]
+								const filename = parts[7]
+
+								// Send worker-specific progress update to frontend
+								if (progressOperationId === operationId && this.mainWindow) {
+									const workerProgressData = {
+										operationId: progressOperationId,
+										workerId: workerId,
+										filePath: filePath,
+										filename: filename,
+										progress: progressValue,
+										stage: stage,
+										message: message,
+										timestamp: Date.now()
+									}
+
+									console.log(
+										`${this._module}: Worker ${workerId} progress: ${filename} = ${progressValue}% (${stage})`
+									)
+
+									// Send to worker-specific progress channel
+									this.mainWindow.webContents.send(
+										`python:worker-progress:${progressOperationId}`,
+										workerProgressData
+									)
+
+									// Also send to general worker progress channel
+									this.mainWindow.webContents.send(
+										"python:worker-progress",
+										workerProgressData
+									)
+								}
+							}
+						} catch (err) {
+							console.error(
+								`${this._module}: Error parsing worker progress line: ${line}`,
+								err
+							)
+						}
+					})
+
+					// Check for regular progress updates
 					const progressLines = output
 						.split("\n")
 						.filter((line) => line.startsWith("PROGRESS:"))
@@ -204,7 +401,11 @@ class PythonBridge {
 					// Filter out progress lines from regular output
 					const cleanOutput = output
 						.split("\n")
-						.filter((line) => !line.startsWith("PROGRESS:"))
+						.filter(
+							(line) =>
+								!line.startsWith("PROGRESS:") &&
+								!line.startsWith("WORKER_PROGRESS:")
+						)
 						.join("\n")
 
 					if (cleanOutput.trim()) {
@@ -225,188 +426,52 @@ class PythonBridge {
 					// Clean up operation tracking
 					this.operations.delete(operationId)
 
+					console.log(`${this._module}: Process completed with code: ${code}`)
+
 					if (code === 0) {
 						try {
-							// Clean up result string and trim any extra whitespace
-							result = result.trim()
-							console.log(`${this._module}: Final result string: "${result}"`)
+							// Parse the JSON result
+							const cleanResult = result.trim()
+							console.log(`${this._module}: Final result string: "${cleanResult}"`)
 
-							// Parse JSON result from Python
-							const parsedResult = JSON.parse(result)
+							if (!cleanResult) {
+								reject(new Error("No output received from Python process"))
+								return
+							}
 
-							// Add operation metadata
-							parsedResult.operationId = operationId
-							parsedResult.processingTime = parsedResult.processing_time || 0
-
+							const parsedResult = JSON.parse(cleanResult)
 							resolve(parsedResult)
-						} catch (err) {
-							console.error(
-								`${this._module}: Failed to parse Python result: "${result}"`
+						} catch (parseError) {
+							console.error(`${this._module}: JSON parse error:`, parseError)
+							console.error(`${this._module}: Raw output was: "${result}"`)
+							reject(
+								new Error(`Failed to parse Python output: ${parseError.message}`)
 							)
-							console.error(`${this._module}: Parse error: ${err.message}`)
-							reject(new Error(`Failed to parse Python result: ${err.message}`))
 						}
 					} else {
-						console.error(
-							`${this._module}: Python process exited with code ${code}: ${errorOutput}`
-						)
-						reject(new Error(`Python process exited with code ${code}: ${errorOutput}`))
+						const errorMessage =
+							errorOutput || `Python process exited with code ${code}`
+						console.error(`${this._module}: Python process failed: ${errorMessage}`)
+						reject(new Error(errorMessage))
 					}
 				})
 
-				// Handle process start errors
-				pythonProcess.on("error", (err) => {
-					console.error(`${this._module}: Failed to start Python process:`, err)
+				// Handle process errors
+				pythonProcess.on("error", (error) => {
 					this.operations.delete(operationId)
-					reject(new Error(`Failed to start Python process: ${err.message}`))
+					console.error(`${this._module}: Process error:`, error)
+					reject(new Error(`Python process error: ${error.message}`))
 				})
-			} catch (err) {
-				reject(
-					new Error(`${this._module}: Error executing Python function: ${err.message}`)
-				)
-			}
-		})
-	}
-
-	/**
-	 * Converts JavaScript camelCase parameters to Python snake_case format
-	 *
-	 * Handles nested objects recursively to ensure complete conversion
-	 * of complex parameter structures.
-	 *
-	 * @param {Object} params - Object with JavaScript camelCase keys
-	 * @returns {Object} Equivalent object with Python snake_case keys
-	 */
-	_convertToPythonParams(params) {
-		if (!params || typeof params !== "object" || Array.isArray(params)) {
-			return params
-		}
-
-		const result = {}
-
-		Object.keys(params).forEach((key) => {
-			// Convert camelCase to snake_case
-			const snakeKey = key.replace(/([A-Z])/g, "_$1").toLowerCase()
-
-			// Process nested objects recursively
-			if (
-				typeof params[key] === "object" &&
-				!Array.isArray(params[key]) &&
-				params[key] !== null
-			) {
-				result[snakeKey] = this._convertToPythonParams(params[key])
-			} else {
-				result[snakeKey] = params[key]
-			}
-		})
-
-		return result
-	}
-
-	/**
-	 * Registers IPC handlers for Python operations
-	 *
-	 * Creates handlers for file analysis, track extraction, batch operations,
-	 * and media file discovery.
-	 */
-	_setupRealHandlers() {
-		// Media file analysis handler
-		ipcMain.handle("python:analyze-file", async (_, filePath) => {
-			console.log(`${this._module}: Analyzing file: ${filePath}`)
-			try {
-				return await this.executePythonFunction("analyze_file", { file_path: filePath })
-			} catch (err) {
-				console.error(`${this._module}: Error analyzing file:`, err)
-				return { success: false, error: err.message }
-			}
-		})
-
-		// Track extraction handler
-		ipcMain.handle("python:extract-tracks", async (_, options) => {
-			console.log(`${this._module}: Extracting tracks from: ${options.filePath}`)
-
-			// Log received options for debugging
-			console.log(`${this._module}: Original extraction options from UI:`, options)
-
-			try {
-				// Separate operation ID from other parameters
-				const { operationId, ...optionsForPython } = options
-
-				// Convert parameter naming convention
-				const pythonOptions = this._convertToPythonParams(optionsForPython)
-
-				// Log converted options for debugging
-				console.log(`${this._module}: Converted Python options:`, pythonOptions)
-
-				return await this.executePythonFunction(
-					"extract_tracks",
-					pythonOptions,
-					operationId
-				)
-			} catch (err) {
-				console.error(`${this._module}: Error extracting tracks:`, err)
-				return { success: false, error: err.message }
-			}
-		})
-
-		// Specific track extraction handler
-		ipcMain.handle("python:extract-specific-track", async (_, options) => {
-			console.log(
-				`${this._module}: Extracting ${options.trackType} track ${options.trackId} from: ${options.filePath}`
-			)
-
-			try {
-				// Separate operation ID from other parameters
-				const { operationId, ...optionsForPython } = options
-
-				// Convert parameter naming convention
-				const pythonOptions = this._convertToPythonParams(optionsForPython)
-
-				return await this.executePythonFunction(
-					"extract_specific_track",
-					pythonOptions,
-					operationId
-				)
-			} catch (err) {
-				console.error(`${this._module}: Error extracting specific track:`, err)
-				return { success: false, error: err.message }
-			}
-		})
-
-		// Batch extraction handler
-		ipcMain.handle("python:batch-extract", async (_, options) => {
-			console.log(`${this._module}: Batch extracting from ${options.inputPaths.length} paths`)
-
-			try {
-				// Separate operation ID from other parameters
-				const { operationId, ...optionsForPython } = options
-
-				// Convert parameter naming convention
-				const pythonOptions = this._convertToPythonParams(optionsForPython)
-
-				return await this.executePythonFunction("batch_extract", pythonOptions, operationId)
-			} catch (err) {
-				console.error(`${this._module}: Error in batch extraction:`, err)
-				return { success: false, error: err.message }
-			}
-		})
-
-		// Media file discovery handler
-		ipcMain.handle("python:find-media-files", async (_, paths) => {
-			console.log(`${this._module}: Finding media files in ${paths.length} paths`)
-			try {
-				return await this.executePythonFunction("find_media_files_in_paths", { paths })
-			} catch (err) {
-				console.error(`${this._module}: Error finding media files:`, err)
-				return { success: false, error: err.message }
+			} catch (error) {
+				this.operations.delete(operationId)
+				console.error(`${this._module}: Function execution error:`, error)
+				reject(error)
 			}
 		})
 	}
 
 	/**
 	 * Terminates all Python processes on application shutdown
-	 *
-	 * @returns {void}
 	 */
 	cleanup() {
 		const terminatedCount = this.processManager.cleanupAllProcesses()
@@ -419,4 +484,3 @@ const pythonBridge = new PythonBridge()
 export default pythonBridge
 export const initPythonBridge = (mainWindow) => pythonBridge.initialize(mainWindow)
 export const cleanupPythonProcesses = () => pythonBridge.cleanup()
-
