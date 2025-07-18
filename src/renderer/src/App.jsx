@@ -9,7 +9,7 @@
  * - useExtraction: Controls the extraction process, options, and results
  *
  * Key features:
- * - Collapsible sidebar navigation
+ * - Collapsible sidebar navigation with multiple features
  * - Automatic tab progression based on workflow state
  * - Unified error handling across different operation stages
  * - Dynamic mode switching (single file vs. batch processing)
@@ -37,6 +37,7 @@ import { AppSidebar } from "@/components/AppSidebar"
 import ResultsTab from "@/components/ResultsTab"
 import SelectFilesTab from "@/components/SelectFilesTab"
 import { ThemeProvider } from "@/components/ThemeProvider"
+import { VideoMuxerTab } from "@/components/VideoMuxerTab"
 
 /**
  * Main application component that manages the extraction workflow
@@ -47,6 +48,10 @@ import { ThemeProvider } from "@/components/ThemeProvider"
  * @returns {JSX.Element} The rendered application
  */
 function App() {
+	// Feature navigation state
+	const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+	const [activeFeature, setActiveFeature] = useState("extract-tracks")
+
 	// Simple UI state - easy to understand
 	const [activeTab, setActiveTab] = useState("select")
 	const [selectedLanguages, setSelectedLanguages] = useState(["eng"]) // Default to English
@@ -108,6 +113,13 @@ function App() {
 
 	// Simple error handling - combine all errors into one
 	const error = fileError || analysisError || extractionError
+
+	// Handle feature navigation
+	const handleFeatureChange = (feature) => {
+		setActiveFeature(feature)
+		// Reset tab state when switching features
+		setActiveTab("select")
+	}
 
 	// Simple tab progression - move to next tab when ready
 	useEffect(() => {
@@ -255,105 +267,210 @@ function App() {
 		return path.split(/[\\/]/).pop()
 	}
 
+	// Render the appropriate feature component
+	const renderActiveFeature = () => {
+		switch (activeFeature) {
+			case "extract-tracks":
+				return (
+					<div className="flex-1 flex flex-col overflow-hidden">
+						{/* Application header with mode switch */}
+						<header className="bg-white shadow-sm p-4 flex items-center justify-between dark:bg-gray-800 dark:border-b dark:border-gray-700">
+							<div className="flex items-center gap-2">
+								<h2 className="text-xl font-medium flex items-center gap-2">
+									<FileText className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+									Track Extraction
+								</h2>
+							</div>
+
+							{/* Batch mode toggle */}
+							<div className="flex items-center gap-2">
+								<span className="text-sm text-gray-500 dark:text-gray-400">
+									Batch Mode
+								</span>
+								<Switch
+									checked={batchMode}
+									onCheckedChange={setBatchMode}
+									className="w-10 h-5 data-[state=checked]:bg-indigo-600"
+									thumbClassName="size-4"
+								/>
+								<span className="text-xs text-gray-400 dark:text-gray-500">
+									{batchMode ? "Enabled" : "Single File"}
+								</span>
+							</div>
+						</header>
+
+						{/* Tab-based content area */}
+						<div className="flex-1 overflow-auto p-6">
+							<Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+								{/* Simple tab navigation */}
+								<TabsList className="grid w-full grid-cols-3 mb-8">
+									<TabsTrigger value="select">1. Select Files</TabsTrigger>
+									<TabsTrigger value="analyze" disabled={!hasAnalyzed}>
+										2. Analyze & Configure
+									</TabsTrigger>
+									<TabsTrigger value="results" disabled={!extractionResult}>
+										3. Results
+									</TabsTrigger>
+								</TabsList>
+
+								{/* File selection tab - simplified */}
+								<TabsContent value="select">
+									<SelectFilesTab
+										filePath={filePath}
+										outputPath={outputPath}
+										isAnalyzing={isAnalyzing}
+										isBatchAnalyzing={isBatchAnalyzing}
+										batchMode={batchMode}
+										inputPaths={inputPaths}
+										handleSelectFile={handleSelectFile}
+										handleSelectOutputDir={handleSelectOutputDir}
+										handleSelectInputFiles={handleSelectInputFiles}
+										handleSelectInputDirectory={handleSelectInputDirectory}
+										handleAnalyzeFile={handleAnalyzeFile}
+										handleAnalyzeBatch={handleAnalyzeBatch}
+									/>
+								</TabsContent>
+
+								{/* Analysis configuration tab - simplified */}
+								<TabsContent value="analyze">
+									<AnalyzeTab
+										fileName={getFileName(filePath)}
+										analyzed={analyzed}
+										batchMode={batchMode}
+										batchAnalyzed={batchAnalyzed}
+										availableLanguages={availableLanguages}
+										selectedLanguages={selectedLanguages}
+										extractionOptions={extractionOptions}
+										maxWorkers={maxWorkers}
+										setMaxWorkers={setMaxWorkers}
+										toggleLanguage={toggleLanguage}
+										toggleOption={toggleOption}
+										handleExtractTracks={handleExtractTracks}
+										isExtracting={isExtracting}
+										setActiveTab={setActiveTab}
+										filePath={filePath}
+										outputPath={outputPath}
+										inputPaths={inputPaths}
+										fileProgressMap={fileProgressMap}
+										progressValue={progressValue}
+										progressText={progressText}
+									/>
+								</TabsContent>
+
+								{/* Results tab - shows extraction results */}
+								<TabsContent value="results">
+									<ResultsTab
+										extractionResult={extractionResult}
+										outputPath={outputPath}
+										isExtracting={isExtracting}
+										progressValue={progressValue}
+										progressText={progressText}
+										fileProgressMap={fileProgressMap}
+										handleReset={handleResetAll}
+										setActiveTab={setActiveTab}
+										batchMode={batchMode}
+									/>
+								</TabsContent>
+							</Tabs>
+						</div>
+					</div>
+				)
+			case "video-muxing":
+				return (
+					<div className="flex-1 flex flex-col overflow-hidden">
+						{/* Header */}
+						<header className="bg-white shadow-sm p-4 flex items-center justify-between dark:bg-gray-800 dark:border-b dark:border-gray-700">
+							<div className="flex items-center gap-2">
+								<h2 className="text-xl font-medium flex items-center gap-2">
+									<span className="text-indigo-600 dark:text-indigo-400">
+										Video Muxing
+									</span>
+								</h2>
+							</div>
+						</header>
+
+						{/* Content */}
+						<div className="flex-1 overflow-auto p-6 bg-white dark:bg-gray-800">
+							<VideoMuxerTab />
+						</div>
+					</div>
+				)
+			case "subtitle-editor":
+				return (
+					<div className="flex-1 flex flex-col overflow-hidden">
+						<header className="bg-white shadow-sm p-4 flex items-center justify-between dark:bg-gray-800 dark:border-b dark:border-gray-700">
+							<div className="flex items-center gap-2">
+								<h2 className="text-xl font-medium flex items-center gap-2">
+									<span className="text-indigo-600 dark:text-indigo-400">
+										Subtitle Editor
+									</span>
+								</h2>
+							</div>
+						</header>
+						<div className="flex-1 overflow-auto p-6">
+							<div className="text-center text-gray-500 dark:text-gray-400">
+								<h3 className="text-lg font-medium mb-2">Coming Soon</h3>
+								<p>The Subtitle Editor feature is currently under development.</p>
+							</div>
+						</div>
+					</div>
+				)
+			case "video-editing":
+				return (
+					<div className="flex-1 flex flex-col overflow-hidden">
+						<header className="bg-white shadow-sm p-4 flex items-center justify-between dark:bg-gray-800 dark:border-b dark:border-gray-700">
+							<div className="flex items-center gap-2">
+								<h2 className="text-xl font-medium flex items-center gap-2">
+									<span className="text-indigo-600 dark:text-indigo-400">
+										Video Editing
+									</span>
+								</h2>
+							</div>
+						</header>
+						<div className="flex-1 overflow-auto p-6">
+							<div className="text-center text-gray-500 dark:text-gray-400">
+								<h3 className="text-lg font-medium mb-2">Coming Soon</h3>
+								<p>The Video Editing feature is currently under development.</p>
+							</div>
+						</div>
+					</div>
+				)
+			default:
+				return (
+					<div className="flex-1 flex flex-col overflow-hidden">
+						<header className="bg-white shadow-sm p-4 flex items-center justify-between dark:bg-gray-800 dark:border-b dark:border-gray-700">
+							<div className="flex items-center gap-2">
+								<h2 className="text-xl font-medium flex items-center gap-2">
+									<FileText className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+									Track Extraction
+								</h2>
+							</div>
+						</header>
+						<div className="flex-1 overflow-auto p-6">
+							<div className="text-center text-gray-500 dark:text-gray-400">
+								<h3 className="text-lg font-medium mb-2">Feature Not Found</h3>
+								<p>The selected feature is not available.</p>
+							</div>
+						</div>
+					</div>
+				)
+		}
+	}
+
 	return (
-		<div className="flex-1 flex flex-col overflow-hidden">
-			{/* Application header with mode switch */}
-			<header className="bg-white shadow-sm p-4 flex items-center justify-between dark:bg-gray-800 dark:border-b dark:border-gray-700">
-				<div className="flex items-center gap-2">
-					<h2 className="text-xl font-medium flex items-center gap-2">
-						<FileText className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
-						Track Extraction
-					</h2>
-				</div>
+		<ThemeProvider>
+			<div className="flex h-screen bg-gray-50 text-gray-900 overflow-hidden dark:bg-gray-900 dark:text-gray-100">
+				{/* Navigation sidebar */}
+				<AppSidebar
+					collapsed={sidebarCollapsed}
+					activeFeature={activeFeature}
+					onFeatureChange={handleFeatureChange}
+				/>
 
-				{/* Batch mode toggle */}
-				<div className="flex items-center gap-2">
-					<span className="text-sm text-gray-500 dark:text-gray-400">Batch Mode</span>
-					<Switch
-						checked={batchMode}
-						onCheckedChange={setBatchMode}
-						className="w-10 h-5 data-[state=checked]:bg-indigo-600"
-						thumbClassName="size-4"
-					/>
-					<span className="text-xs text-gray-400 dark:text-gray-500">
-						{batchMode ? "Enabled" : "Single File"}
-					</span>
-				</div>
-			</header>
-
-			{/* Tab-based content area */}
-			<div className="flex-1 overflow-auto p-6">
-				<Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-					{/* Simple tab navigation */}
-					<TabsList className="grid w-full grid-cols-3 mb-8">
-						<TabsTrigger value="select">1. Select Files</TabsTrigger>
-						<TabsTrigger value="analyze" disabled={!hasAnalyzed}>
-							2. Analyze & Configure
-						</TabsTrigger>
-						<TabsTrigger value="results" disabled={!extractionResult}>
-							3. Results
-						</TabsTrigger>
-					</TabsList>
-
-					{/* File selection tab - simplified */}
-					<TabsContent value="select">
-						<SelectFilesTab
-							filePath={filePath}
-							outputPath={outputPath}
-							isAnalyzing={isAnalyzing}
-							isBatchAnalyzing={isBatchAnalyzing}
-							batchMode={batchMode}
-							inputPaths={inputPaths}
-							handleSelectFile={handleSelectFile}
-							handleSelectOutputDir={handleSelectOutputDir}
-							handleSelectInputFiles={handleSelectInputFiles}
-							handleSelectInputDirectory={handleSelectInputDirectory}
-							handleAnalyzeFile={handleAnalyzeFile}
-							handleAnalyzeBatch={handleAnalyzeBatch}
-						/>
-					</TabsContent>
-
-					{/* Analysis configuration tab - simplified */}
-					<TabsContent value="analyze">
-						<AnalyzeTab
-							fileName={getFileName(filePath)}
-							analyzed={analyzed}
-							batchMode={batchMode}
-							batchAnalyzed={batchAnalyzed}
-							availableLanguages={availableLanguages}
-							selectedLanguages={selectedLanguages}
-							extractionOptions={extractionOptions}
-							maxWorkers={maxWorkers}
-							setMaxWorkers={setMaxWorkers}
-							toggleLanguage={toggleLanguage}
-							toggleOption={toggleOption}
-							handleExtractTracks={handleExtractTracks}
-							isExtracting={isExtracting}
-							setActiveTab={setActiveTab}
-							filePath={filePath}
-							outputPath={outputPath}
-							inputPaths={inputPaths}
-							fileProgressMap={fileProgressMap}
-							progressValue={progressValue}
-							progressText={progressText}
-						/>
-					</TabsContent>
-
-					{/* Results tab - shows extraction results */}
-					<TabsContent value="results">
-						<ResultsTab
-							extractionResult={extractionResult}
-							outputPath={outputPath}
-							isExtracting={isExtracting}
-							progressValue={progressValue}
-							progressText={progressText}
-							fileProgressMap={fileProgressMap}
-							handleReset={handleResetAll}
-							setActiveTab={setActiveTab}
-							batchMode={batchMode}
-						/>
-					</TabsContent>
-				</Tabs>
+				{/* Main content area */}
+				<main className="flex-1 flex flex-col overflow-hidden">
+					{renderActiveFeature()}
+				</main>
 			</div>
 
 			{/* Simple error display - appears at bottom right */}
@@ -366,7 +483,7 @@ function App() {
 					</Alert>
 				</div>
 			)}
-		</div>
+		</ThemeProvider>
 	)
 }
 
