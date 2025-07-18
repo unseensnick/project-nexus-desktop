@@ -61,7 +61,7 @@ function ProgressCard({ progressText, progressValue, fileProgressMap = {}, batch
 					<span>{progressText}</span>
 					{batchMode && (
 						<Badge variant="outline" className="ml-2">
-							{progressValue}% overall
+							{Math.round(progressValue * 100) / 100}% overall
 						</Badge>
 					)}
 				</CardDescription>
@@ -72,7 +72,7 @@ function ProgressCard({ progressText, progressValue, fileProgressMap = {}, batch
 					<div className="text-sm font-medium mb-1">Overall Progress</div>
 					<Progress value={progressValue} className="w-full" />
 					<div className="mt-1 text-right text-xs text-muted-foreground">
-						{progressValue}% Complete
+						{Math.round(progressValue * 100) / 100}% Complete
 					</div>
 				</div>
 
@@ -112,7 +112,7 @@ function ProgressCard({ progressText, progressValue, fileProgressMap = {}, batch
 										>
 											{item.status}
 										</span>
-										<span>{item.progress}%</span>
+										<span>{Math.round(item.progress * 100) / 100}%</span>
 									</div>
 								</div>
 							))}

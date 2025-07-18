@@ -6,7 +6,7 @@
  */
 
 import React, { useEffect, useState } from "react"
-import usePythonApi from "./usePythonApi"
+import { usePythonApi } from "./usePythonApi"
 
 /**
  * Hook for managing track extraction operations
@@ -22,7 +22,11 @@ function useExtraction(filePath, outputPath) {
 	const [progressValue, setProgressValue] = useState(0)
 	const [progressText, setProgressText] = useState("")
 
-	const { callPythonFunction, progress } = usePythonApi()
+	const {
+		extractTracks,
+		extractSpecificTrack: extractSpecificTrackApi,
+		progress
+	} = usePythonApi()
 
 	/**
 	 * Process extraction result for display
@@ -75,14 +79,20 @@ function useExtraction(filePath, outputPath) {
 		setProgressText("Starting extraction...")
 
 		try {
-			// Call the backend extraction function without progress callback
-			const result = await callPythonFunction("track-extractor.extract_tracks", {
-				file_path: filePath,
-				output_dir: outputPath,
+			// Generate operation ID for this extraction
+			const operationId = "extraction_" + Date.now()
+			console.log(`useExtraction: Starting extraction with operation ID: ${operationId}`)
+
+			// Call the backend extraction function with progress tracking
+			const result = await extractTracks({
+				filePath: filePath,
+				outputDir: outputPath,
 				languages: languages,
-				extraction_options: extractionOptions,
-				operation_id: "extraction_" + Date.now()
+				extractionOptions: extractionOptions,
+				operationId: operationId
 			})
+
+			console.log(`useExtraction: Extraction completed with result:`, result)
 
 			if (result && result.success) {
 				// Process the extraction result for display
@@ -126,14 +136,14 @@ function useExtraction(filePath, outputPath) {
 		setProgressText(`Starting extraction of ${trackType} track ${trackId}...`)
 
 		try {
-			// Call the backend specific track extraction function without progress callback
-			const result = await callPythonFunction("track-extractor.extract_specific_track", {
-				file_path: filePath,
-				output_dir: outputPath,
-				track_type: trackType,
-				track_id: trackId,
-				extraction_options: {},
-				operation_id: "specific_extraction_" + Date.now()
+			// Call the backend specific track extraction function with progress tracking
+			const result = await extractSpecificTrackApi({
+				filePath: filePath,
+				outputDir: outputPath,
+				trackType: trackType,
+				trackId: trackId,
+				extractionOptions: {},
+				operationId: "specific_extraction_" + Date.now()
 			})
 
 			if (result && result.success) {
@@ -170,9 +180,15 @@ function useExtraction(filePath, outputPath) {
 
 	// Update progress from the shared progress system
 	useEffect(() => {
+		console.log(`useExtraction: Received progress update:`, progress)
 		if (progress && typeof progress === "object") {
-			setProgressValue(progress.percent || 0)
-			setProgressText(progress.message || "Extracting...")
+			console.log(
+				`useExtraction: Updating progress - overall_percent: ${progress.overall_percent}, message: ${progress.metadata?.message}`
+			)
+			// Round to 2 decimal places for cleaner display
+			const roundedPercent = Math.round((progress.overall_percent || 0) * 100) / 100
+			setProgressValue(roundedPercent)
+			setProgressText(progress.metadata?.message || "Extracting...")
 		}
 	}, [progress])
 

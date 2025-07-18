@@ -160,7 +160,7 @@ export function useProgress(options = {}) {
 			totalOperations > 0 ? (completedOperations / totalOperations) * 100 : 0
 
 		return {
-			percent: overallPercent,
+			percent: Math.round(overallPercent * 100) / 100, // Round to 2 decimal places
 			completed: completedOperations,
 			total: totalOperations,
 			active: activeOperations.filter((op) => op.status === "running").length
@@ -246,7 +246,7 @@ export function useOperationProgress(operationId, options = {}) {
 		isRunning: progress?.status === "running",
 		isCompleted: progress?.status === "completed",
 		isFailed: progress?.status === "failed",
-		percent: progress?.overall_percent || 0,
+		percent: Math.round((progress?.overall_percent || 0) * 100) / 100, // Round to 2 decimal places
 		stage: progress?.stages?.[0] || null,
 		metadata: progress?.metadata || {}
 	}

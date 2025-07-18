@@ -39,7 +39,6 @@ class SharedServices:
     """
     
     _media_analyzer: Optional[MediaAnalyzer] = None
-    _progress_manager: Optional[ProgressManager] = None
     _config_cache: Dict = {}
     
     @classmethod
@@ -52,9 +51,9 @@ class SharedServices:
     @classmethod
     def get_progress_manager(cls) -> ProgressManager:
         """Get the shared progress manager instance."""
-        if cls._progress_manager is None:
-            cls._progress_manager = ProgressManager()
-        return cls._progress_manager
+        # Use the global singleton instance to ensure consistency
+        from core.progress_manager import get_progress_manager
+        return get_progress_manager()
     
     @classmethod
     def get_config(cls, config_type: str = "app") -> Dict:

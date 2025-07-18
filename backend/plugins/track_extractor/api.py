@@ -161,9 +161,10 @@ def extract_tracks(
             operation_type=OperationType.EXTRACTION,
             name="Track Extraction",
             description=f"Extracting tracks from {Path(file_path).name}",
-            total_items=len(languages),
+            total_items=1,  # We'll update this based on actual tracks found
             stages=["analysis", "extraction", "completion"],
-            metadata={"file_path": file_path, "languages": languages}
+            metadata={"file_path": file_path, "languages": languages},
+            operation_id=extraction_operation_id
         ) as (op_id, progress_callback):
             
             # First analyze the file to get track information
@@ -177,7 +178,7 @@ def extract_tracks(
             # Update progress after analysis
             progress_callback({
                 "stage": "analysis",
-                "percent": 25,
+                "percent": 100,
                 "message": "File analysis completed"
             })
             
@@ -215,7 +216,8 @@ def extract_tracks(
                 output_dir,
                 languages,
                 track_types=track_types,
-                progress_callback=progress_callback
+                progress_callback=progress_callback,
+                remove_letterbox=extraction_options.get("removeLetterbox", False) if extraction_options else False
             )
         
         if extraction_result["success"]:
@@ -287,7 +289,8 @@ def extract_specific_track(
             description=f"Extracting {track_type} track {track_id} from {Path(file_path).name}",
             total_items=1,
             stages=["analysis", "extraction", "completion"],
-            metadata={"file_path": file_path, "track_type": track_type, "track_id": track_id}
+            metadata={"file_path": file_path, "track_type": track_type, "track_id": track_id},
+            operation_id=extraction_operation_id
         ) as (op_id, progress_callback):
             
             # First analyze the file to get track information
@@ -301,7 +304,7 @@ def extract_specific_track(
             # Update progress after analysis
             progress_callback({
                 "stage": "analysis",
-                "percent": 25,
+                "percent": 100,
                 "message": "File analysis completed"
             })
             
@@ -318,7 +321,8 @@ def extract_specific_track(
                 output_dir,
                 track_type,
                 track_id,
-                progress_callback=progress_callback
+                progress_callback=progress_callback,
+                remove_letterbox=extraction_options.get("removeLetterbox", False) if extraction_options else False
             )
         
         if extraction_result["success"]:

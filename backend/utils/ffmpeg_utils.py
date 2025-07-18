@@ -208,6 +208,99 @@ class FFmpegUtils:
         except Exception as e:
             logger.error(f"Error running FFmpeg command: {e}")
             raise
+
+    @staticmethod
+    def run_ffmpeg_command_with_progress(
+        command: list, 
+        progress_callback=None,
+        timeout: int = 3600
+    ) -> Tuple[int, str, str]:
+        """
+        Run an FFmpeg command with progress reporting.
+        
+        Args:
+            command: Command arguments (without ffmpeg executable)
+            progress_callback: Optional callback to receive progress updates
+            timeout: Command timeout in seconds
+            
+        Returns:
+            Tuple of (return_code, stdout, stderr)
+            
+        Raises:
+            FileNotFoundError: If ffmpeg is not found
+            subprocess.TimeoutExpired: If command times out
+            subprocess.CalledProcessError: If command fails
+        """
+        ffmpeg_path = FFmpegUtils.find_ffmpeg_path()
+        if not ffmpeg_path:
+            raise FileNotFoundError("FFmpeg not found. Please install FFmpeg.")
+        
+        # Build full command - don't add -progress flag as it can cause issues
+        full_command = [ffmpeg_path] + command
+        
+        logger.debug(f"Running FFmpeg command with progress: {' '.join(full_command)}")
+        
+        try:
+            process = subprocess.Popen(
+                full_command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,  # Redirect stderr to stdout for unified output
+                text=True,
+                bufsize=0,  # Unbuffered
+                universal_newlines=True
+            )
+            
+            stdout_data = ""
+            
+            # Read output in real-time
+            while True:
+                # Check if process is still running
+                if process.poll() is not None:
+                    break
+                
+                # Read stdout line by line for progress updates
+                if process.stdout:
+                    try:
+                        line = process.stdout.readline()
+                        if line:
+                            stdout_data += line
+                            
+                            # Send progress updates to callback
+                            if progress_callback:
+                                progress_callback(line.strip())
+                        else:
+                            # If no line is read, the process might have finished
+                            break
+                    except Exception as e:
+                        logger.debug(f"Error reading FFmpeg output: {e}")
+                        break
+            
+            # Wait for process to complete and get final return code
+            process.wait()
+            
+            # Read any remaining output
+            remaining_output = process.stdout.read() if process.stdout else ""
+            if remaining_output:
+                stdout_data += remaining_output
+                
+                # Process any remaining progress lines
+                if progress_callback:
+                    for line in remaining_output.split('\n'):
+                        if line.strip():
+                            progress_callback(line.strip())
+            
+            return process.returncode, stdout_data, ""
+            
+        except subprocess.TimeoutExpired:
+            logger.error(f"FFmpeg command timed out after {timeout} seconds")
+            if process:
+                process.kill()
+            raise
+        except Exception as e:
+            logger.error(f"Error running FFmpeg command: {e}")
+            if process:
+                process.kill()
+            raise
     
     @staticmethod
     def validate_setup() -> dict:

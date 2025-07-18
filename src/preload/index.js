@@ -52,10 +52,12 @@ const dialogApi = {
 	/**
 	 * Subscribe to progress updates for operations
 	 * @param {Function} callback - Function to call with progress updates
+	 * @param {string} operationId - Optional operation ID for specific operation tracking
 	 * @returns {Function} - Unsubscribe function
 	 */
-	subscribeToProgress: (callback) => {
-		const channel = "python:progress"
+	subscribeToProgress: (callback, operationId) => {
+		// Use operation-specific channel if operationId is provided
+		const channel = operationId ? `python:progress:${operationId}` : "python:progress"
 
 		// Remove any existing listeners
 		ipcRenderer.removeAllListeners(channel)

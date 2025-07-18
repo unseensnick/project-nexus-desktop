@@ -139,7 +139,8 @@ class ProgressManager:
         total_items: int = 1,
         stages: Optional[List[str]] = None,
         parent_id: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
+        operation_id: Optional[str] = None
     ) -> str:
         """
         Create a new operation for tracking.
@@ -152,11 +153,14 @@ class ProgressManager:
             stages: List of stage names for this operation
             parent_id: ID of parent operation (for hierarchical tracking)
             metadata: Additional metadata for the operation
+            operation_id: Optional operation ID to use (if not provided, generates a new UUID)
             
         Returns:
             Unique identifier for the operation
         """
-        operation_id = str(uuid.uuid4())
+        # Use provided operation_id or generate a new one
+        if operation_id is None:
+            operation_id = str(uuid.uuid4())
         
         # Create progress stages
         progress_stages = []
@@ -227,41 +231,57 @@ class ProgressManager:
         
         Args:
             operation_id: ID of the operation to update
-            current_item: Current item being processed (0-based)
+            current_item: Current item being processed
             completed_items: Number of completed items
             stage_name: Name of the current stage
-            stage_percent: Percentage complete for the current stage
-            metadata: Additional metadata to update
+            stage_percent: Progress percentage for the current stage
+            metadata: Additional metadata for the progress update
             
         Returns:
-            True if progress was updated successfully
+            True if update was successful, False otherwise
         """
-        with self._lock:
-            if operation_id not in self._operations:
-                logger.error(f"Operation not found: {operation_id}")
-                return False
+        try:
+            logger.info(f"ProgressManager: Updating progress for {operation_id} - stage: {stage_name}, percent: {stage_percent}")
             
-            operation = self._operations[operation_id]
-            
-            # Update item progress
-            if current_item is not None:
-                operation.current_item = current_item
-            if completed_items is not None:
-                operation.completed_items = completed_items
-            
-            # Update stage progress
-            if stage_name and stage_percent is not None:
-                for stage in operation.stages:
-                    if stage.name == stage_name:
-                        stage.current_percent = max(0.0, min(100.0, stage_percent))
-                        break
-            
-            # Update metadata
-            if metadata:
-                operation.metadata.update(metadata)
-            
-            self._notify_progress(operation_id)
-            return True
+            with self._lock:
+                if operation_id not in self._operations:
+                    logger.warning(f"Operation {operation_id} not found")
+                    return False
+                
+                operation = self._operations[operation_id]
+                
+                # Update operation status
+                if operation.status == OperationStatus.PENDING:
+                    operation.status = OperationStatus.RUNNING
+                
+                # Update progress values
+                if current_item is not None:
+                    operation.current_item = current_item
+                if completed_items is not None:
+                    operation.completed_items = completed_items
+                
+                # Update stage progress
+                if stage_name and stage_percent is not None:
+                    for stage in operation.stages:
+                        if stage.name == stage_name:
+                            stage.current_percent = stage_percent
+                            if stage_percent >= 100:
+                                stage.completed = True
+                            logger.info(f"ProgressManager: Updated stage {stage_name} to {stage_percent}%")
+                            break
+                
+                # Update metadata
+                if metadata:
+                    operation.metadata.update(metadata)
+                
+                # Notify all callbacks about the progress update
+                self._notify_progress(operation_id)
+                
+                return True
+                
+        except Exception as e:
+            logger.error(f"Error updating progress for {operation_id}: {e}")
+            return False
     
     def complete_operation(self, operation_id: str, success: bool = True, error: Optional[str] = None) -> bool:
         """
@@ -423,12 +443,24 @@ class ProgressManager:
         """
         def progress_callback(progress_data: Dict[str, Any]):
             """Progress callback for operation updates."""
+            logger.info(f"ProgressManager: Received progress callback for {operation_id}: {progress_data}")
+            
             # Extract standard progress information
             current_item = progress_data.get("current_item")
             completed_items = progress_data.get("completed_items")
             stage_name = progress_data.get("stage")
             stage_percent = progress_data.get("percent")
             metadata = progress_data.get("metadata")
+            
+            # Handle message field (convert to metadata format)
+            message = progress_data.get("message")
+            if message and not metadata:
+                metadata = {"message": message}
+            elif message and metadata:
+                metadata = dict(metadata)
+                metadata["message"] = message
+            
+            logger.info(f"ProgressManager: Extracted progress data - stage: {stage_name}, percent: {stage_percent}, metadata: {metadata}")
             
             # Update operation progress
             self.update_progress(
@@ -446,21 +478,31 @@ class ProgressManager:
         """Notify all registered callbacks about progress updates."""
         progress_data = self.get_operation_progress(operation_id)
         if not progress_data:
+            logger.warning(f"ProgressManager: No progress data found for {operation_id}")
             return
+        
+        logger.info(f"ProgressManager: Notifying progress for {operation_id} - overall_percent: {progress_data.get('overall_percent', 0)}")
         
         # Notify operation-specific callback
         if operation_id in self._callbacks:
             try:
                 self._callbacks[operation_id](progress_data)
+                logger.info(f"ProgressManager: Called operation callback for {operation_id}")
             except Exception as e:
                 logger.error(f"Error in operation callback for {operation_id}: {e}")
         
         # Notify bridge callback
         if self._bridge_callback:
             try:
+                logger.info(f"ProgressManager: Calling bridge callback for {operation_id}")
                 self._bridge_callback(operation_id, progress_data)
+                logger.info(f"ProgressManager: Bridge callback completed for {operation_id}")
             except Exception as e:
                 logger.error(f"Error in bridge callback for {operation_id}: {e}")
+                import traceback
+                logger.error(f"ProgressManager: Bridge callback traceback: {traceback.format_exc()}")
+        else:
+            logger.warning(f"ProgressManager: No bridge callback registered")
     
     def register_callback(self, operation_id: str, callback: Callable[[Dict[str, Any]], None]) -> None:
         """
@@ -517,7 +559,8 @@ class ProgressManager:
         total_items: int = 1,
         stages: Optional[List[str]] = None,
         parent_id: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None
+        metadata: Optional[Dict[str, Any]] = None,
+        operation_id: Optional[str] = None
     ):
         """
         Context manager for tracking an operation.
@@ -530,6 +573,7 @@ class ProgressManager:
             stages: List of stage names for this operation
             parent_id: ID of parent operation
             metadata: Additional metadata for the operation
+            operation_id: Optional operation ID to use
             
         Yields:
             Tuple of (operation_id, progress_callback)
@@ -541,16 +585,22 @@ class ProgressManager:
             total_items=total_items,
             stages=stages,
             parent_id=parent_id,
-            metadata=metadata
+            metadata=metadata,
+            operation_id=operation_id
         )
         
         progress_callback = self.create_progress_callback(operation_id)
         
+        logger.info(f"ProgressManager: Created operation {operation_id} with progress callback")
+        
         try:
             self.start_operation(operation_id)
+            logger.info(f"ProgressManager: Started operation {operation_id}")
             yield operation_id, progress_callback
             self.complete_operation(operation_id, success=True)
+            logger.info(f"ProgressManager: Completed operation {operation_id}")
         except Exception as e:
+            logger.error(f"ProgressManager: Operation {operation_id} failed: {e}")
             self.complete_operation(operation_id, success=False, error=str(e))
             raise
     

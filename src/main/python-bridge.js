@@ -166,10 +166,14 @@ class PythonBridge {
 								if (jsonData.type === "progress_update") {
 									console.log(`${this._module}: Progress update:`, jsonData)
 
-									// Forward progress updates to renderer
-									if (jsonData.data && typeof jsonData.data === "object") {
+									// Forward progress updates to renderer with operation-specific channel
+									if (
+										jsonData.data &&
+										typeof jsonData.data === "object" &&
+										jsonData.operation_id
+									) {
 										this.mainWindow.webContents.send(
-											`python:progress:${opId}`,
+											`python:progress:${jsonData.operation_id}`,
 											jsonData.data
 										)
 									}

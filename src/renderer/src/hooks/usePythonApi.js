@@ -71,13 +71,17 @@ export function usePythonApi() {
 				progressUnsubscribe.current()
 			}
 
+			console.log(`Setting up progress tracking for operation: ${operationId}`)
+
 			// Set up new progress tracking
 			if (window.electronAPI?.subscribeToProgress) {
 				const unsubscribe = window.electronAPI.subscribeToProgress((progressData) => {
-					if (progressData.operation_id === operationId) {
-						handleProgress(progressData.data)
-					}
-				})
+					console.log(
+						`Received progress data for operation ${operationId}:`,
+						progressData
+					)
+					handleProgress(progressData)
+				}, operationId)
 				progressUnsubscribe.current = unsubscribe
 				return unsubscribe
 			}
@@ -146,6 +150,7 @@ export function usePythonApi() {
 		async (options) => {
 			// Generate operation ID for progress tracking
 			const operationId = options.operationId || uuidv4()
+			console.log(`usePythonApi: Starting extractTracks with operation ID: ${operationId}`)
 			setProgress(null)
 
 			// Set up progress tracking
@@ -160,6 +165,7 @@ export function usePythonApi() {
 					operation_id: operationId
 				})
 
+				console.log(`usePythonApi: extractTracks completed with result:`, result)
 				return result
 			} finally {
 				// Always clean up progress tracking

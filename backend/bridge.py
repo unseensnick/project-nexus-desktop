@@ -180,6 +180,8 @@ class Bridge:
             progress_data: Progress data to send
         """
         try:
+            logger.info(f"Bridge: Sending progress update for {operation_id} - overall_percent: {progress_data.get('overall_percent', 0)}")
+            
             # Create progress update message
             progress_message = {
                 "type": "progress_update",
@@ -193,6 +195,8 @@ class Bridge:
             
         except Exception as e:
             logger.error(f"Error sending progress update: {e}")
+            import traceback
+            logger.error(f"Bridge: Traceback: {traceback.format_exc()}")
     
     def run(self):
         """
@@ -281,6 +285,9 @@ def main():
     direct function calls via command line arguments.
     """
     try:
+        # Always create bridge instance to register progress callbacks
+        bridge = Bridge()
+        
         # Check if we have command line arguments for direct function call
         if len(sys.argv) >= 3:
             # Direct function call mode: python bridge.py function_name args_json [operation_id]
@@ -323,7 +330,6 @@ def main():
                 
         else:
             # Interactive mode - read from stdin
-            bridge = Bridge()
             bridge.run()
             
     except Exception as e:
