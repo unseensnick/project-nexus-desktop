@@ -27,7 +27,7 @@ from core.shared_services import SharedServices
 from core.progress_manager import OperationType
 
 logger = logging.getLogger(__name__)
-PLUGIN_NAME = "track-extractor"
+PLUGIN_NAME = "track_extractor"
 
 
 def analyze_file(file_path: str) -> Dict:
@@ -443,6 +443,105 @@ def get_supported_formats() -> Dict:
         
     except Exception as e:
         error_msg = f"Failed to get supported formats: {e}"
+        SharedServices.log_error(error_msg, PLUGIN_NAME)
+        return {
+            "success": False,
+            "error": error_msg
+        } 
+
+
+def batch_extract_tracks(
+    input_paths: List[str],
+    output_dir: str,
+    languages: List[str],
+    extraction_options: Optional[Dict] = None,
+    max_workers: int = 1,
+    operation_id: Optional[str] = None
+) -> Dict:
+    """
+    Extract tracks from multiple media files in batch mode.
+    
+    This function processes multiple files either sequentially or concurrently based on
+    the max_workers parameter. With max_workers > 1, uses a thread pool to process
+    files in parallel for improved performance.
+    
+    Args:
+        input_paths: List of file or directory paths to process
+        output_dir: Base directory where extracted tracks will be saved
+        languages: List of language codes to extract (e.g., ["eng", "spa"])
+        extraction_options: Optional extraction configuration
+        max_workers: Maximum number of concurrent worker threads
+        operation_id: Optional operation ID for progress tracking
+        
+    Returns:
+        Dictionary with batch extraction results in standard format:
+        {
+            "success": bool,
+            "data": {
+                "total_files": int,
+                "processed_files": int,
+                "successful_files": int,
+                "failed_files": int,
+                "extracted_tracks": int,
+                "failed_files_list": List[Tuple[str, str]],
+                "operation_id": str
+            },
+            "error": str (if success=False)
+        }
+    """
+    try:
+        from .extraction import TrackExtractor
+        from .batch_processor import BatchProcessor
+        
+        SharedServices.log_info(
+            f"Starting batch extraction from {len(input_paths)} paths to {output_dir}", 
+            PLUGIN_NAME
+        )
+        
+        # Use progress manager for tracking
+        progress_manager = SharedServices.get_progress_manager()
+        
+        # Create operation for batch extraction
+        batch_operation_id = operation_id or f"batch_extraction_{int(time.time())}"
+        
+        with progress_manager.track_operation(
+            operation_type=OperationType.BATCH_EXTRACTION,
+            name="Batch Track Extraction",
+            description=f"Extracting tracks from {len(input_paths)} input paths",
+            total_items=len(input_paths),
+            stages=["file_discovery", "batch_processing", "completion"],
+            metadata={"input_paths": input_paths, "languages": languages, "max_workers": max_workers},
+            operation_id=batch_operation_id
+        ) as (op_id, progress_callback):
+            
+            # Create batch processor
+            batch_processor = BatchProcessor(
+                input_paths=input_paths,
+                output_dir=output_dir,
+                languages=languages,
+                extraction_options=extraction_options or {},
+                max_workers=max_workers,
+                progress_callback=progress_callback
+            )
+            
+            # Process the batch
+            result = batch_processor.process_batch()
+            
+            return {
+                "success": True,
+                "data": {
+                    "total_files": result["total_files"],
+                    "processed_files": result["processed_files"],
+                    "successful_files": result["successful_files"],
+                    "failed_files": result["failed_files"],
+                    "extracted_tracks": result["extracted_tracks"],
+                    "failed_files_list": result["failed_files_list"],
+                    "operation_id": batch_operation_id
+                }
+            }
+        
+    except Exception as e:
+        error_msg = f"Batch extraction failed: {e}"
         SharedServices.log_error(error_msg, PLUGIN_NAME)
         return {
             "success": False,

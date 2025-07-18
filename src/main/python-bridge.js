@@ -396,6 +396,52 @@ class PythonBridge {
 	cleanup() {
 		const terminatedCount = this.processManager.cleanupAllProcesses()
 		console.log(`${this._module}: Cleaned up ${terminatedCount} Python processes`)
+
+		// Also kill any remaining FFmpeg processes
+		this._killFFmpegProcesses()
+	}
+
+	/**
+	 * Kills any remaining FFmpeg processes
+	 */
+	_killFFmpegProcesses() {
+		const { exec } = require("child_process")
+
+		if (process.platform === "win32") {
+			// Windows: Kill ffmpeg and ffprobe processes
+			exec("taskkill /f /im ffmpeg.exe /t", (error) => {
+				if (error) {
+					console.log(`${this._module}: No ffmpeg processes found or already terminated`)
+				} else {
+					console.log(`${this._module}: FFmpeg processes terminated`)
+				}
+			})
+
+			exec("taskkill /f /im ffprobe.exe /t", (error) => {
+				if (error) {
+					console.log(`${this._module}: No ffprobe processes found or already terminated`)
+				} else {
+					console.log(`${this._module}: FFprobe processes terminated`)
+				}
+			})
+		} else {
+			// Unix-like systems: Kill ffmpeg and ffprobe processes
+			exec("pkill -f ffmpeg", (error) => {
+				if (error) {
+					console.log(`${this._module}: No ffmpeg processes found or already terminated`)
+				} else {
+					console.log(`${this._module}: FFmpeg processes terminated`)
+				}
+			})
+
+			exec("pkill -f ffprobe", (error) => {
+				if (error) {
+					console.log(`${this._module}: No ffprobe processes found or already terminated`)
+				} else {
+					console.log(`${this._module}: FFprobe processes terminated`)
+				}
+			})
+		}
 	}
 }
 

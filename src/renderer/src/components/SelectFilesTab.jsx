@@ -162,12 +162,15 @@ function SelectFilesTab({
 				{batchMode ? (
 					<Button
 						onClick={handleAnalyzeBatch}
-						disabled={true}
-						className="flex items-center gap-2 bg-gray-400 cursor-not-allowed"
-						title="Batch mode is not yet available in the new backend architecture"
+						disabled={!inputPaths.length || isBatchAnalyzing}
+						className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700"
 					>
-						<Info className="h-4 w-4" />
-						Batch Mode Coming Soon
+						{isBatchAnalyzing ? (
+							<RefreshCw className="h-4 w-4 animate-spin" />
+						) : (
+							<Info className="h-4 w-4" />
+						)}
+						{isBatchAnalyzing ? "Analyzing..." : "Analyze Batch"}
 					</Button>
 				) : (
 					<Button

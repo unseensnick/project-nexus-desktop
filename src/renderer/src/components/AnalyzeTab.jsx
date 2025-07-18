@@ -503,7 +503,6 @@ function AnalyzeTab({
 					<Button
 						onClick={handleExtractTracks}
 						disabled={
-							batchMode ||
 							(!filePath && !batchMode) ||
 							(!inputPaths.length && batchMode) ||
 							!outputPath ||
@@ -511,12 +510,7 @@ function AnalyzeTab({
 							isExtracting ||
 							selectedLanguages.length === 0
 						}
-						className={`flex items-center gap-2 ${batchMode ? "bg-gray-400 cursor-not-allowed" : "bg-indigo-600 hover:bg-indigo-700"}`}
-						title={
-							batchMode
-								? "Batch mode is not yet available in the new backend architecture"
-								: ""
-						}
+						className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700"
 					>
 						{isExtracting ? (
 							<RefreshCw className="h-4 w-4 animate-spin" />
@@ -526,9 +520,9 @@ function AnalyzeTab({
 						{isExtracting
 							? "Extracting..."
 							: batchMode
-								? "Batch Mode Coming Soon"
+								? "Extract Batch"
 								: "Extract Tracks"}
-						{!isExtracting && !batchMode && <ChevronRight className="h-4 w-4" />}
+						{!isExtracting && <ChevronRight className="h-4 w-4" />}
 					</Button>
 				</CardFooter>
 			</Card>

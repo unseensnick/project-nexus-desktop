@@ -24,12 +24,7 @@ function ProgressCard({ progressText, progressValue, fileProgressMap = {}, batch
 	// Transform the map object into a sorted array for rendering
 	// This is computed only when fileProgressMap changes to optimize performance
 	const fileProgressArray = useMemo(() => {
-		return (
-			Object.values(fileProgressMap)
-				.sort((a, b) => a.index - b.index)
-				// Show only files that are still in progress (< 100%)
-				.filter((item) => item.progress < 100)
-		)
+		return Object.values(fileProgressMap).sort((a, b) => a.index - b.index)
 	}, [fileProgressMap])
 
 	// Determine if we should show the worker thread section
@@ -42,7 +37,7 @@ function ProgressCard({ progressText, progressValue, fileProgressMap = {}, batch
 
 		const workerThreads = new Set()
 		fileProgressArray.forEach((item) => {
-			if (item.threadId) {
+			if (item.threadId !== undefined) {
 				workerThreads.add(item.threadId)
 			}
 		})
@@ -59,26 +54,28 @@ function ProgressCard({ progressText, progressValue, fileProgressMap = {}, batch
 				</CardTitle>
 				<CardDescription className="flex items-center justify-between">
 					<span>{progressText}</span>
-					{batchMode && (
+					{!batchMode && (
 						<Badge variant="outline" className="ml-2">
 							{Math.round(progressValue * 100) / 100}% overall
 						</Badge>
 					)}
 				</CardDescription>
 			</CardHeader>
-			<CardContent>
+			<CardContent className={batchMode ? "pt-0" : ""}>
 				{/* Main progress indicator shown for all operation types */}
-				<div className="mb-4">
-					<div className="text-sm font-medium mb-1">Overall Progress</div>
-					<Progress value={progressValue} className="w-full" />
-					<div className="mt-1 text-right text-xs text-muted-foreground">
-						{Math.round(progressValue * 100) / 100}% Complete
+				{!batchMode && (
+					<div className="mb-4">
+						<div className="text-sm font-medium mb-1">Overall Progress</div>
+						<Progress value={progressValue} className="w-full" />
+						<div className="mt-1 text-right text-xs text-muted-foreground">
+							{Math.round(progressValue * 100) / 100}% Complete
+						</div>
 					</div>
-				</div>
+				)}
 
 				{/* Worker thread progress section - only shown in batch mode with active files */}
 				{hasMultipleFiles && (
-					<div className="mt-6 space-y-4">
+					<div className="space-y-4">
 						<div className="flex items-center gap-2 text-sm font-medium">
 							<Cpu className="h-4 w-4" />
 							<span>Worker Thread Progress</span>

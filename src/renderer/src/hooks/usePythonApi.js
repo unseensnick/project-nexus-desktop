@@ -208,13 +208,40 @@ export function usePythonApi() {
 	)
 
 	/**
-	 * Process multiple files in batch.
-	 * Currently not implemented in the backend - placeholder for future feature.
+	 * Extract tracks from multiple files in batch mode.
+	 * Supports parallel processing with configurable worker threads.
 	 */
-	const batchExtract = useCallback(async (options) => {
-		setError("Batch extraction is not yet implemented")
-		throw new Error("Batch extraction is not yet implemented")
-	}, [])
+	const batchExtractTracks = useCallback(
+		async (options) => {
+			// Generate operation ID for progress tracking
+			const operationId = options.operationId || uuidv4()
+			console.log(
+				`usePythonApi: Starting batchExtractTracks with operation ID: ${operationId}`
+			)
+			setProgress(null)
+
+			// Set up progress tracking
+			const unsubscribe = setupProgressTracking(operationId)
+
+			try {
+				const result = await callPythonFunction("track-extractor.batch_extract_tracks", {
+					input_paths: options.inputPaths,
+					output_dir: options.outputDir,
+					languages: options.languages,
+					extraction_options: options.extractionOptions || {},
+					max_workers: options.maxWorkers || 1,
+					operation_id: operationId
+				})
+
+				console.log(`usePythonApi: batchExtractTracks completed with result:`, result)
+				return result
+			} finally {
+				// Always clean up progress tracking
+				unsubscribe()
+			}
+		},
+		[callPythonFunction, setupProgressTracking]
+	)
 
 	/**
 	 * Find all media files in the specified directories.
@@ -252,7 +279,7 @@ export function usePythonApi() {
 		analyzeFile,
 		extractTracks,
 		extractSpecificTrack,
-		batchExtract,
+		batchExtractTracks,
 		findMediaFiles,
 
 		// Utility functions

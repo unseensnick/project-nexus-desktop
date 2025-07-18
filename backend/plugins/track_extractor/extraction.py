@@ -278,10 +278,15 @@ class TrackExtractor:
                     # Create a sub-progress callback for this track
                     def track_progress_callback(progress_data):
                         if progress_callback:
-                            # Calculate sub-progress within this track's portion
-                            track_portion = 100 / total_tracks_to_extract
-                            track_progress = progress_data.get("percent", 0)
-                            overall_progress = base_progress + int((track_progress / 100) * track_portion)
+                            # For video tracks with letterbox removal, use the actual progress
+                            if track_type == "video" and remove_letterbox:
+                                # Use the actual progress from the video extraction
+                                overall_progress = progress_data.get("percent", 0)
+                            else:
+                                # Calculate sub-progress within this track's portion
+                                track_portion = 100 / total_tracks_to_extract
+                                track_progress = progress_data.get("percent", 0)
+                                overall_progress = base_progress + int((track_progress / 100) * track_portion)
                             
                             # Ensure progress doesn't exceed 100%
                             overall_progress = min(overall_progress, 99)
@@ -642,6 +647,14 @@ class TrackExtractor:
                 "-"  # Output to null
             ]
             
+            # Report progress during detection
+            if progress_callback:
+                progress_callback({
+                    "stage": "extraction",
+                    "percent": 5,
+                    "message": f"Analyzing video for letterbox detection"
+                })
+            
             return_code, stdout, stderr = self.ffmpeg_utils.run_ffmpeg_command(detect_cmd)
             
             # Parse crop parameters from output
@@ -650,6 +663,12 @@ class TrackExtractor:
             # If no crop parameters detected, fall back to standard extraction
             if not crop_params:
                 logger.warning("Could not detect crop parameters, using original dimensions")
+                if progress_callback:
+                    progress_callback({
+                        "stage": "extraction",
+                        "percent": 10,
+                        "message": f"No letterbox detected, extracting original video"
+                    })
                 return self._extract_track_with_ffmpeg(
                     input_file, output_file, track, "video", progress_callback, False
                 )
@@ -695,40 +714,35 @@ class TrackExtractor:
                             current_seconds = self._parse_time_to_seconds(time_str)
                             
                             if current_seconds > 0 and video_duration > 0:
-                                # Calculate percentage based on duration
-                                percent = min(int((current_seconds / video_duration) * 100), 99)
+                                # Calculate percentage based on duration (10% to 100% range for encoding step)
+                                encoding_percent = min(int((current_seconds / video_duration) * 90) + 10, 99)
                                 
                                 # Calculate estimated time remaining
                                 current_time = time.time()
                                 elapsed_time = current_time - last_update_time
                                 
                                 # Update estimation less frequently to reduce flashing
-                                if current_seconds > last_time_processed and elapsed_time > 2:  # Update every 2 seconds
-                                    processing_rate = (current_seconds - last_time_processed) / elapsed_time
-                                    if processing_rate > 0:
-                                        remaining_seconds = (video_duration - current_seconds) / processing_rate
-                                        last_estimated_time = self._format_time_duration(remaining_seconds)
-                                        
-                                        last_time_processed = current_seconds
-                                        last_update_time = current_time
+                                if elapsed_time >= 2.0 or last_estimated_time is None:
+                                    if current_seconds > last_time_processed:
+                                        time_diff = current_seconds - last_time_processed
+                                        if time_diff > 0:
+                                            rate = time_diff / elapsed_time
+                                            remaining_seconds = (video_duration - current_seconds) / rate
+                                            last_estimated_time = self._format_time_duration(remaining_seconds)
+                                    
+                                    last_update_time = current_time
+                                    last_time_processed = current_seconds
                                 
-                                # Always show progress, but use last known time estimation
-                                if last_estimated_time:
-                                    progress_callback({
-                                        "stage": "extraction",
-                                        "percent": percent,
-                                        "message": f"Encoding video track {track_id} ({percent}% complete, ~{last_estimated_time} remaining)"
-                                    })
-                                else:
-                                    progress_callback({
-                                        "stage": "extraction",
-                                        "percent": percent,
-                                        "message": f"Encoding video track {track_id} ({percent}% complete)"
-                                    })
+                                # Report progress with encoding-specific message
+                                progress_callback({
+                                    "stage": "extraction",
+                                    "percent": encoding_percent,
+                                    "message": f"Encoding video track {track_id} ({encoding_percent}% complete, ~{last_estimated_time or 'calculating...'} remaining)"
+                                })
             
-            # Use progress-enabled FFmpeg command
+            # Execute crop command with progress tracking
             return_code, stdout, stderr = self.ffmpeg_utils.run_ffmpeg_command_with_progress(
-                crop_cmd, ffmpeg_progress_callback
+                crop_cmd, progress_callback=ffmpeg_progress_callback
             )
             
             if return_code != 0:
@@ -740,11 +754,12 @@ class TrackExtractor:
                 logger.error(f"Output file not created: {output_file}")
                 return False
             
+            # Report progress completion
             if progress_callback:
                 progress_callback({
                     "stage": "extraction",
                     "percent": 100,
-                    "message": f"Video track {track_id} extraction completed"
+                    "message": f"Completed video track {track_id} extraction with letterbox removal"
                 })
             
             return True

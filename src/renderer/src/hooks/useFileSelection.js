@@ -17,6 +17,7 @@ import { useState } from "react"
 function useFileSelection() {
 	const [filePath, setFilePath] = useState("")
 	const [outputPath, setOutputPath] = useState("")
+	const [inputPaths, setInputPaths] = useState([])
 	const [error, setError] = useState(null)
 
 	/**
@@ -98,15 +99,94 @@ function useFileSelection() {
 	}
 
 	/**
+	 * Open a native file selection dialog for multiple media files.
+	 *
+	 * Uses Electron's dialog API to open a native OS file picker
+	 * configured for multiple media file selection.
+	 *
+	 * @returns {Promise<Array<string>|null>} Selected file paths or null if selection canceled
+	 */
+	const handleSelectInputFiles = async () => {
+		try {
+			// Validate that the Electron API is properly exposed
+			if (!window.electronAPI || typeof window.electronAPI.openFileDialog !== "function") {
+				console.error("electronAPI.openFileDialog is not available")
+				throw new Error("File selection dialog not available")
+			}
+
+			// Configure the dialog with appropriate file filters for multiple selection
+			const result = await window.electronAPI.openFileDialog({
+				title: "Select Media Files",
+				filters: [
+					{ name: "Media Files", extensions: ["mkv", "mp4", "avi", "mov"] },
+					{ name: "All Files", extensions: ["*"] }
+				],
+				properties: ["openFile", "multiSelections"]
+			})
+
+			// Process dialog result - only update if files were selected
+			if (result && result.filePaths && result.filePaths.length > 0) {
+				setInputPaths(result.filePaths)
+				setError(null)
+				return result.filePaths
+			}
+		} catch (err) {
+			console.error("Error in batch file selection:", err)
+			setError(`Error selecting files: ${err.message}`)
+		}
+		return null
+	}
+
+	/**
+	 * Open a native directory selection dialog for input directory.
+	 *
+	 * Uses Electron's dialog API to open a native OS folder picker
+	 * for choosing a directory containing media files for batch processing.
+	 *
+	 * @returns {Promise<string|null>} Selected directory path or null if selection canceled
+	 */
+	const handleSelectInputDirectory = async () => {
+		try {
+			// Validate that the Electron API is properly exposed
+			if (
+				!window.electronAPI ||
+				typeof window.electronAPI.openDirectoryDialog !== "function"
+			) {
+				console.error("electronAPI.openDirectoryDialog is not available")
+				throw new Error("Directory selection dialog not available")
+			}
+
+			// Configure and open the directory selection dialog
+			const result = await window.electronAPI.openDirectoryDialog({
+				title: "Select Input Directory",
+				properties: ["openDirectory"]
+			})
+
+			// Process dialog result - only update if a directory was selected
+			if (result && result.filePaths && result.filePaths.length > 0) {
+				const selectedDir = result.filePaths[0]
+				setInputPaths([selectedDir]) // Store as single directory path
+				setError(null)
+				return [selectedDir]
+			}
+		} catch (err) {
+			console.error("Error in directory selection:", err)
+			setError(`Error selecting input directory: ${err.message}`)
+		}
+		return null
+	}
+
+	/**
 	 * Reset all file selection state.
 	 *
-	 * Clears selected file path, output directory, and any errors.
+	 * Clears selected file path, output directory, input paths, and any errors.
 	 * Typically used when starting a new extraction or when closing
 	 * the current project.
 	 */
 	const resetFileSelection = () => {
 		setFilePath("")
 		setOutputPath("")
+		setInputPaths([])
 		setError(null)
 	}
 
@@ -116,10 +196,14 @@ function useFileSelection() {
 		setFilePath, // Function to manually set file path
 		outputPath, // Currently selected output directory
 		setOutputPath, // Function to manually set output path
+		inputPaths, // Currently selected input paths for batch processing
+		setInputPaths, // Function to manually set input paths
 		error, // Current error message if any
 		setError, // Function to manually set error state
 		handleSelectFile, // Function to open file selection dialog
 		handleSelectOutputDir, // Function to open directory selection dialog
+		handleSelectInputFiles, // Function to open multiple file selection dialog
+		handleSelectInputDirectory, // Function to open input directory selection dialog
 		resetFileSelection // Function to reset all state values
 	}
 }

@@ -53,6 +53,8 @@ function App() {
 	const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 	const [activeTab, setActiveTab] = useState("select")
 	const [selectedLanguages, setSelectedLanguages] = useState(["eng"]) // Default to English
+	const [batchMode, setBatchMode] = useState(false)
+	const [maxWorkers, setMaxWorkers] = useState(1)
 	const [extractionOptions, setExtractionOptions] = useState({
 		includeVideo: false,
 		audioOnly: false,
@@ -65,23 +67,29 @@ function App() {
 	const {
 		filePath,
 		outputPath,
+		inputPaths,
 		error: fileError,
 		handleSelectFile,
 		handleSelectOutputDir,
+		handleSelectInputFiles,
+		handleSelectInputDirectory,
 		resetFileSelection
 	} = useFileSelection()
 
 	// Media analysis hook - handles file analysis
 	const {
 		analyzed,
+		batchAnalyzed,
 		isAnalyzing,
+		isBatchAnalyzing,
 		availableLanguages,
 		error: analysisError,
 		handleAnalyzeFile: analyzeFile,
+		handleAnalyzeBatch: analyzeBatch,
 		resetAnalysis,
 		hasAnalyzed,
 		getTrackSummary
-	} = useMediaAnalysis(filePath)
+	} = useMediaAnalysis(filePath, inputPaths)
 
 	// Extraction hook - handles track extraction
 	const {
@@ -90,9 +98,11 @@ function App() {
 		extractionResult,
 		progressValue,
 		progressText,
+		fileProgressMap,
 		extractTracksByLanguage,
+		extractBatchTracks,
 		resetExtraction
-	} = useExtraction(filePath, outputPath)
+	} = useExtraction(batchMode ? null : filePath, outputPath)
 
 	// Simple error handling - combine all errors into one
 	const error = fileError || analysisError || extractionError
@@ -117,6 +127,22 @@ function App() {
 		} else {
 			// Analysis failed, error will be shown in the UI automatically
 			console.error("Analysis failed:", result?.error || "Unknown error")
+		}
+	}
+
+	// Simple batch analyze function - easy to understand
+	const handleAnalyzeBatch = async () => {
+		if (!inputPaths || inputPaths.length === 0) {
+			return // Can't analyze without files
+		}
+
+		const result = await analyzeBatch()
+		if (result && result.success) {
+			// Analysis successful, tab will automatically switch
+			console.log("Batch analysis complete:", result.data)
+		} else {
+			// Analysis failed, error will be shown in the UI automatically
+			console.error("Batch analysis failed:", result?.error || "Unknown error")
 		}
 	}
 
@@ -171,22 +197,49 @@ function App() {
 
 	// Simple extraction function - easy to understand
 	const handleExtractTracks = async () => {
-		if (!filePath || !outputPath) {
-			return // Can't extract without file and output path
+		if (!outputPath) {
+			return // Can't extract without output path
 		}
 
 		if (selectedLanguages.length === 0) {
 			return // Can't extract without selected languages
 		}
 
-		const result = await extractTracksByLanguage(selectedLanguages, extractionOptions)
-		if (result && result.success) {
-			console.log("Extraction complete:", result.data)
-			// Force navigation to results tab
-			setTimeout(() => setActiveTab("results"), 100)
+		if (batchMode) {
+			// Batch mode extraction
+			if (!inputPaths || inputPaths.length === 0) {
+				return // Can't extract without input paths
+			}
+
+			const result = await extractBatchTracks(
+				inputPaths,
+				selectedLanguages,
+				extractionOptions,
+				maxWorkers
+			)
+			if (result && result.success) {
+				console.log("Batch extraction complete:", result.data)
+				// Force navigation to results tab
+				setTimeout(() => setActiveTab("results"), 100)
+			} else {
+				// Extraction failed, error will be shown in the UI automatically
+				console.error("Batch extraction failed:", result?.error || "Unknown error")
+			}
 		} else {
-			// Extraction failed, error will be shown in the UI automatically
-			console.error("Extraction failed:", result?.error || "Unknown error")
+			// Single file extraction
+			if (!filePath) {
+				return // Can't extract without file path
+			}
+
+			const result = await extractTracksByLanguage(selectedLanguages, extractionOptions)
+			if (result && result.success) {
+				console.log("Extraction complete:", result.data)
+				// Force navigation to results tab
+				setTimeout(() => setActiveTab("results"), 100)
+			} else {
+				// Extraction failed, error will be shown in the UI automatically
+				console.error("Extraction failed:", result?.error || "Unknown error")
+			}
 		}
 	}
 
@@ -225,19 +278,19 @@ function App() {
 							</h2>
 						</div>
 
-						{/* Simple batch mode notice - disabled until backend implementation */}
+						{/* Batch mode toggle */}
 						<div className="flex items-center gap-2">
 							<span className="text-sm text-gray-500 dark:text-gray-400">
 								Batch Mode
 							</span>
 							<Switch
-								checked={false}
-								disabled={true}
-								className="w-10 h-5 data-[state=checked]:bg-indigo-600 disabled:opacity-50"
+								checked={batchMode}
+								onCheckedChange={setBatchMode}
+								className="w-10 h-5 data-[state=checked]:bg-indigo-600"
 								thumbClassName="size-4"
 							/>
 							<span className="text-xs text-gray-400 dark:text-gray-500">
-								(Coming soon)
+								{batchMode ? "Enabled" : "Single File"}
 							</span>
 						</div>
 					</header>
@@ -262,15 +315,15 @@ function App() {
 									filePath={filePath}
 									outputPath={outputPath}
 									isAnalyzing={isAnalyzing}
-									isBatchAnalyzing={false}
-									batchMode={false}
-									inputPaths={[]}
+									isBatchAnalyzing={isBatchAnalyzing}
+									batchMode={batchMode}
+									inputPaths={inputPaths}
 									handleSelectFile={handleSelectFile}
 									handleSelectOutputDir={handleSelectOutputDir}
-									handleSelectInputFiles={() => {}}
-									handleSelectInputDirectory={() => {}}
+									handleSelectInputFiles={handleSelectInputFiles}
+									handleSelectInputDirectory={handleSelectInputDirectory}
 									handleAnalyzeFile={handleAnalyzeFile}
-									handleAnalyzeBatch={() => {}}
+									handleAnalyzeBatch={handleAnalyzeBatch}
 								/>
 							</TabsContent>
 
@@ -279,13 +332,13 @@ function App() {
 								<AnalyzeTab
 									fileName={getFileName(filePath)}
 									analyzed={analyzed}
-									batchMode={false}
-									batchAnalyzed={null}
+									batchMode={batchMode}
+									batchAnalyzed={batchAnalyzed}
 									availableLanguages={availableLanguages}
 									selectedLanguages={selectedLanguages}
 									extractionOptions={extractionOptions}
-									maxWorkers={1}
-									setMaxWorkers={() => {}}
+									maxWorkers={maxWorkers}
+									setMaxWorkers={setMaxWorkers}
 									toggleLanguage={toggleLanguage}
 									toggleOption={toggleOption}
 									handleExtractTracks={handleExtractTracks}
@@ -293,8 +346,8 @@ function App() {
 									setActiveTab={setActiveTab}
 									filePath={filePath}
 									outputPath={outputPath}
-									inputPaths={[]}
-									fileProgressMap={{}}
+									inputPaths={inputPaths}
+									fileProgressMap={fileProgressMap}
 									progressValue={progressValue}
 									progressText={progressText}
 								/>
@@ -308,10 +361,10 @@ function App() {
 									isExtracting={isExtracting}
 									progressValue={progressValue}
 									progressText={progressText}
-									fileProgressMap={{}}
+									fileProgressMap={fileProgressMap}
 									handleReset={handleResetAll}
 									setActiveTab={setActiveTab}
-									batchMode={false}
+									batchMode={batchMode}
 								/>
 							</TabsContent>
 						</Tabs>

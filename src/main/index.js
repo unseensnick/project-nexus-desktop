@@ -14,6 +14,9 @@ import icon from "../../resources/icon.png?asset"
 import { initDialogHandlers } from "./dialog-handlers"
 import { cleanupPythonProcesses, initPythonBridge } from "./python-bridge"
 
+// Global reference to prevent garbage collection
+let mainWindow
+
 /**
  * Creates and configures the main application window
  *
@@ -21,7 +24,7 @@ import { cleanupPythonProcesses, initPythonBridge } from "./python-bridge"
  */
 function createWindow() {
 	// Create the browser window with optimized dimensions and security settings
-	const mainWindow = new BrowserWindow({
+	mainWindow = new BrowserWindow({
 		width: 1024, // Increased width for better UI experience
 		height: 1180, // Increased height for better UI experience
 		show: false, // Hide until ready-to-show for smoother startup
@@ -70,7 +73,7 @@ app.whenReady().then(() => {
 	ipcMain.on("ping", () => console.log("pong"))
 
 	// Create the main application window
-	const mainWindow = createWindow()
+	createWindow()
 
 	// Initialize dialog handlers with IPC main
 	initDialogHandlers(ipcMain)
@@ -85,6 +88,31 @@ app.whenReady().then(() => {
 	})
 })
 
+// Prevent multiple instances
+const gotTheLock = app.requestSingleInstanceLock()
+
+if (!gotTheLock) {
+	console.log("Another instance is already running, quitting...")
+	app.quit()
+} else {
+	app.on("second-instance", (event, commandLine, workingDirectory) => {
+		// Someone tried to run a second instance, we should focus our window instead
+		if (mainWindow) {
+			if (mainWindow.isMinimized()) mainWindow.restore()
+			mainWindow.focus()
+		}
+	})
+}
+
+// Perform cleanup operations before quitting
+app.on("will-quit", () => {
+	// Ensure all Python child processes are terminated
+	cleanupPythonProcesses()
+
+	// Kill any remaining FFmpeg processes
+	killFFmpegProcesses()
+})
+
 // Handle application shutdown
 app.on("window-all-closed", () => {
 	// Quit the application when all windows are closed, except on macOS
@@ -93,8 +121,58 @@ app.on("window-all-closed", () => {
 	}
 })
 
-// Perform cleanup operations before quitting
-app.on("will-quit", () => {
-	// Ensure all Python child processes are terminated
+// Handle process termination signals
+process.on("SIGINT", () => {
+	console.log("Received SIGINT, cleaning up...")
 	cleanupPythonProcesses()
+	killFFmpegProcesses()
+	app.quit()
 })
+
+process.on("SIGTERM", () => {
+	console.log("Received SIGTERM, cleaning up...")
+	cleanupPythonProcesses()
+	killFFmpegProcesses()
+	app.quit()
+})
+
+// Function to kill FFmpeg processes
+function killFFmpegProcesses() {
+	const { exec } = require("child_process")
+
+	if (process.platform === "win32") {
+		// Windows: Kill ffmpeg and ffprobe processes
+		exec("taskkill /f /im ffmpeg.exe /t", (error) => {
+			if (error) {
+				console.log("No ffmpeg processes found or already terminated")
+			} else {
+				console.log("FFmpeg processes terminated")
+			}
+		})
+
+		exec("taskkill /f /im ffprobe.exe /t", (error) => {
+			if (error) {
+				console.log("No ffprobe processes found or already terminated")
+			} else {
+				console.log("FFprobe processes terminated")
+			}
+		})
+	} else {
+		// Unix-like systems: Kill ffmpeg and ffprobe processes
+		exec("pkill -f ffmpeg", (error) => {
+			if (error) {
+				console.log("No ffmpeg processes found or already terminated")
+			} else {
+				console.log("FFmpeg processes terminated")
+			}
+		})
+
+		exec("pkill -f ffprobe", (error) => {
+			if (error) {
+				console.log("No ffprobe processes found or already terminated")
+			} else {
+				console.log("FFprobe processes terminated")
+			}
+		})
+	}
+}

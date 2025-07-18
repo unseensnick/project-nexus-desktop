@@ -5,15 +5,25 @@
  * It follows the "Junior Developer First" principle with simple, clear functions.
  */
 
-import React, { useEffect, useState } from "react"
+import { useEffect, useState } from "react"
 import { usePythonApi } from "./usePythonApi"
 
 /**
- * Hook for managing track extraction operations
+ * Custom hook for managing track extraction operations.
  *
- * @param {string} filePath - Path to the media file
- * @param {string} outputPath - Path where extracted files will be saved
- * @returns {Object} Extraction state and functions
+ * This hook provides a standardized way to:
+ * 1. Extract tracks by language from media files
+ * 2. Extract specific tracks by ID
+ * 3. Handle batch extraction with multiple files
+ * 4. Track extraction progress in real-time
+ * 5. Manage extraction state and results
+ *
+ * It abstracts away the details of communicating with the Python backend
+ * and provides a clean React-based interface for the rest of the application.
+ *
+ * @param {string} filePath - Path to the media file (for single file mode)
+ * @param {string} outputPath - Path to the output directory
+ * @returns {Object} Extraction state and handler methods
  */
 function useExtraction(filePath, outputPath) {
 	const [isExtracting, setIsExtracting] = useState(false)
@@ -21,47 +31,34 @@ function useExtraction(filePath, outputPath) {
 	const [extractionResult, setExtractionResult] = useState(null)
 	const [progressValue, setProgressValue] = useState(0)
 	const [progressText, setProgressText] = useState("")
+	const [fileProgressMap, setFileProgressMap] = useState({})
 
+	// Get the Python API functions
 	const {
-		extractTracks,
+		extractTracksByLanguage: extractTracksByLanguageApi,
 		extractSpecificTrack: extractSpecificTrackApi,
+		batchExtractTracks,
 		progress
 	} = usePythonApi()
 
 	/**
-	 * Process extraction result for display
-	 *
-	 * @param {Object} data - Raw extraction result from backend
-	 * @returns {Object} Processed result for UI display
+	 * Process extraction result data for display
+	 * @param {Object} data - Raw extraction result data
+	 * @returns {Object} Processed result data
 	 */
 	const processExtractionResult = (data) => {
-		if (!data || !data.extracted_files) {
-			return {
-				extracted_audio: 0,
-				extracted_subtitles: 0,
-				extracted_video: 0,
-				total_tracks: 0
-			}
-		}
-
-		// Count tracks by type
-		const audioCount = data.extracted_files.filter((file) => file.track_type === "audio").length
-		const subtitleCount = data.extracted_files.filter(
-			(file) => file.track_type === "subtitle"
-		).length
-		const videoCount = data.extracted_files.filter((file) => file.track_type === "video").length
-
 		return {
-			extracted_audio: audioCount,
-			extracted_subtitles: subtitleCount,
-			extracted_video: videoCount,
-			total_tracks: data.total_tracks || data.extracted_files.length,
-			extracted_files: data.extracted_files
+			extracted_files: data.extracted_files || [],
+			total_extracted: data.total_extracted || 0,
+			file_path: data.file_path || "",
+			output_dir: data.output_dir || "",
+			languages: data.languages || [],
+			extraction_options: data.extraction_options || {}
 		}
 	}
 
 	/**
-	 * Extract tracks by language
+	 * Extract tracks by language from a media file
 	 *
 	 * @param {Array<string>} languages - Languages to extract
 	 * @param {Object} extractionOptions - Extraction configuration options
@@ -81,10 +78,9 @@ function useExtraction(filePath, outputPath) {
 		try {
 			// Generate operation ID for this extraction
 			const operationId = "extraction_" + Date.now()
-			console.log(`useExtraction: Starting extraction with operation ID: ${operationId}`)
 
 			// Call the backend extraction function with progress tracking
-			const result = await extractTracks({
+			const result = await extractTracksByLanguageApi({
 				filePath: filePath,
 				outputDir: outputPath,
 				languages: languages,
@@ -168,6 +164,86 @@ function useExtraction(filePath, outputPath) {
 	}
 
 	/**
+	 * Extract tracks from multiple files in batch mode
+	 *
+	 * @param {Array<string>} inputPaths - List of input file paths
+	 * @param {Array<string>} languages - Languages to extract
+	 * @param {Object} extractionOptions - Extraction configuration options
+	 * @param {number} maxWorkers - Maximum number of worker threads
+	 * @returns {Promise<Object>} Batch extraction result
+	 */
+	const extractBatchTracks = async (
+		inputPaths,
+		languages,
+		extractionOptions = {},
+		maxWorkers = 1
+	) => {
+		if (!outputPath) {
+			setExtractionError("Output path is required")
+			return { success: false, error: "Output path is required" }
+		}
+
+		if (!inputPaths || inputPaths.length === 0) {
+			setExtractionError("Input paths are required")
+			return { success: false, error: "Input paths are required" }
+		}
+
+		setIsExtracting(true)
+		setExtractionError(null)
+		setProgressValue(0)
+		setProgressText("Starting batch extraction...")
+		setFileProgressMap({}) // Reset file progress
+
+		try {
+			// Generate operation ID for this batch extraction
+			const operationId = "batch_extraction_" + Date.now()
+			console.log(
+				`useExtraction: Starting batch extraction with operation ID: ${operationId}`
+			)
+
+			// Call the backend batch extraction function with progress tracking
+			const result = await batchExtractTracks({
+				inputPaths: inputPaths,
+				outputDir: outputPath,
+				languages: languages,
+				extractionOptions: extractionOptions,
+				maxWorkers: maxWorkers,
+				operationId: operationId
+			})
+
+			console.log(`useExtraction: Batch extraction completed with result:`, result)
+
+			if (result && result.success) {
+				// Process the batch extraction result for display
+				const processedResult = {
+					total_files: result.data.total_files,
+					processed_files: result.data.processed_files,
+					successful_files: result.data.successful_files,
+					failed_files: result.data.failed_files,
+					extracted_tracks: result.data.extracted_tracks,
+					failed_files_list: result.data.failed_files_list
+				}
+				setExtractionResult(processedResult)
+				setProgressValue(100)
+				setProgressText("Batch extraction completed successfully!")
+				return result
+			} else {
+				const error = result?.error || "Batch extraction failed"
+				setExtractionError(error)
+				setProgressText("Batch extraction failed")
+				return { success: false, error }
+			}
+		} catch (error) {
+			const errorMessage = error.message || "Batch extraction failed"
+			setExtractionError(errorMessage)
+			setProgressText("Batch extraction failed")
+			return { success: false, error: errorMessage }
+		} finally {
+			setIsExtracting(false)
+		}
+	}
+
+	/**
 	 * Reset extraction state
 	 */
 	const resetExtraction = () => {
@@ -176,6 +252,7 @@ function useExtraction(filePath, outputPath) {
 		setExtractionResult(null)
 		setProgressValue(0)
 		setProgressText("")
+		setFileProgressMap({})
 	}
 
 	// Update progress from the shared progress system
@@ -185,10 +262,51 @@ function useExtraction(filePath, outputPath) {
 			console.log(
 				`useExtraction: Updating progress - overall_percent: ${progress.overall_percent}, message: ${progress.metadata?.message}`
 			)
-			// Round to 2 decimal places for cleaner display
-			const roundedPercent = Math.round((progress.overall_percent || 0) * 100) / 100
-			setProgressValue(roundedPercent)
-			setProgressText(progress.metadata?.message || "Extracting...")
+
+			// Handle different progress stages
+			if (progress.metadata?.stage === "worker_progress") {
+				// Individual worker progress
+				const workerId = progress.metadata?.worker_id
+				const fileIndex = progress.metadata?.file_index
+				const fileName = progress.metadata?.file_name
+				const workerProgress = progress.metadata?.worker_progress
+
+				console.log(
+					`useExtraction: Worker progress - worker_id: ${workerId}, file_index: ${fileIndex}, file_name: ${fileName}`
+				)
+				console.log(`useExtraction: Worker progress object:`, workerProgress)
+
+				if (workerId !== undefined && fileIndex !== undefined) {
+					// Get the individual worker's progress from the worker_progress object
+					const individualWorkerProgress = workerProgress?.[workerId]?.percent || 0
+
+					console.log(
+						`useExtraction: Individual worker ${workerId} progress: ${individualWorkerProgress}%`
+					)
+
+					setFileProgressMap((prev) => ({
+						...prev,
+						[fileIndex]: {
+							index: fileIndex,
+							fileName: fileName || `File ${fileIndex + 1}`,
+							progress: individualWorkerProgress, // Use individual worker progress, not overall
+							status: progress.metadata?.message || "Processing...",
+							threadId: workerId,
+							workerProgress: workerProgress || {}
+						}
+					}))
+				}
+			} else if (progress.metadata?.stage === "batch_processing") {
+				// Overall batch progress
+				const roundedPercent = Math.round((progress.overall_percent || 0) * 100) / 100
+				setProgressValue(roundedPercent)
+				setProgressText(progress.metadata?.message || "Extracting...")
+			} else {
+				// General progress
+				const roundedPercent = Math.round((progress.overall_percent || 0) * 100) / 100
+				setProgressValue(roundedPercent)
+				setProgressText(progress.metadata?.message || "Extracting...")
+			}
 		}
 	}, [progress])
 
@@ -198,8 +316,10 @@ function useExtraction(filePath, outputPath) {
 		extractionResult,
 		progressValue,
 		progressText,
+		fileProgressMap,
 		extractTracksByLanguage,
 		extractSpecificTrack,
+		extractBatchTracks,
 		resetExtraction
 	}
 }

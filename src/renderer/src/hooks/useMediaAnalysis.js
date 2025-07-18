@@ -27,12 +27,14 @@ import { usePythonApi } from "./usePythonApi"
  * };
  * ```
  */
-function useMediaAnalysis(filePath) {
+function useMediaAnalysis(filePath, inputPaths = []) {
 	// Simple state - easy to understand what each does
 	const [analyzed, setAnalyzed] = useState(null) // Analysis results
 	const [isAnalyzing, setIsAnalyzing] = useState(false) // Is analysis running?
+	const [isBatchAnalyzing, setIsBatchAnalyzing] = useState(false) // Is batch analysis running?
 	const [error, setError] = useState(null) // Error message if any
 	const [availableLanguages, setAvailableLanguages] = useState([]) // Languages found
+	const [batchAnalyzed, setBatchAnalyzed] = useState(null) // Batch analysis results
 
 	// Use the Python API hook
 	const { analyzeFile } = usePythonApi()
@@ -113,14 +115,73 @@ function useMediaAnalysis(filePath) {
 	}, [filePath, analyzeFile, extractLanguages])
 
 	/**
+	 * Analyze a batch of media files.
+	 * This function analyzes the first file in the batch to determine available languages.
+	 */
+	const handleAnalyzeBatch = useCallback(async () => {
+		// Check if we have files to analyze
+		if (!inputPaths || inputPaths.length === 0) {
+			const errorMessage = "Please select files or directory first"
+			setError(errorMessage)
+			return null
+		}
+
+		// Clear previous results and start analyzing
+		setIsBatchAnalyzing(true)
+		setError(null)
+		setBatchAnalyzed(null)
+		setAvailableLanguages([])
+
+		try {
+			// For batch mode, we'll analyze the first file to get language information
+			// In a real implementation, you might want to analyze multiple files
+			const firstPath = inputPaths[0]
+			const result = await analyzeFile(firstPath)
+
+			if (result.success) {
+				// Create a batch analysis result
+				const batchResult = {
+					...result.data,
+					sample_file: firstPath,
+					total_files: inputPaths.length,
+					input_paths: inputPaths
+				}
+
+				setBatchAnalyzed(batchResult)
+
+				// Extract languages for easy access
+				const languages = extractLanguages(result.data)
+				setAvailableLanguages(languages)
+
+				return result
+			} else {
+				// Handle analysis failure
+				const errorMessage = result.error || "Batch analysis failed"
+				setError(errorMessage)
+				return null
+			}
+		} catch (err) {
+			// Handle unexpected errors
+			const errorMessage = err.message || "An unexpected error occurred"
+			setError(errorMessage)
+			return null
+		} finally {
+			// Always stop the loading state
+			setIsBatchAnalyzing(false)
+		}
+	}, [inputPaths, analyzeFile, extractLanguages])
+
+	/**
 	 * Reset all analysis state.
 	 * Useful when starting over or closing the current project.
 	 */
 	const resetAnalysis = useCallback(() => {
 		setAnalyzed(null)
 		setIsAnalyzing(false)
+		setIsBatchAnalyzing(false)
 		setError(null)
 		setAvailableLanguages([])
+		setBatchAnalyzed(null)
 	}, [])
 
 	/**
@@ -186,11 +247,14 @@ function useMediaAnalysis(filePath) {
 		// Main state
 		analyzed,
 		isAnalyzing,
+		isBatchAnalyzing,
 		error,
 		availableLanguages,
+		batchAnalyzed,
 
 		// Main functions
 		handleAnalyzeFile,
+		handleAnalyzeBatch,
 		resetAnalysis,
 
 		// Helper functions
@@ -203,9 +267,14 @@ function useMediaAnalysis(filePath) {
 		setError,
 
 		// Computed values for easy access
-		hasAnalyzed: analyzed !== null,
+		hasAnalyzed: analyzed !== null || batchAnalyzed !== null,
 		hasError: error !== null,
-		isEmpty: analyzed === null && error === null && !isAnalyzing
+		isEmpty:
+			analyzed === null &&
+			batchAnalyzed === null &&
+			error === null &&
+			!isAnalyzing &&
+			!isBatchAnalyzing
 	}
 }
 
