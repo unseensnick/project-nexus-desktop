@@ -142,8 +142,9 @@ function useFileSelection() {
 	 *
 	 * Uses Electron's dialog API to open a native OS folder picker
 	 * for choosing a directory containing media files for batch processing.
+	 * Then scans the directory for media files and stores the file paths.
 	 *
-	 * @returns {Promise<string|null>} Selected directory path or null if selection canceled
+	 * @returns {Promise<Array<string>|null>} Selected file paths or null if selection canceled
 	 */
 	const handleSelectInputDirectory = async () => {
 		try {
@@ -162,16 +163,50 @@ function useFileSelection() {
 				properties: ["openDirectory"]
 			})
 
-			// Process dialog result - only update if a directory was selected
+			// Process dialog result - only continue if a directory was selected
 			if (result && result.filePaths && result.filePaths.length > 0) {
 				const selectedDir = result.filePaths[0]
-				setInputPaths([selectedDir]) // Store as single directory path
-				setError(null)
-				return [selectedDir]
+
+				// Validate that the backend API is available for finding media files
+				if (!window.electronAPI?.callPythonFunction) {
+					throw new Error("Backend is not available. Please restart the application.")
+				}
+
+				// Call the backend to find media files in the selected directory
+				const mediaFilesResult = await window.electronAPI.callPythonFunction(
+					"track-extractor.find_media_files",
+					{ paths: [selectedDir] }
+				)
+
+				if (mediaFilesResult.success) {
+					const foundFiles = mediaFilesResult.data.files || []
+					console.log(
+						`Found ${foundFiles.length} media files in directory: ${selectedDir}`
+					)
+
+					if (foundFiles.length > 0) {
+						setInputPaths(foundFiles) // Store actual file paths, not directory path
+						setError(null)
+						return foundFiles
+					} else {
+						// No media files found in the directory
+						setError(`No supported media files found in directory: ${selectedDir}`)
+						setInputPaths([])
+						return null
+					}
+				} else {
+					// Backend error finding media files
+					const errorMessage =
+						mediaFilesResult.error || "Failed to scan directory for media files"
+					setError(errorMessage)
+					setInputPaths([])
+					return null
+				}
 			}
 		} catch (err) {
 			console.error("Error in directory selection:", err)
 			setError(`Error selecting input directory: ${err.message}`)
+			setInputPaths([])
 		}
 		return null
 	}

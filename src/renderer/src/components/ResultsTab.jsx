@@ -238,6 +238,26 @@ function ResultsTab({
 		)
 	} else {
 		// Single file results view with track type breakdown
+
+		// Count tracks by type from the extracted_files array
+		const trackCounts = {
+			audio: 0,
+			subtitle: 0,
+			video: 0
+		}
+
+		if (extractionResult?.extracted_files) {
+			extractionResult.extracted_files.forEach((file) => {
+				if (file.track_type === "audio") {
+					trackCounts.audio++
+				} else if (file.track_type === "subtitle") {
+					trackCounts.subtitle++
+				} else if (file.track_type === "video") {
+					trackCounts.video++
+				}
+			})
+		}
+
 		return (
 			<Card className="shadow-lg">
 				<CardHeader>
@@ -250,18 +270,9 @@ function ResultsTab({
 				<CardContent className="space-y-6">
 					{/* Track type summary cards for audio, subtitle and video */}
 					<div className="grid grid-cols-3 gap-4">
-						<TrackSummaryCard
-							type="audio"
-							count={extractionResult?.extracted_audio || 0}
-						/>
-						<TrackSummaryCard
-							type="subtitle"
-							count={extractionResult?.extracted_subtitles || 0}
-						/>
-						<TrackSummaryCard
-							type="video"
-							count={extractionResult?.extracted_video || 0}
-						/>
+						<TrackSummaryCard type="audio" count={trackCounts.audio} />
+						<TrackSummaryCard type="subtitle" count={trackCounts.subtitle} />
+						<TrackSummaryCard type="video" count={trackCounts.video} />
 					</div>
 
 					{/* Output location information */}

@@ -35,7 +35,7 @@ function useExtraction(filePath, outputPath) {
 
 	// Get the Python API functions
 	const {
-		extractTracksByLanguage: extractTracksByLanguageApi,
+		extractTracks: extractTracksByLanguageApi,
 		extractSpecificTrack: extractSpecificTrackApi,
 		batchExtractTracks,
 		progress

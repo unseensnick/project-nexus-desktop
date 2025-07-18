@@ -22,6 +22,7 @@ Responsibilities:
 
 import json
 import logging
+import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Union
@@ -160,12 +161,37 @@ class MediaAnalyzer:
         self.include_technical_info = self.config.get("analysis", {}).get("include_technical_info", True)
         self.language_confidence_threshold = self.config.get("analysis", {}).get("language_detection_confidence", 0.6)
         
+        # Extract all supported extensions from media-formats.json
+        self.supported_extensions = self._extract_supported_extensions()
+        
         # Validation settings
-        self.supported_containers = self.config.get("validation", {}).get("supported_containers", [])
         self.min_file_size = self.config.get("validation", {}).get("min_file_size", 1024)
         self.max_file_size = self.config.get("validation", {}).get("max_file_size", 53687091200)
         
         logger.info("MediaAnalyzer initialized with configuration-driven settings")
+        logger.info(f"Supporting {len(self.supported_extensions)} file extensions: {sorted(self.supported_extensions)}")
+    
+    def _extract_supported_extensions(self) -> set:
+        """Extract all supported file extensions from media-formats.json configuration."""
+        extensions = set()
+        
+        supported_formats = self.media_formats.get("supported_formats", {})
+        
+        # Extract video extensions
+        video_formats = supported_formats.get("video", {})
+        video_extensions = video_formats.get("extensions", [])
+        for ext in video_extensions:
+            # Remove the leading dot and convert to lowercase
+            extensions.add(ext.lstrip('.').lower())
+        
+        # Extract audio extensions
+        audio_formats = supported_formats.get("audio", {})
+        audio_extensions = audio_formats.get("extensions", [])
+        for ext in audio_extensions:
+            # Remove the leading dot and convert to lowercase
+            extensions.add(ext.lstrip('.').lower())
+        
+        return extensions
     
     def analyze_file(self, file_path: Union[str, Path], progress_callback=None) -> AnalysisResult:
         """
@@ -263,9 +289,9 @@ class MediaAnalyzer:
             raise ValueError(f"File too large: {file_size} bytes (maximum: {self.max_file_size})")
         
         # Check file extension if supported containers are configured
-        if self.supported_containers:
+        if self.supported_extensions:
             suffix = file_path.suffix.lower().lstrip('.')
-            if suffix not in self.supported_containers:
+            if suffix not in self.supported_extensions:
                 raise ValueError(f"Unsupported file format: {suffix}")
     
     def _run_ffprobe_analysis(self, file_path: Path) -> Dict:
@@ -447,12 +473,12 @@ class MediaAnalyzer:
     
     def get_supported_formats(self) -> List[str]:
         """Get list of supported media formats from configuration."""
-        return self.supported_containers.copy()
+        return list(self.supported_extensions)
     
     def is_supported_format(self, file_path: Union[str, Path]) -> bool:
         """Check if a file format is supported."""
-        if not self.supported_containers:
+        if not self.supported_extensions:
             return True  # No restrictions configured
         
         suffix = Path(file_path).suffix.lower().lstrip('.')
-        return suffix in self.supported_containers 
+        return suffix in self.supported_extensions 

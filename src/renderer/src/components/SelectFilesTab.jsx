@@ -116,7 +116,7 @@ function SelectFilesTab({
 								{inputPaths.length > 0 ? (
 									<div className="flex items-center">
 										<Layers className="h-4 w-4 mr-2 flex-shrink-0" />
-										<span>{inputPaths.length} files selected</span>
+										<span>{inputPaths.length} media files selected</span>
 									</div>
 								) : (
 									<span className="text-muted-foreground">No files selected</span>
