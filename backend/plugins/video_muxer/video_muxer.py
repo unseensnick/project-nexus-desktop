@@ -1,14 +1,7 @@
 """
 Video Muxer Core Implementation.
 
-This module provides the core video muxing functionality using FFmpeg.
-It follows the "Junior Developer First" principle with clear, simple interfaces.
-
-Key features:
-- Combine multiple media tracks into single container
-- Progress reporting for all operations
-- Error handling and validation
-- Support for various output formats
+Provides core video muxing functionality using FFmpeg.
 """
 
 import logging
@@ -28,8 +21,7 @@ class VideoMuxer:
     """
     Core video muxing functionality.
     
-    This class handles the muxing of multiple media files into a single
-    output file using FFmpeg. It provides progress reporting and error handling.
+    Handles muxing of multiple media files into a single output file using FFmpeg.
     """
     
     def __init__(self):

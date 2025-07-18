@@ -1,15 +1,7 @@
 """
-FFmpeg Utilities - New Architecture.
+FFmpeg Utilities.
 
-This module provides simplified FFmpeg utilities for the new architecture.
-It follows the "Junior Developer First" principle with clear, simple interfaces
-and focuses on essential functionality needed by the media analyzer and plugins.
-
-Key features:
-- Simple FFmpeg/FFprobe command execution
-- Basic error handling
-- Path resolution for FFmpeg binaries
-- Minimal dependencies and complexity
+Provides simplified FFmpeg utilities for the new architecture.
 """
 
 import logging
@@ -26,7 +18,6 @@ class FFmpegUtils:
     Simplified FFmpeg utilities for the new architecture.
     
     Provides basic FFmpeg and FFprobe execution with error handling.
-    Focuses on essential functionality without unnecessary complexity.
     """
     
     @staticmethod

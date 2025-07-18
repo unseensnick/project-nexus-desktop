@@ -2,30 +2,9 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { v4 as uuidv4 } from "uuid"
 
 /**
- * Python API Hook - Junior Developer First
+ * Python API Hook.
  *
- * This hook provides a simple interface for calling Python backend functions.
- * It follows the "Junior Developer First" principle - a junior developer should
- * understand this entire file in 5 minutes.
- *
- * Key features:
- * - Simple function names that match what they do
- * - Clear error messages
- * - Consistent patterns across all functions
- * - Progress tracking for long operations
- * - No hidden complexity
- *
- * Example usage:
- * ```javascript
- * const { analyzeFile, isLoading, error } = usePythonApi();
- *
- * const handleAnalyze = async () => {
- *   const result = await analyzeFile(filePath);
- *   if (result.success) {
- *     console.log('Analysis complete:', result.data);
- *   }
- * };
- * ```
+ * Provides a simple interface for calling Python backend functions.
  */
 export function usePythonApi() {
 	// Simple state - easy to understand what each does

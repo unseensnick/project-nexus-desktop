@@ -1,31 +1,7 @@
 /**
- * Video Muxer Hook - Junior Developer First
+ * Video Muxer Hook.
  *
- * This hook provides a simple interface for video muxing operations.
- * It follows the "Junior Developer First" principle - a junior developer should
- * understand this entire file in 5 minutes.
- *
- * Key features:
- * - Simple function names that match what they do
- * - Clear error messages
- * - Consistent patterns across all functions
- * - Progress tracking for long operations
- * - No hidden complexity
- *
- * Example usage:
- * ```javascript
- * const { analyzeCompatibility, muxVideo, isLoading, error } = useVideoMuxer();
- *
- * const handleMux = async () => {
- *   const result = await muxVideo({
- *     inputFiles: ['video.mp4', 'audio.aac'],
- *     outputPath: 'output.mkv'
- *   });
- *   if (result.success) {
- *     console.log('Muxing complete:', result.data);
- *   }
- * };
- * ```
+ * Provides a simple interface for video muxing operations.
  */
 
 import { useCallback, useEffect, useState } from "react"

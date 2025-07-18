@@ -1,16 +1,7 @@
 """
-Track Extraction Implementation - New Architecture.
+Track Extraction Implementation.
 
-This module implements the core track extraction functionality for the track_extractor plugin.
-It follows the "Junior Developer First" principle with clear, simple interfaces and focuses
-on essential functionality without unnecessary complexity.
-
-Key features:
-- Simple track extraction by ID or language
-- Automatic codec-to-extension mapping
-- Progress reporting integration
-- Error handling with clear messages
-- Support for audio, video, and subtitle tracks
+Implements core track extraction functionality for the track_extractor plugin.
 """
 
 import json
@@ -29,8 +20,7 @@ class TrackExtractor:
     """
     Simplified track extractor following Junior Developer First principles.
     
-    This class handles the actual extraction of media tracks using FFmpeg.
-    It provides clear, simple methods for extracting tracks by ID or language.
+    Handles extraction of media tracks using FFmpeg with clear, simple methods.
     """
     
     def __init__(self, analyzer=None):

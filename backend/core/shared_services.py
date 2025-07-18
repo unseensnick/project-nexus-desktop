@@ -1,20 +1,7 @@
 """
-Shared Services Module - New Architecture.
+Shared Services Module.
 
-This module provides common services that are available to all plugins in the new
-architecture. It follows the "Junior Developer First" principle by providing
-simple, well-documented interfaces for common operations.
-
-Key services:
-- Media analysis through MediaAnalyzer
-- Progress tracking utilities
-- Configuration access
-- File validation
-- Language detection
-- FFmpeg utilities
-
-These services are designed to be imported and used by any plugin without
-complex setup or configuration.
+Provides common services for all plugins in the new architecture.
 """
 
 import logging

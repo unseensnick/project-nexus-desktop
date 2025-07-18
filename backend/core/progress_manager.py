@@ -1,21 +1,7 @@
 """
-Unified Progress Manager for Project Nexus Desktop.
+Unified Progress Manager.
 
-This module provides the centralized progress tracking system that replaces
-the scattered progress reporting logic across multiple files. It implements
-the redesigned three-layer architecture:
-
-1. Core Progress Engine - Unified operation tracking and management
-2. Bridge Integration - Standardized communication with frontend
-3. Plugin Interface - Simplified progress reporting for plugins
-
-Key features:
-- Centralized operation registry with unique identifiers
-- Hierarchical progress tracking (batch -> file -> track -> stage)
-- Thread-safe operations with automatic cleanup
-- Real-time progress calculation and aggregation
-- Standardized progress callback factory system
-- Memory management and resource cleanup
+Provides centralized progress tracking system for all operations.
 """
 
 import json
@@ -82,8 +68,7 @@ class ProgressManager:
     """
     Unified progress manager that handles all progress tracking needs.
     
-    This class replaces the scattered ProgressReporter instances with a single
-    centralized system that can track operations at any level of complexity.
+    Replaces scattered ProgressReporter instances with a single centralized system.
     """
     
     def __init__(self):

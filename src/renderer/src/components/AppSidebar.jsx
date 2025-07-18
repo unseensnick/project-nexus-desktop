@@ -1,7 +1,7 @@
 /**
- * A responsive, collapsible sidebar navigation component for the application.
- * Implements two display modes (expanded and collapsed) with appropriate UI adaptations,
- * tooltips for collapsed state, and visual indicators for active/disabled items.
+ * Responsive sidebar navigation component.
+ *
+ * Implements expanded and collapsed display modes with tooltips and visual indicators.
  */
 
 import { HelpCircle, Layers, Monitor, Scissors, Settings, Subtitles } from "lucide-react"
@@ -12,13 +12,7 @@ import { Toggle } from "@/components/ui/toggle"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
 /**
- * Renders the application sidebar with navigation and action buttons
- *
- * @param {Object} props
- * @param {boolean} props.collapsed - Whether the sidebar is in collapsed state
- * @param {string} props.activeFeature - Currently active feature
- * @param {Function} props.onFeatureChange - Callback for feature changes
- * @returns {JSX.Element} The rendered sidebar component
+ * Renders the application sidebar with navigation and action buttons.
  */
 export function AppSidebar({ collapsed, activeFeature = "extract-tracks", onFeatureChange }) {
 	// Define sidebar navigation items with their metadata

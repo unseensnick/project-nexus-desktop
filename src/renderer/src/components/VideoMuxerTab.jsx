@@ -1,11 +1,7 @@
 /**
- * Video Muxer Tab - Modern MKVToolNix-inspired interface
+ * Video Muxer Tab.
  *
- * This component provides a comprehensive video muxing interface that allows users to:
- * - Add multiple input files (video, audio, subtitle)
- * - View and configure individual tracks
- * - Set output options and container format
- * - Execute muxing operations with progress tracking
+ * Provides a comprehensive video muxing interface for combining multiple media tracks.
  */
 
 import { useCallback, useEffect, useState } from "react"

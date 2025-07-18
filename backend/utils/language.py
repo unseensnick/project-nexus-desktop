@@ -1,22 +1,7 @@
 """
-Language Utilities Module for Project Nexus Desktop.
+Language Utilities Module.
 
-This module provides robust language identification, normalization, and validation
-for media tracks using the new centralized configuration system. It implements
-confidence-based detection with progressive fallback strategies.
-
-Key features:
-- All language data sourced from language-mappings.json configuration
-- Confidence-based detection with 0.0-1.0 scoring
-- Progressive fallback trying best methods first
-- Edge case mapping for common variants
-- Context-aware detection using file patterns
-- Backward compatibility with existing code
-- Minimal hardcoded fallback only when JSON loading fails
-
-All functions use ISO 639-2 (3-letter codes) as the standardized format,
-with comprehensive configuration-driven mapping for maximum flexibility.
-Data hierarchy: language-mappings.json → minimal fallback → error handling
+Provides robust language identification, normalization, and validation for media tracks.
 """
 
 import logging
@@ -45,7 +30,7 @@ class LanguageDetector:
     """
     Centralized language detection system with confidence-based scoring.
     
-    This class loads language mappings from configuration files and provides
+    Loads language mappings from configuration files and provides
     confidence-based detection methods with progressive fallback strategies.
     """
     

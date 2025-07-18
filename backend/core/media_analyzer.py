@@ -1,23 +1,7 @@
 """
-Media Analyzer Module - New Architecture.
+Media Analyzer Module.
 
-This module provides media file analysis capabilities for the new plugin-based architecture.
-It follows the "Junior Developer First" principle with simple, clear interfaces and
-utilizes the centralized configuration system.
-
-Key principles:
-- Simple, predictable interfaces
-- Configuration-driven behavior
-- Centralized error handling
-- Real-time progress reporting
-- Self-documenting code structure
-
-Responsibilities:
-- Analyze media files using FFprobe
-- Extract track metadata and structure
-- Normalize language codes using config
-- Provide structured track information
-- Support progress tracking for long operations
+Analyzes media files using FFprobe to extract track metadata and structure.
 """
 
 import json
@@ -29,7 +13,6 @@ from typing import Dict, List, Optional, Set, Union
 
 from core.config import get_language_mappings, get_supported_formats
 from utils.language import detect_language_with_confidence, get_language_name, normalize_language_code
-# from utils.progress_utils import create_progress_operation  # TODO: Implement if needed
 from utils.ffmpeg_utils import run_ffprobe_command, check_ffprobe_available
 
 logger = logging.getLogger(__name__)
@@ -223,60 +206,26 @@ class MediaAnalyzer:
         """
         file_path = Path(file_path)
         
-        # Create progress operation for tracking
-        # TODO: Implement progress tracking
-        # if progress_callback:
-        #     operation = create_progress_operation(
-        #         file_path=file_path,
-        #         stage="analysis",
-        #         progress_callback=progress_callback
-        #     )
-        #     operation.start()
-        
         try:
             # Validate file exists and is supported
             self._validate_file(file_path)
             
-            # TODO: Add progress callbacks
-            # if progress_callback:
-            #     operation.update_progress(10, "Validating file")
-            
             # Get file size for metadata
             file_size = file_path.stat().st_size
-            
-            # TODO: Add progress callbacks
-            # if progress_callback:
-            #     operation.update_progress(20, "Running FFprobe analysis")
             
             # Run FFprobe analysis
             ffprobe_data = self._run_ffprobe_analysis(file_path)
             
-            # TODO: Add progress callbacks
-            # if progress_callback:
-            #     operation.update_progress(50, "Processing stream information")
-            
             # Process the raw data into structured format
             result = self._process_ffprobe_data(ffprobe_data, file_path, file_size)
             
-            # TODO: Add progress callbacks
-            # if progress_callback:
-            #     operation.update_progress(80, "Enhancing language detection")
-            
             # Enhance language detection using configuration
             self._enhance_language_detection(result, file_path)
-            
-            # TODO: Add progress callbacks
-            # if progress_callback:
-            #     operation.update_progress(100, "Analysis complete")
-            #     operation.complete()
             
             logger.info(f"Successfully analyzed {file_path}: {len(result.tracks)} tracks found")
             return result
             
         except Exception as e:
-            # TODO: Add progress callbacks
-            # if progress_callback:
-            #     operation.fail(str(e))
             logger.error(f"Failed to analyze {file_path}: {e}")
             raise
     
