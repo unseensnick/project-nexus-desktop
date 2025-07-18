@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Union
 
-from core.config import get_app_defaults, get_language_mappings, get_supported_formats
+from core.config import get_language_mappings, get_supported_formats
 from utils.language import detect_language_with_confidence, get_language_name, normalize_language_code
 # from utils.progress_utils import create_progress_operation  # TODO: Implement if needed
 from utils.ffmpeg_utils import run_ffprobe_command, check_ffprobe_available
@@ -151,22 +151,23 @@ class MediaAnalyzer:
     
     def __init__(self):
         """Initialize the analyzer with configuration."""
-        self.config = get_app_defaults()
         self.language_mappings = get_language_mappings()
         self.media_formats = get_supported_formats()
         
-        # Configuration-driven settings
-        self.analysis_timeout = self.config.get("analysis", {}).get("analysis_timeout", 300)
-        self.include_metadata = self.config.get("analysis", {}).get("include_metadata", True)
-        self.include_technical_info = self.config.get("analysis", {}).get("include_technical_info", True)
-        self.language_confidence_threshold = self.config.get("analysis", {}).get("language_detection_confidence", 0.6)
+        # Configuration-driven settings from media-formats.json
+        analysis_config = self.media_formats.get("analysis", {})
+        self.analysis_timeout = analysis_config.get("analysis_timeout", 300)
+        self.include_metadata = analysis_config.get("include_metadata", True)
+        self.include_technical_info = analysis_config.get("include_technical_info", True)
+        self.language_confidence_threshold = analysis_config.get("language_detection_confidence", 0.6)
         
         # Extract all supported extensions from media-formats.json
         self.supported_extensions = self._extract_supported_extensions()
         
-        # Validation settings
-        self.min_file_size = self.config.get("validation", {}).get("min_file_size", 1024)
-        self.max_file_size = self.config.get("validation", {}).get("max_file_size", 53687091200)
+        # Validation settings from media-formats.json
+        validation_config = self.media_formats.get("validation", {})
+        self.min_file_size = validation_config.get("min_file_size", 1024)
+        self.max_file_size = validation_config.get("max_file_size", 53687091200)
         
         logger.info("MediaAnalyzer initialized with configuration-driven settings")
         logger.info(f"Supporting {len(self.supported_extensions)} file extensions: {sorted(self.supported_extensions)}")

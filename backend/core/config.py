@@ -112,15 +112,6 @@ def get_language_mappings() -> Dict[str, Any]:
     """
     return get_config("language-mappings")
 
-def get_app_defaults() -> Dict[str, Any]:
-    """
-    Get application defaults configuration.
-    
-    Returns:
-        Dictionary containing application defaults configuration
-    """
-    return get_config("app-defaults")
-
 def get_extraction_defaults() -> Dict[str, Any]:
     """
     Get extraction defaults from media formats configuration.
@@ -131,75 +122,17 @@ def get_extraction_defaults() -> Dict[str, Any]:
     formats_config = get_supported_formats()
     return formats_config.get("extraction_defaults", {})
 
-def get_track_selection_defaults() -> Dict[str, Any]:
-    """
-    Get track selection defaults from app defaults.
-    
-    Returns:
-        Dictionary containing track selection defaults
-    """
-    app_defaults = get_app_defaults()
-    return app_defaults.get("extraction", {}).get("track_selection", {})
 
-def get_ui_defaults() -> Dict[str, Any]:
-    """
-    Get UI defaults from app defaults.
-    
-    Returns:
-        Dictionary containing UI defaults
-    """
-    app_defaults = get_app_defaults()
-    return app_defaults.get("ui", {})
-
-def get_logging_config() -> Dict[str, Any]:
-    """
-    Get logging configuration from app defaults.
-    
-    Returns:
-        Dictionary containing logging configuration
-    """
-    app_defaults = get_app_defaults()
-    return app_defaults.get("logging", {})
-
-def get_performance_config() -> Dict[str, Any]:
-    """
-    Get performance configuration from app defaults.
-    
-    Returns:
-        Dictionary containing performance configuration
-    """
-    app_defaults = get_app_defaults()
-    return app_defaults.get("performance", {})
 
 def get_validation_config() -> Dict[str, Any]:
     """
-    Get validation configuration from app defaults.
+    Get validation configuration from media formats.
     
     Returns:
         Dictionary containing validation configuration
     """
-    app_defaults = get_app_defaults()
-    return app_defaults.get("validation", {})
-
-def get_security_config() -> Dict[str, Any]:
-    """
-    Get security configuration from app defaults.
-    
-    Returns:
-        Dictionary containing security configuration
-    """
-    app_defaults = get_app_defaults()
-    return app_defaults.get("security", {})
-
-def get_compatibility_config() -> Dict[str, Any]:
-    """
-    Get compatibility configuration from app defaults.
-    
-    Returns:
-        Dictionary containing compatibility configuration
-    """
-    app_defaults = get_app_defaults()
-    return app_defaults.get("compatibility", {})
+    media_formats = get_supported_formats()
+    return media_formats.get("validation", {})
 
 def get_config_value(config_name: str, key_path: str, default: Any = None) -> Any:
     """
@@ -248,7 +181,7 @@ def validate_config_structure() -> Dict[str, bool]:
     Returns:
         Dictionary with validation results for each configuration file
     """
-    required_configs = ["media-formats", "language-mappings", "app-defaults"]
+    required_configs = ["media-formats", "language-mappings"]
     results = {}
     
     for config_name in required_configs:

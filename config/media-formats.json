@@ -225,5 +225,16 @@
 			"fallback_codec": "subrip",
 			"encoding_priority": ["utf-8", "utf-16", "iso-8859-1"]
 		}
+	},
+	"analysis": {
+		"analysis_timeout": 300,
+		"include_metadata": true,
+		"include_technical_info": true,
+		"language_detection_confidence": 0.6
+	},
+	"validation": {
+		"min_file_size": 1024,
+		"max_file_size": 53687091200
 	}
 }
+

@@ -21,7 +21,7 @@ import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Union
 
-from core.config import get_app_defaults, get_language_mappings, get_supported_formats
+from core.config import get_language_mappings, get_supported_formats
 from core.media_analyzer import MediaAnalyzer, AnalysisResult
 from core.progress_manager import ProgressManager
 from utils.language import detect_language_with_confidence, get_language_name, normalize_language_code
@@ -56,20 +56,18 @@ class SharedServices:
         return get_progress_manager()
     
     @classmethod
-    def get_config(cls, config_type: str = "app") -> Dict:
+    def get_config(cls, config_type: str = "media") -> Dict:
         """
         Get configuration data.
         
         Args:
-            config_type: Type of config to retrieve ('app', 'language', 'media')
+            config_type: Type of config to retrieve ('language', 'media')
             
         Returns:
             Configuration dictionary
         """
         if config_type not in cls._config_cache:
-            if config_type == "app":
-                cls._config_cache[config_type] = get_app_defaults()
-            elif config_type == "language":
+            if config_type == "language":
                 cls._config_cache[config_type] = get_language_mappings()
             elif config_type == "media":
                 cls._config_cache[config_type] = get_supported_formats()

@@ -84,15 +84,6 @@ export async function getLanguageMappings() {
 }
 
 /**
- * Get application defaults configuration.
- *
- * @returns {Promise<Object>} Application defaults configuration
- */
-export async function getAppDefaults() {
-	return await getConfig("app-defaults")
-}
-
-/**
  * Get extraction defaults from media formats configuration.
  *
  * @returns {Promise<Object>} Extraction defaults
@@ -103,63 +94,13 @@ export async function getExtractionDefaults() {
 }
 
 /**
- * Get track selection defaults from app defaults.
- *
- * @returns {Promise<Object>} Track selection defaults
- */
-export async function getTrackSelectionDefaults() {
-	const appDefaults = await getAppDefaults()
-	return appDefaults.extraction?.track_selection || {}
-}
-
-/**
- * Get UI defaults from app defaults.
- *
- * @returns {Promise<Object>} UI defaults
- */
-export async function getUIDefaults() {
-	const appDefaults = await getAppDefaults()
-	return appDefaults.ui || {}
-}
-
-/**
- * Get performance configuration from app defaults.
- *
- * @returns {Promise<Object>} Performance configuration
- */
-export async function getPerformanceConfig() {
-	const appDefaults = await getAppDefaults()
-	return appDefaults.performance || {}
-}
-
-/**
- * Get validation configuration from app defaults.
+ * Get validation configuration from media formats.
  *
  * @returns {Promise<Object>} Validation configuration
  */
 export async function getValidationConfig() {
-	const appDefaults = await getAppDefaults()
-	return appDefaults.validation || {}
-}
-
-/**
- * Get security configuration from app defaults.
- *
- * @returns {Promise<Object>} Security configuration
- */
-export async function getSecurityConfig() {
-	const appDefaults = await getAppDefaults()
-	return appDefaults.security || {}
-}
-
-/**
- * Get compatibility configuration from app defaults.
- *
- * @returns {Promise<Object>} Compatibility configuration
- */
-export async function getCompatibilityConfig() {
-	const appDefaults = await getAppDefaults()
-	return appDefaults.compatibility || {}
+	const mediaFormats = await getSupportedFormats()
+	return mediaFormats.validation || {}
 }
 
 /**
@@ -273,24 +214,6 @@ export function useLanguageMappings() {
 }
 
 /**
- * React hook for loading application defaults configuration.
- *
- * @returns {[Object, boolean, Error]} [defaults, loading, error]
- */
-export function useAppDefaults() {
-	return useConfig("app-defaults", {
-		extraction: {},
-		analysis: {},
-		ui: {},
-		logging: {},
-		performance: {},
-		validation: {},
-		security: {},
-		compatibility: {}
-	})
-}
-
-/**
  * React hook for loading extraction defaults.
  *
  * @returns {[Object, boolean, Error]} [defaults, loading, error]
@@ -313,60 +236,6 @@ export function useExtractionDefaults() {
 			setLoading(false)
 		}
 	}, [formats, formatsLoading, formatsError])
-
-	return [defaults, loading, error]
-}
-
-/**
- * React hook for loading track selection defaults.
- *
- * @returns {[Object, boolean, Error]} [defaults, loading, error]
- */
-export function useTrackSelectionDefaults() {
-	const [appDefaults, appLoading, appError] = useAppDefaults()
-	const [defaults, setDefaults] = useState({})
-	const [loading, setLoading] = useState(true)
-	const [error, setError] = useState(null)
-
-	useEffect(() => {
-		if (!appLoading) {
-			if (appError) {
-				setError(appError)
-				setDefaults({})
-			} else {
-				setDefaults(appDefaults.extraction?.track_selection || {})
-				setError(null)
-			}
-			setLoading(false)
-		}
-	}, [appDefaults, appLoading, appError])
-
-	return [defaults, loading, error]
-}
-
-/**
- * React hook for loading UI defaults.
- *
- * @returns {[Object, boolean, Error]} [defaults, loading, error]
- */
-export function useUIDefaults() {
-	const [appDefaults, appLoading, appError] = useAppDefaults()
-	const [defaults, setDefaults] = useState({})
-	const [loading, setLoading] = useState(true)
-	const [error, setError] = useState(null)
-
-	useEffect(() => {
-		if (!appLoading) {
-			if (appError) {
-				setError(appError)
-				setDefaults({})
-			} else {
-				setDefaults(appDefaults.ui || {})
-				setError(null)
-			}
-			setLoading(false)
-		}
-	}, [appDefaults, appLoading, appError])
 
 	return [defaults, loading, error]
 }
@@ -426,7 +295,7 @@ export function useConfigValue(configName, keyPath, defaultValue = null) {
  * @returns {Promise<void>}
  */
 export async function preloadConfigurations() {
-	const configNames = ["media-formats", "language-mappings", "app-defaults"]
+	const configNames = ["media-formats", "language-mappings"]
 
 	try {
 		await Promise.all(configNames.map((name) => getConfig(name, false)))
@@ -442,7 +311,7 @@ export async function preloadConfigurations() {
  * @returns {Promise<Object>} Validation results
  */
 export async function validateConfigurations() {
-	const configNames = ["media-formats", "language-mappings", "app-defaults"]
+	const configNames = ["media-formats", "language-mappings"]
 	const results = {}
 
 	for (const configName of configNames) {
@@ -456,3 +325,4 @@ export async function validateConfigurations() {
 
 	return results
 }
+
