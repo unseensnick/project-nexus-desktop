@@ -1,109 +1,120 @@
 import { useCallback, useEffect, useState } from "react"
+import { usePythonApi } from "./usePythonApi"
 
 /**
- * Custom hook for analyzing media files to discover available tracks and languages.
+ * Media Analysis Hook - Junior Developer First
  *
- * This hook manages the analysis process including:
- * 1. Communicating with the Python backend to analyze media files
- * 2. Extracting and organizing available languages from the analysis
- * 3. Maintaining loading and error states during analysis
- * 4. Automatically resetting state when the file path changes
+ * This hook makes it easy to analyze media files and discover their tracks.
+ * It follows the "Junior Developer First" principle - a junior developer should
+ * understand this entire file in 5 minutes.
  *
- * It's designed to be used in conjunction with useFileSelection to analyze
- * files after selection and prepare for the extraction process.
+ * Key features:
+ * - Simple state management
+ * - Clear function names
+ * - Automatic language extraction
+ * - Easy error handling
+ * - Helper functions for common tasks
  *
- * @param {string} filePath - Path to the media file to analyze
- * @returns {Object} Analysis state and handler methods
+ * Example usage:
+ * ```javascript
+ * const { analyzed, isAnalyzing, error, availableLanguages, handleAnalyzeFile } = useMediaAnalysis(filePath);
+ *
+ * const analyzeFile = async () => {
+ *   const result = await handleAnalyzeFile();
+ *   if (result) {
+ *     console.log('Found languages:', availableLanguages);
+ *   }
+ * };
+ * ```
  */
 function useMediaAnalysis(filePath) {
-	// State to store analysis results and process status
+	// Simple state - easy to understand what each does
 	const [analyzed, setAnalyzed] = useState(null) // Analysis results
-	const [isAnalyzing, setIsAnalyzing] = useState(false) // Loading state
-	const [error, setError] = useState(null) // Error information
-	const [availableLanguages, setAvailableLanguages] = useState([]) // Detected languages
+	const [isAnalyzing, setIsAnalyzing] = useState(false) // Is analysis running?
+	const [error, setError] = useState(null) // Error message if any
+	const [availableLanguages, setAvailableLanguages] = useState([]) // Languages found
 
-	// Reset analysis results when file path changes to prevent showing stale data
+	// Use the Python API hook
+	const { analyzeFile } = usePythonApi()
+
+	// Reset everything when the file path changes
 	useEffect(() => {
 		setAnalyzed(null)
 		setError(null)
+		setAvailableLanguages([])
 	}, [filePath])
 
 	/**
-	 * Process analysis results to extract a flat list of unique languages.
-	 *
-	 * Combines languages from audio and subtitle tracks and removes duplicates
-	 * to provide a simple list for language selection in the UI.
-	 *
-	 * @param {Object} analysisResult - Results from Python analysis
+	 * Extract all unique languages from analysis results.
+	 * This makes it easy for components to show language options.
 	 */
-	const updateAvailableLanguages = useCallback((analysisResult) => {
-		if (!analysisResult || !analysisResult.languages) return
+	const extractLanguages = useCallback((analysisResult) => {
+		if (!analysisResult?.languages) {
+			return []
+		}
 
-		// Combine audio and subtitle languages into a single flat array
-		const languages = [
+		// Get all languages from all track types
+		const allLanguages = [
 			...(analysisResult.languages.audio || []),
+			...(analysisResult.languages.video || []),
 			...(analysisResult.languages.subtitle || [])
 		]
 
-		// Remove duplicates by converting to Set and back to Array
-		setAvailableLanguages([...new Set(languages)])
+		// Remove duplicates and return
+		return [...new Set(allLanguages)]
 	}, [])
 
 	/**
-	 * Initiate media file analysis via the Python backend.
-	 *
-	 * Validates input, manages loading state, and handles errors
-	 * during the analysis process. Updates the analyzed state with
-	 * results on success.
-	 *
-	 * @returns {Promise<Object|null>} Analysis results or null on error
+	 * Analyze the selected media file.
+	 * This is the main function that starts the analysis process.
 	 */
 	const handleAnalyzeFile = useCallback(async () => {
-		// Verify that a file has been selected
+		// Check if we have a file to analyze
 		if (!filePath) {
-			setError("Please select a file first")
+			const errorMessage = "Please select a file first"
+			setError(errorMessage)
 			return null
 		}
 
-		// Set loading state to show analysis in progress
+		// Clear previous results and start analyzing
 		setIsAnalyzing(true)
 		setError(null)
+		setAnalyzed(null)
+		setAvailableLanguages([])
 
 		try {
-			// Verify that the Python API is available
-			if (!window.pythonApi || typeof window.pythonApi.analyzeFile !== "function") {
-				throw new Error("Python API is not available")
-			}
+			// Call the backend to analyze the file
+			const result = await analyzeFile(filePath)
 
-			// Call the Python API to analyze the file
-			const result = await window.pythonApi.analyzeFile(filePath)
-
-			// Process results based on success state
 			if (result.success) {
-				setAnalyzed(result)
-				updateAvailableLanguages(result)
+				// Store just the data part
+				setAnalyzed(result.data)
+
+				// Extract languages for easy access
+				const languages = extractLanguages(result.data)
+				setAvailableLanguages(languages)
+
 				return result
 			} else {
-				const errorMsg = result.error || "Analysis failed"
-				setError(errorMsg)
+				// Handle analysis failure
+				const errorMessage = result.error || "Analysis failed"
+				setError(errorMessage)
 				return null
 			}
 		} catch (err) {
-			console.error("Error analyzing file:", err)
-			setError(`Error analyzing file: ${err.message || "Unknown error"}`)
+			// Handle unexpected errors
+			const errorMessage = err.message || "An unexpected error occurred"
+			setError(errorMessage)
 			return null
 		} finally {
-			// Always update loading state when done
+			// Always stop the loading state
 			setIsAnalyzing(false)
 		}
-	}, [filePath, updateAvailableLanguages])
+	}, [filePath, analyzeFile, extractLanguages])
 
 	/**
 	 * Reset all analysis state.
-	 *
-	 * Clears analysis results, loading state, errors, and available languages.
-	 * Typically used when starting a new extraction or when closing
-	 * the current project.
+	 * Useful when starting over or closing the current project.
 	 */
 	const resetAnalysis = useCallback(() => {
 		setAnalyzed(null)
@@ -112,15 +123,89 @@ function useMediaAnalysis(filePath) {
 		setAvailableLanguages([])
 	}, [])
 
-	// Return all state variables and functions needed by components
+	/**
+	 * Get a simple summary of the tracks found.
+	 * This makes it easy to show track counts in the UI.
+	 */
+	const getTrackSummary = useCallback(() => {
+		if (!analyzed?.summary) {
+			return null
+		}
+
+		return {
+			total: analyzed.summary.total_tracks || 0,
+			audio: analyzed.summary.audio_count || 0,
+			video: analyzed.summary.video_count || 0,
+			subtitle: analyzed.summary.subtitle_count || 0
+		}
+	}, [analyzed])
+
+	/**
+	 * Get tracks of a specific type.
+	 * This makes it easy to display tracks by category.
+	 */
+	const getTracksByType = useCallback(
+		(trackType) => {
+			if (!analyzed) {
+				return []
+			}
+
+			switch (trackType) {
+				case "audio":
+					return analyzed.audio_tracks || []
+				case "video":
+					return analyzed.video_tracks || []
+				case "subtitle":
+					return analyzed.subtitle_tracks || []
+				default:
+					return analyzed.tracks || []
+			}
+		},
+		[analyzed]
+	)
+
+	/**
+	 * Check if the analysis found any tracks.
+	 * Useful for conditional rendering in components.
+	 */
+	const hasAnyTracks = useCallback(() => {
+		const summary = getTrackSummary()
+		return summary ? summary.total > 0 : false
+	}, [getTrackSummary])
+
+	/**
+	 * Clear any error state.
+	 * Useful for resetting the UI after an error.
+	 */
+	const clearError = useCallback(() => {
+		setError(null)
+	}, [])
+
+	// Return everything components need
 	return {
-		analyzed, // Analysis results from Python
-		isAnalyzing, // Whether analysis is in progress
-		error, // Current error message if any
-		setError, // Function to manually set error state
-		availableLanguages, // List of unique languages found
-		handleAnalyzeFile, // Function to start file analysis
-		resetAnalysis // Function to reset all state values
+		// Main state
+		analyzed,
+		isAnalyzing,
+		error,
+		availableLanguages,
+
+		// Main functions
+		handleAnalyzeFile,
+		resetAnalysis,
+
+		// Helper functions
+		getTrackSummary,
+		getTracksByType,
+		hasAnyTracks,
+		clearError,
+
+		// Utility state setters for manual control if needed
+		setError,
+
+		// Computed values for easy access
+		hasAnalyzed: analyzed !== null,
+		hasError: error !== null,
+		isEmpty: analyzed === null && error === null && !isAnalyzing
 	}
 }
 

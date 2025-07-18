@@ -2,120 +2,119 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { v4 as uuidv4 } from "uuid"
 
 /**
- * React hook for communicating with the Python backend API.
+ * Python API Hook - Junior Developer First
  *
- * This hook provides a consistent interface for frontend components to call Python
- * functions with proper error handling and progress tracking for long-running operations.
- * It maintains loading states, error tracking, and real-time progress data without
- * requiring components to implement these repetitive patterns themselves.
+ * This hook provides a simple interface for calling Python backend functions.
+ * It follows the "Junior Developer First" principle - a junior developer should
+ * understand this entire file in 5 minutes.
  *
- * @returns {Object} API methods and state indicators for UI integration
+ * Key features:
+ * - Simple function names that match what they do
+ * - Clear error messages
+ * - Consistent patterns across all functions
+ * - Progress tracking for long operations
+ * - No hidden complexity
+ *
+ * Example usage:
+ * ```javascript
+ * const { analyzeFile, isLoading, error } = usePythonApi();
+ *
+ * const handleAnalyze = async () => {
+ *   const result = await analyzeFile(filePath);
+ *   if (result.success) {
+ *     console.log('Analysis complete:', result.data);
+ *   }
+ * };
+ * ```
  */
 export function usePythonApi() {
+	// Simple state - easy to understand what each does
 	const [isLoading, setIsLoading] = useState(false)
 	const [error, setError] = useState(null)
 	const [progress, setProgress] = useState(null)
 
-	// Use ref to prevent memory leaks by storing the latest unsubscribe function
-	const unsubscribeRef = useRef(() => {})
+	// Keep track of progress subscriptions to prevent memory leaks
+	const progressUnsubscribe = useRef(() => {})
 
-	// Clean up subscriptions when component unmounts
+	// Clean up when component unmounts
 	useEffect(() => {
 		return () => {
-			// Prevent progress event listeners from persisting after component is gone
-			if (unsubscribeRef.current) {
-				unsubscribeRef.current()
+			if (progressUnsubscribe.current) {
+				progressUnsubscribe.current()
 			}
 		}
 	}, [])
 
 	/**
-	 * Process progress updates from Python backend while preventing unnecessary re-renders.
-	 *
-	 * This function acts as a filter to ensure progress updates only trigger
-	 * re-renders when there's meaningful new information to display.
-	 *
-	 * @param {Object} progressData - Progress information from the Python process
+	 * Handle progress updates from the backend.
+	 * Only update state when the progress actually changes.
 	 */
 	const handleProgress = useCallback((progressData) => {
-		try {
-			// Only process valid progress data objects
-			if (progressData && typeof progressData === "object") {
-				// Use functional updates to avoid dependencies on previous state
-				setProgress((prev) => {
-					// Only trigger a re-render when data has actually changed
-					if (!prev || JSON.stringify(prev) !== JSON.stringify(progressData)) {
-						return progressData
-					}
-					return prev
-				})
-			}
-		} catch (err) {
-			console.error("Error handling progress update:", err)
+		if (progressData && typeof progressData === "object") {
+			setProgress((prev) => {
+				// Only update if the data actually changed
+				const dataString = JSON.stringify(progressData)
+				const prevString = JSON.stringify(prev)
+				return dataString !== prevString ? progressData : prev
+			})
 		}
 	}, [])
 
 	/**
-	 * Register for real-time progress updates from a Python operation.
-	 *
-	 * This function sets up event listeners for progress information from
-	 * long-running Python tasks. It properly manages cleanup of previous listeners
-	 * to prevent memory leaks.
-	 *
-	 * @param {string} operationId - Unique identifier for the operation to track
-	 * @returns {Function} Function to call to stop receiving updates
+	 * Set up progress tracking for an operation.
+	 * Returns a function to stop tracking.
 	 */
 	const setupProgressTracking = useCallback(
 		(operationId) => {
-			// Clean up any existing subscription first
-			if (unsubscribeRef.current) {
-				unsubscribeRef.current()
+			// Clean up any existing subscription
+			if (progressUnsubscribe.current) {
+				progressUnsubscribe.current()
 			}
 
-			// Set up progress tracking if the API is available
-			if (window.pythonApi && window.pythonApi.onProgress) {
-				const unsubscribe = window.pythonApi.onProgress(operationId, handleProgress)
-				unsubscribeRef.current = unsubscribe
+			// Set up new progress tracking
+			if (window.electronAPI?.subscribeToProgress) {
+				const unsubscribe = window.electronAPI.subscribeToProgress((progressData) => {
+					if (progressData.operation_id === operationId) {
+						handleProgress(progressData.data)
+					}
+				})
+				progressUnsubscribe.current = unsubscribe
 				return unsubscribe
 			}
 
-			// Return a no-op function if progress tracking isn't available
+			// Return empty function if not available
 			return () => {}
 		},
 		[handleProgress]
 	)
 
 	/**
-	 * Analyze a media file to identify tracks and available languages.
-	 *
-	 * Sends the file path to the Python backend which will inspect the file's
-	 * structure and return details about contained tracks (audio, subtitle, video)
-	 * and their attributes like language, codec, etc.
-	 *
-	 * @param {string} filePath - Path to the local media file to analyze
-	 * @returns {Promise<Object>} Analysis results containing track information
+	 * Call a Python function through the backend.
+	 * This is the main function that handles all backend communication.
 	 */
-	const analyzeFile = useCallback(async (filePath) => {
-		setIsLoading(true)
+	const callPythonFunction = useCallback(async (functionName, parameters = {}) => {
+		// Clear any previous error
 		setError(null)
+		setIsLoading(true)
 
 		try {
-			// Verify the API interface is available before attempting to call it
-			if (!window.pythonApi || typeof window.pythonApi.analyzeFile !== "function") {
-				throw new Error("Python API not available")
+			// Check if backend is available
+			if (!window.electronAPI?.callPythonFunction) {
+				throw new Error("Backend is not available. Please restart the application.")
 			}
 
-			const result = await window.pythonApi.analyzeFile(filePath)
+			// Call the backend
+			const result = await window.electronAPI.callPythonFunction(functionName, parameters)
 
-			// Standardized error handling for failed operations
+			// Check for errors
 			if (!result.success) {
-				throw new Error(result.error || "Failed to analyze file")
+				throw new Error(result.error || "Operation failed")
 			}
 
 			return result
 		} catch (err) {
-			console.error("Error analyzing file:", err)
-			setError(err.message)
+			const errorMessage = err.message || "An unexpected error occurred"
+			setError(errorMessage)
 			throw err
 		} finally {
 			setIsLoading(false)
@@ -123,236 +122,136 @@ export function usePythonApi() {
 	}, [])
 
 	/**
-	 * Extract tracks from a media file based on specified options.
-	 *
-	 * This function handles the full extraction workflow including:
-	 * - Generating an operation ID for progress tracking
-	 * - Setting up real-time progress updates
-	 * - Managing loading and error states
-	 * - Properly cleaning up resources
-	 *
-	 * @param {Object} options - Extraction configuration
-	 * @param {string} options.filePath - Path to source media file
-	 * @param {string} options.outputDir - Directory for extracted tracks
-	 * @param {Array<string>} options.languages - Language codes to extract
-	 * @param {boolean} [options.audioOnly] - Extract only audio tracks
-	 * @param {boolean} [options.subtitleOnly] - Extract only subtitle tracks
-	 * @param {boolean} [options.includeVideo] - Include video in extraction
-	 * @param {string} [options.operationId] - Custom operation ID (auto-generated if omitted)
-	 * @returns {Promise<Object>} Extraction results
+	 * Analyze a media file to discover its tracks and languages.
+	 * Returns detailed information about audio, video, and subtitle tracks.
+	 */
+	const analyzeFile = useCallback(
+		async (filePath) => {
+			if (!filePath) {
+				const error = "File path is required"
+				setError(error)
+				throw new Error(error)
+			}
+
+			return callPythonFunction("track-extractor.analyze_file", { file_path: filePath })
+		},
+		[callPythonFunction]
+	)
+
+	/**
+	 * Extract tracks from a media file based on language preferences.
+	 * Supports progress tracking for long operations.
 	 */
 	const extractTracks = useCallback(
 		async (options) => {
-			// Generate or use provided operation ID for progress tracking
+			// Generate operation ID for progress tracking
 			const operationId = options.operationId || uuidv4()
-			setIsLoading(true)
-			setError(null)
 			setProgress(null)
 
-			// Ensure operationId is included in the options
-			const finalOptions = {
-				...options,
-				operationId
-			}
-
-			// Set up progress tracking for this operation
+			// Set up progress tracking
 			const unsubscribe = setupProgressTracking(operationId)
 
 			try {
-				// Verify API availability
-				if (!window.pythonApi || typeof window.pythonApi.extractTracks !== "function") {
-					throw new Error("Python API not available")
-				}
-
-				const result = await window.pythonApi.extractTracks(finalOptions)
-
-				// Handle unsuccessful operations consistently
-				if (!result.success && result.error) {
-					throw new Error(result.error)
-				}
+				const result = await callPythonFunction("track-extractor.extract_tracks", {
+					file_path: options.filePath,
+					output_dir: options.outputDir,
+					languages: options.languages,
+					extraction_options: options.extractionOptions || {},
+					operation_id: operationId
+				})
 
 				return result
-			} catch (err) {
-				console.error("Error extracting tracks:", err)
-				setError(err.message)
-				throw err
 			} finally {
-				// Always clean up and update loading state
-				setIsLoading(false)
+				// Always clean up progress tracking
 				unsubscribe()
 			}
 		},
-		[setupProgressTracking]
+		[callPythonFunction, setupProgressTracking]
 	)
 
 	/**
-	 * Extract a single specific track from a media file.
-	 *
-	 * Used when the user wants to extract just one track by ID rather than
-	 * using language-based filtering, typically after analyzing the file
-	 * and selecting a specific track from the UI.
-	 *
-	 * @param {Object} options - Extraction options
-	 * @param {string} options.filePath - Path to source media file
-	 * @param {string} options.outputDir - Directory for extracted track
-	 * @param {string} options.trackType - Type of track ('audio', 'subtitle', 'video')
-	 * @param {number} options.trackId - ID of the specific track to extract
-	 * @param {boolean} [options.removeLetterbox] - Remove letterboxing from video
-	 * @param {string} [options.operationId] - Custom operation ID (auto-generated if omitted)
-	 * @returns {Promise<Object>} Extraction result with output path
+	 * Extract a single specific track by ID.
+	 * Used when you know exactly which track you want.
 	 */
 	const extractSpecificTrack = useCallback(
 		async (options) => {
+			// Generate operation ID for progress tracking
 			const operationId = options.operationId || uuidv4()
-			setIsLoading(true)
-			setError(null)
 			setProgress(null)
 
-			// Ensure operationId is included in options
-			const finalOptions = {
-				...options,
-				operationId
-			}
-
-			// Set up progress tracking for this operation
+			// Set up progress tracking
 			const unsubscribe = setupProgressTracking(operationId)
 
 			try {
-				// Verify API availability
-				if (
-					!window.pythonApi ||
-					typeof window.pythonApi.extractSpecificTrack !== "function"
-				) {
-					throw new Error("Python API not available")
-				}
-
-				const result = await window.pythonApi.extractSpecificTrack(finalOptions)
-
-				// Handle unsuccessful operations consistently
-				if (!result.success && result.error) {
-					throw new Error(result.error)
-				}
+				const result = await callPythonFunction("track-extractor.extract_specific_track", {
+					file_path: options.filePath,
+					output_dir: options.outputDir,
+					track_type: options.trackType,
+					track_id: options.trackId,
+					extraction_options: options.extractionOptions || {},
+					operation_id: operationId
+				})
 
 				return result
-			} catch (err) {
-				console.error("Error extracting specific track:", err)
-				setError(err.message)
-				throw err
 			} finally {
-				// Always clean up and update loading state
-				setIsLoading(false)
+				// Always clean up progress tracking
 				unsubscribe()
 			}
 		},
-		[setupProgressTracking]
+		[callPythonFunction, setupProgressTracking]
 	)
 
 	/**
-	 * Process multiple media files in batch with parallel extraction.
-	 *
-	 * Allows extracting tracks from many files with a single operation,
-	 * applying the same extraction parameters to each file. Supports
-	 * multi-threaded extraction for performance optimization.
-	 *
-	 * @param {Object} options - Batch extraction configuration
-	 * @param {Array<string>} options.inputPaths - Paths to source media files
-	 * @param {string} options.outputDir - Base directory for extracted tracks
-	 * @param {Array<string>} options.languages - Language codes to extract
-	 * @param {number} [options.maxWorkers] - Maximum concurrent extraction threads
-	 * @param {boolean} [options.useOrgStructure] - Create organized output directories
-	 * @param {string} [options.operationId] - Custom operation ID (auto-generated if omitted)
-	 * @returns {Promise<Object>} Batch extraction summary
+	 * Process multiple files in batch.
+	 * Currently not implemented in the backend - placeholder for future feature.
 	 */
-	const batchExtract = useCallback(
-		async (options) => {
-			const operationId = options.operationId || uuidv4()
-			setIsLoading(true)
-			setError(null)
-			setProgress(null)
-
-			// Ensure operationId is included in options
-			const finalOptions = {
-				...options,
-				operationId
-			}
-
-			// Set up progress tracking for this operation
-			const unsubscribe = setupProgressTracking(operationId)
-
-			try {
-				// Verify API availability
-				if (!window.pythonApi || typeof window.pythonApi.batchExtract !== "function") {
-					throw new Error("Python API not available")
-				}
-
-				const result = await window.pythonApi.batchExtract(finalOptions)
-
-				// Handle unsuccessful operations consistently
-				if (!result.success && result.error) {
-					throw new Error(result.error)
-				}
-
-				return result
-			} catch (err) {
-				console.error("Error in batch extraction:", err)
-				setError(err.message)
-				throw err
-			} finally {
-				// Always clean up and update loading state
-				setIsLoading(false)
-				unsubscribe()
-			}
-		},
-		[setupProgressTracking]
-	)
-
-	/**
-	 * Find all media files within specified directories.
-	 *
-	 * Recursively scans directories to locate media files for batch processing.
-	 * This is typically used when the user selects directories rather than
-	 * individual files for batch operations.
-	 *
-	 * @param {Array<string>} paths - Directory paths to scan for media files
-	 * @returns {Promise<Object>} Object containing discovered media files
-	 */
-	const findMediaFiles = useCallback(async (paths) => {
-		setIsLoading(true)
-		setError(null)
-
-		try {
-			// Verify API availability
-			if (!window.pythonApi || typeof window.pythonApi.findMediaFiles !== "function") {
-				throw new Error("Python API not available")
-			}
-
-			const result = await window.pythonApi.findMediaFiles(paths)
-
-			// Handle unsuccessful operations consistently
-			if (!result.success && result.error) {
-				throw new Error(result.error)
-			}
-
-			return result
-		} catch (err) {
-			console.error("Error finding media files:", err)
-			setError(err.message)
-			throw err
-		} finally {
-			setIsLoading(false)
-		}
+	const batchExtract = useCallback(async (options) => {
+		setError("Batch extraction is not yet implemented")
+		throw new Error("Batch extraction is not yet implemented")
 	}, [])
 
-	// Return API methods and state indicators
+	/**
+	 * Find all media files in the specified directories.
+	 * Useful for batch processing preparation.
+	 */
+	const findMediaFiles = useCallback(
+		async (paths) => {
+			if (!Array.isArray(paths) || paths.length === 0) {
+				const error = "At least one path is required"
+				setError(error)
+				throw new Error(error)
+			}
+
+			return callPythonFunction("track-extractor.find_media_files", { paths })
+		},
+		[callPythonFunction]
+	)
+
+	/**
+	 * Clear any error state.
+	 * Useful for resetting the UI after an error.
+	 */
+	const clearError = useCallback(() => {
+		setError(null)
+	}, [])
+
+	// Return everything components need
 	return {
-		isLoading, // Boolean indicating if an operation is in progress
-		error, // Error message or null if no error
-		progress, // Current progress data for active operation
-		analyzeFile, // Function to analyze a media file
-		extractTracks, // Function to extract tracks by language
-		extractSpecificTrack, // Function to extract a single track by ID
-		batchExtract, // Function to process multiple files
-		findMediaFiles // Function to find media files in directories
+		// State for UI
+		isLoading,
+		error,
+		progress,
+
+		// Main functions
+		analyzeFile,
+		extractTracks,
+		extractSpecificTrack,
+		batchExtract,
+		findMediaFiles,
+
+		// Utility functions
+		clearError,
+		callPythonFunction
 	}
 }
 

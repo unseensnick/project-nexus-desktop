@@ -1,35 +1,37 @@
 """
-Media Analyzer Module.
+Media Analyzer Module - New Architecture.
 
-This module serves as the foundation for identifying and categorizing tracks within
-media files. It extracts structural metadata (codecs, track types, languages) to enable
-intelligent filtering and extraction operations in the extraction pipeline.
+This module provides media file analysis capabilities for the new plugin-based architecture.
+It follows the "Junior Developer First" principle with simple, clear interfaces and
+utilizes the centralized configuration system.
 
-Core responsibilities:
-- Parse raw FFmpeg output into structured track information
-- Identify and normalize language codes across different naming conventions
-- Categorize tracks by type (audio, subtitle, video)
-- Provide filtering capabilities for extraction operations
-- Support intelligent language detection from limited metadata
+Key principles:
+- Simple, predictable interfaces
+- Configuration-driven behavior
+- Centralized error handling
+- Real-time progress reporting
+- Self-documenting code structure
+
+Responsibilities:
+- Analyze media files using FFprobe
+- Extract track metadata and structure
+- Normalize language codes using config
+- Provide structured track information
+- Support progress tracking for long operations
 """
 
+import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Union
 
-from utils.error_handler import MediaAnalysisError, log_exception, safe_execute
-from utils.ffmpeg import analyze_media_file
-from utils.language import (
-    create_language_filter,
-    enhance_language_detection,
-    get_language_name,
-    normalize_language_code,
-)
+from core.config import get_app_defaults, get_language_mappings, get_supported_formats
+from utils.language import detect_language_with_confidence, get_language_name, normalize_language_code
+# from utils.progress_utils import create_progress_operation  # TODO: Implement if needed
+from utils.ffmpeg_utils import run_ffprobe_command, check_ffprobe_available
 
 logger = logging.getLogger(__name__)
-
-MODULE_NAME = "media_analyzer"
 
 
 @dataclass
@@ -37,37 +39,40 @@ class Track:
     """
     Represents a single media track with its associated metadata.
     
-    Tracks are the fundamental units processed by the extraction pipeline,
-    containing all necessary information to identify, display, and extract
-    individual streams from container formats like MKV, MP4, etc.
+    Simplified from legacy version to focus on essential information needed
+    for the new architecture. All fields are clearly documented and typed.
     """
-
-    id: int             # Track index within its type (e.g., first audio track = 0)
-    type: str           # Track category: 'audio', 'subtitle', or 'video'
-    codec: str          # Codec identifier (e.g., 'aac', 'h264', 'subrip')
-    language: Optional[str] = None  # ISO 639-2 language code or None
-    title: Optional[str] = None     # Title metadata if available 
-    default: bool = False  # Whether marked as default track in container
-    forced: bool = False   # Whether marked as forced track (often for foreign parts)
-
+    id: int                          # Track index within its type
+    type: str                        # Track category: 'audio', 'subtitle', 'video'
+    codec: str                       # Codec identifier (e.g., 'aac', 'h264')
+    language: Optional[str] = None   # ISO 639-1 language code or None
+    title: Optional[str] = None      # Title metadata if available
+    default: bool = False            # Whether marked as default track
+    forced: bool = False             # Whether marked as forced track
+    channels: Optional[int] = None   # Audio channel count
+    width: Optional[int] = None      # Video width in pixels
+    height: Optional[int] = None     # Video height in pixels
+    duration: Optional[float] = None # Track duration in seconds
+    
+    # Additional computed fields
+    metadata: Dict = field(default_factory=dict)  # Additional metadata
+    
     @property
     def display_name(self) -> str:
         """
         Generate a human-readable representation of the track.
         
-        Creates a consistent, informative description suitable for UI display,
-        combining track type, number, language, title and flag information
-        in a standardized format.
-        
-        Returns:
-            Formatted string describing the track (e.g., "Audio Track 0 [English]: Director's Commentary - aac")
+        Uses configuration-based language detection for better names.
         """
-        # Include human-readable language name when available
+        # Get human-readable language name from config
         lang_display = ""
         if self.language:
             lang_name = get_language_name(self.language)
-            lang_display = f"[{lang_name}]"
-
+            if lang_name != self.language:  # Only show if we have a better name
+                lang_display = f" [{lang_name}]"
+            else:
+                lang_display = f" [{self.language}]"
+        
         # Include title when available
         title_display = f": {self.title}" if self.title else ""
         
@@ -79,411 +84,375 @@ class Track:
             flags.append("forced")
         flags_display = f" ({', '.join(flags)})" if flags else ""
         
-        return f"{self.type.capitalize()} Track {self.id} {lang_display}{title_display}{flags_display} - {self.codec}"
+        # Add technical details for different track types
+        tech_details = []
+        if self.type == "audio" and self.channels:
+            tech_details.append(f"{self.channels}ch")
+        elif self.type == "video" and self.width and self.height:
+            tech_details.append(f"{self.width}x{self.height}")
+        
+        tech_display = f" - {', '.join(tech_details)}" if tech_details else ""
+        
+        return f"{self.type.capitalize()} {self.id}{lang_display}{title_display}{flags_display} ({self.codec}){tech_display}"
+
+
+@dataclass
+class AnalysisResult:
+    """
+    Container for media analysis results.
+    
+    Provides structured access to analysis data with clear organization
+    by track type and summary information.
+    """
+    file_path: str
+    duration: Optional[float] = None
+    format_name: Optional[str] = None
+    file_size: Optional[int] = None
+    
+    # Track collections
+    tracks: List[Track] = field(default_factory=list)
+    audio_tracks: List[Track] = field(default_factory=list)
+    video_tracks: List[Track] = field(default_factory=list)
+    subtitle_tracks: List[Track] = field(default_factory=list)
+    
+    # Language summaries
+    languages: Dict[str, List[str]] = field(default_factory=dict)
+    
+    def to_dict(self) -> Dict:
+        """Convert to dictionary for JSON serialization."""
+        return {
+            "file_path": self.file_path,
+            "duration": self.duration,
+            "format_name": self.format_name,
+            "file_size": self.file_size,
+            "tracks": [track.__dict__ for track in self.tracks],
+            "audio_tracks": [track.__dict__ for track in self.audio_tracks],
+            "video_tracks": [track.__dict__ for track in self.video_tracks],
+            "subtitle_tracks": [track.__dict__ for track in self.subtitle_tracks],
+            "languages": self.languages,
+            "summary": {
+                "total_tracks": len(self.tracks),
+                "audio_count": len(self.audio_tracks),
+                "video_count": len(self.video_tracks),
+                "subtitle_count": len(self.subtitle_tracks)
+            }
+        }
 
 
 class MediaAnalyzer:
     """
-    Analyzes media files to extract track metadata and support intelligent filtering.
+    Media file analyzer for the new architecture.
     
-    This class serves as the initial stage of the extraction pipeline, identifying
-    all available tracks in a media file and organizing them for subsequent 
-    operations. It's responsible for categorizing tracks by type, detecting 
-    languages, and providing filtering capabilities based on user preferences.
+    Follows the "Junior Developer First" principle with simple interfaces
+    and clear responsibilities. Uses centralized configuration and provides
+    comprehensive error handling.
     """
     
     def __init__(self):
-        """Initialize track collections for different media types."""
-        self._tracks = []           # All tracks regardless of type
-        self._audio_tracks = []     # Audio-only tracks
-        self._video_tracks = []     # Video-only tracks
-        self._subtitle_tracks = []  # Subtitle-only tracks
-        self._analyzed_file = None  # Currently analyzed file path
-
-    @property
-    def tracks(self) -> List[Track]:
-        """
-        Get all tracks from the analyzed file.
+        """Initialize the analyzer with configuration."""
+        self.config = get_app_defaults()
+        self.language_mappings = get_language_mappings()
+        self.media_formats = get_supported_formats()
         
-        Returns:
-            List of all detected tracks regardless of type
-        """
-        return self._tracks
-
-    @property
-    def audio_tracks(self) -> List[Track]:
-        """
-        Get all audio tracks from the analyzed file.
+        # Configuration-driven settings
+        self.analysis_timeout = self.config.get("analysis", {}).get("analysis_timeout", 300)
+        self.include_metadata = self.config.get("analysis", {}).get("include_metadata", True)
+        self.include_technical_info = self.config.get("analysis", {}).get("include_technical_info", True)
+        self.language_confidence_threshold = self.config.get("analysis", {}).get("language_detection_confidence", 0.6)
         
-        Returns:
-            List of audio-only tracks
-        """
-        return self._audio_tracks
-
-    @property
-    def video_tracks(self) -> List[Track]:
-        """
-        Get all video tracks from the analyzed file.
+        # Validation settings
+        self.supported_containers = self.config.get("validation", {}).get("supported_containers", [])
+        self.min_file_size = self.config.get("validation", {}).get("min_file_size", 1024)
+        self.max_file_size = self.config.get("validation", {}).get("max_file_size", 53687091200)
         
-        Returns:
-            List of video-only tracks
+        logger.info("MediaAnalyzer initialized with configuration-driven settings")
+    
+    def analyze_file(self, file_path: Union[str, Path], progress_callback=None) -> AnalysisResult:
         """
-        return self._video_tracks
-
-    @property
-    def subtitle_tracks(self) -> List[Track]:
-        """
-        Get all subtitle tracks from the analyzed file.
+        Analyze a media file to extract comprehensive metadata.
         
-        Returns:
-            List of subtitle-only tracks
-        """
-        return self._subtitle_tracks
-
-    def analyze_file(self, file_path: Union[str, Path]) -> List[Track]:
-        """
-        Analyze a media file to identify all available tracks and their metadata.
-        
-        This is the primary entry point for media analysis. It uses FFmpeg to probe 
-        the file structure, then categorizes and enhances the raw data into structured
-        track information that can be displayed to users and used for extraction.
+        This is the main entry point for media analysis. It provides progress
+        tracking and uses the centralized configuration system.
         
         Args:
             file_path: Path to the media file to analyze
+            progress_callback: Optional callback for progress updates
             
         Returns:
-            List of Track objects representing all identified tracks
+            AnalysisResult containing all extracted metadata
             
         Raises:
-            MediaAnalysisError: If analysis fails (file not found, corrupt file, etc.)
-            
-        Example:
-            analyzer = MediaAnalyzer()
-            tracks = analyzer.analyze_file("movie.mkv")
-            for track in tracks:
-                print(track.display_name)
+            FileNotFoundError: If the file doesn't exist
+            ValueError: If the file is not supported or invalid
+            TimeoutError: If analysis times out
+            RuntimeError: If FFprobe fails
         """
+        file_path = Path(file_path)
+        
+        # Create progress operation for tracking
+        # TODO: Implement progress tracking
+        # if progress_callback:
+        #     operation = create_progress_operation(
+        #         file_path=file_path,
+        #         stage="analysis",
+        #         progress_callback=progress_callback
+        #     )
+        #     operation.start()
+        
         try:
-            file_path = Path(file_path)
-            self._analyzed_file = file_path
-            self._reset_track_lists()
-
-            logger.info(f"Analyzing media file: {file_path}")
+            # Validate file exists and is supported
+            self._validate_file(file_path)
             
-            # Obtain raw media information via FFmpeg
-            media_info = safe_execute(
-                analyze_media_file,
-                file_path,
-                module_name=MODULE_NAME,
-                error_map={
-                    Exception: lambda msg, **kwargs: MediaAnalysisError(
-                        f"Failed to analyze file: {msg}",
-                        file_path,
-                        MODULE_NAME
-                    )
-                },
-                raise_error=True
-            )
-
-            # Process raw media info into structured track objects
-            self._extract_tracks(media_info, file_path)
+            # TODO: Add progress callbacks
+            # if progress_callback:
+            #     operation.update_progress(10, "Validating file")
             
-            # Log summary of discovered tracks
-            self._log_track_info(file_path)
+            # Get file size for metadata
+            file_size = file_path.stat().st_size
             
-            return self._tracks
+            # TODO: Add progress callbacks
+            # if progress_callback:
+            #     operation.update_progress(20, "Running FFprobe analysis")
+            
+            # Run FFprobe analysis
+            ffprobe_data = self._run_ffprobe_analysis(file_path)
+            
+            # TODO: Add progress callbacks
+            # if progress_callback:
+            #     operation.update_progress(50, "Processing stream information")
+            
+            # Process the raw data into structured format
+            result = self._process_ffprobe_data(ffprobe_data, file_path, file_size)
+            
+            # TODO: Add progress callbacks
+            # if progress_callback:
+            #     operation.update_progress(80, "Enhancing language detection")
+            
+            # Enhance language detection using configuration
+            self._enhance_language_detection(result, file_path)
+            
+            # TODO: Add progress callbacks
+            # if progress_callback:
+            #     operation.update_progress(100, "Analysis complete")
+            #     operation.complete()
+            
+            logger.info(f"Successfully analyzed {file_path}: {len(result.tracks)} tracks found")
+            return result
             
         except Exception as e:
-            # Wrap any unexpected errors in a MediaAnalysisError for consistent handling
-            raise MediaAnalysisError(str(e), file_path, MODULE_NAME) from e
-
-    def _reset_track_lists(self) -> None:
-        """
-        Clear all track collections before a new analysis.
+            # TODO: Add progress callbacks
+            # if progress_callback:
+            #     operation.fail(str(e))
+            logger.error(f"Failed to analyze {file_path}: {e}")
+            raise
+    
+    def _validate_file(self, file_path: Path) -> None:
+        """Validate that the file exists and is supported."""
+        if not file_path.exists():
+            raise FileNotFoundError(f"File not found: {file_path}")
         
-        This ensures that results from previous analyses don't contaminate
-        the current operation.
-        """
-        self._tracks = []
-        self._audio_tracks = []
-        self._video_tracks = []
-        self._subtitle_tracks = []
-
-    def _extract_tracks(self, media_info: Dict, file_path: Path) -> None:
-        """
-        Convert raw FFmpeg stream information into structured Track objects.
+        if not file_path.is_file():
+            raise ValueError(f"Path is not a file: {file_path}")
         
-        This method processes each stream from FFmpeg output, applies language
-        detection, and categorizes tracks by type for easier access later.
+        # Check file size
+        file_size = file_path.stat().st_size
+        if file_size < self.min_file_size:
+            raise ValueError(f"File too small: {file_size} bytes (minimum: {self.min_file_size})")
         
-        Args:
-            media_info: Raw FFmpeg analysis results dictionary
-            file_path: Path to the media file (for language detection from filename)
-        """
-        if not media_info or "streams" not in media_info:
-            logger.warning(f"No streams found in {file_path}")
-            return
-            
-        # Initialize counters for each track type to assign sequential IDs
-        audio_index = 0
-        video_index = 0
-        subtitle_index = 0
+        if file_size > self.max_file_size:
+            raise ValueError(f"File too large: {file_size} bytes (maximum: {self.max_file_size})")
         
-        # Process each stream in the file
-        for stream in media_info.get("streams", []):
-            codec_type = stream.get("codec_type", "").lower()
-            codec_name = stream.get("codec_name", "unknown")
-            tags = stream.get("tags", {})
+        # Check file extension if supported containers are configured
+        if self.supported_containers:
+            suffix = file_path.suffix.lower().lstrip('.')
+            if suffix not in self.supported_containers:
+                raise ValueError(f"Unsupported file format: {suffix}")
+    
+    def _run_ffprobe_analysis(self, file_path: Path) -> Dict:
+        """Run FFprobe to analyze the media file."""
+        # Check if FFprobe is available
+        if not check_ffprobe_available():
+            raise RuntimeError("FFprobe is not available. Please install FFmpeg.")
+        
+        # Build FFprobe command arguments (without the executable)
+        command = [
+            "-v", "quiet",
+            "-print_format", "json",
+            "-show_format",
+            "-show_streams"
+        ]
+        
+        # Add additional info if configured
+        if self.include_technical_info:
+            command.extend(["-show_chapters", "-show_programs"])
+        
+        command.append(str(file_path))
+        
+        try:
+            # Run FFprobe with timeout using the new utility
+            return_code, stdout, stderr = run_ffprobe_command(command, self.analysis_timeout)
             
-            # Apply enhanced language detection using multiple sources
-            language = enhance_language_detection(
-                self._extract_metadata_language(stream, tags),
-                file_path.name,
-                tags.get("title")
-            )
+            if return_code != 0:
+                raise RuntimeError(f"FFprobe failed with exit code {return_code}: {stderr}")
             
-            # Extract additional track metadata
-            title = tags.get("title", "")
-            default = stream.get("disposition", {}).get("default", 0) == 1
-            forced = stream.get("disposition", {}).get("forced", 0) == 1
+            # Parse JSON output
+            return json.loads(stdout)
             
-            # Create and categorize track by type
-            if codec_type == "audio":
-                track = self._create_track(audio_index, "audio", codec_name, language, title, default, forced)
-                self._audio_tracks.append(track)
-                audio_index += 1
-            elif codec_type == "video":
-                track = self._create_track(video_index, "video", codec_name, language, title, default, forced)
-                self._video_tracks.append(track)
-                video_index += 1
-            elif codec_type == "subtitle":
-                track = self._create_track(subtitle_index, "subtitle", codec_name, language, title, default, forced)
-                self._subtitle_tracks.append(track)
-                subtitle_index += 1
-            else:
-                # Skip attachment streams, data streams, etc.
-                logger.debug(f"Skipping unknown stream type: {codec_type}")
-                continue
+        except subprocess.TimeoutExpired:
+            raise TimeoutError(f"FFprobe analysis timed out after {self.analysis_timeout} seconds")
+        
+        except json.JSONDecodeError as e:
+            raise RuntimeError(f"Failed to parse FFprobe output: {e}")
+        
+        except Exception as e:
+            raise RuntimeError(f"FFprobe analysis failed: {e}")
+    
+    def _process_ffprobe_data(self, data: Dict, file_path: Path, file_size: int) -> AnalysisResult:
+        """Process raw FFprobe data into structured AnalysisResult."""
+        result = AnalysisResult(file_path=str(file_path), file_size=file_size)
+        
+        # Extract format information
+        format_info = data.get("format", {})
+        result.format_name = format_info.get("format_name", "").split(',')[0]  # Take first format
+        result.duration = float(format_info.get("duration", 0)) or None
+        
+        # Process streams
+        streams = data.get("streams", [])
+        track_counters = {"audio": 0, "video": 0, "subtitle": 0}
+        
+        for stream in streams:
+            track = self._process_stream(stream, track_counters)
+            if track:
+                result.tracks.append(track)
                 
-            # Add to comprehensive track list
-            self._tracks.append(track)
-
-    def _create_track(
-        self, 
-        index: int, 
-        track_type: str, 
-        codec: str, 
-        language: str, 
-        title: str, 
-        default: bool, 
-        forced: bool
-    ) -> Track:
-        """
-        Create a Track object with the extracted metadata.
+                # Add to type-specific collections
+                if track.type == "audio":
+                    result.audio_tracks.append(track)
+                elif track.type == "video":
+                    result.video_tracks.append(track)
+                elif track.type == "subtitle":
+                    result.subtitle_tracks.append(track)
         
-        Centralizes Track instantiation to ensure consistency in track creation.
+        # Generate language summaries
+        result.languages = self._generate_language_summary(result)
         
-        Args:
-            index: Zero-based index within the track type
-            track_type: Category ('audio', 'subtitle', 'video')
-            codec: Codec identifier string
-            language: Detected language code or None
-            title: Track title from metadata or empty string
-            default: Whether this is a default track
-            forced: Whether this is a forced track
-            
-        Returns:
-            Populated Track object
-        """
-        return Track(
-            id=index,
-            type=track_type,
-            codec=codec,
+        return result
+    
+    def _process_stream(self, stream: Dict, track_counters: Dict[str, int]) -> Optional[Track]:
+        """Process a single stream into a Track object."""
+        codec_type = stream.get("codec_type", "").lower()
+        
+        # Skip unsupported stream types
+        if codec_type not in ["audio", "video", "subtitle"]:
+            return None
+        
+        # Extract basic information
+        codec_name = stream.get("codec_name", "unknown")
+        tags = stream.get("tags", {})
+        disposition = stream.get("disposition", {})
+        
+        # Get track ID for this type
+        track_id = track_counters[codec_type]
+        track_counters[codec_type] += 1
+        
+        # Extract metadata
+        language = self._extract_language_from_stream(stream, tags)
+        title = tags.get("title", "")
+        default = disposition.get("default", 0) == 1
+        forced = disposition.get("forced", 0) == 1
+        
+        # Extract technical details
+        channels = stream.get("channels") if codec_type == "audio" else None
+        width = stream.get("width") if codec_type == "video" else None
+        height = stream.get("height") if codec_type == "video" else None
+        duration = float(stream.get("duration", 0)) or None
+        
+        # Create track
+        track = Track(
+            id=track_id,
+            type=codec_type,
+            codec=codec_name,
             language=language,
             title=title,
             default=default,
-            forced=forced
+            forced=forced,
+            channels=channels,
+            width=width,
+            height=height,
+            duration=duration,
+            metadata={"original_stream": stream} if self.include_metadata else {}
         )
-
-    def _extract_metadata_language(self, stream: Dict, tags: Dict) -> Optional[str]:
-        """
-        Extract language information from stream metadata.
         
-        Media containers store language information in different tag formats.
-        This method checks various common locations to find language codes.
+        return track
+    
+    def _extract_language_from_stream(self, stream: Dict, tags: Dict) -> Optional[str]:
+        """Extract language information from stream metadata."""
+        # Check common language tag variations
+        language_tags = ['language', 'LANGUAGE', 'lang', 'LANG']
         
-        Args:
-            stream: Stream information dictionary from FFmpeg
-            tags: Tags dictionary from the stream
-            
-        Returns:
-            Language code if found, None otherwise
-        """
-        # Check common language tag variations in the primary tags
-        for tag in ['language', 'LANGUAGE', 'lang', 'LANG']:
+        # Check tags first
+        for tag in language_tags:
             if tag in tags and tags[tag]:
                 return tags[tag]
-                
-        # Check stream-level tags as a fallback (some containers use this location)
-        if 'tags' in stream:
-            stream_tags = stream.get('tags', {})
-            for tag in ['language', 'LANGUAGE', 'lang', 'LANG']:
-                if tag in stream_tags and stream_tags[tag]:
-                    return stream_tags[tag]
-                    
-        # No language tag found
+        
+        # Check stream-level tags
+        stream_tags = stream.get('tags', {})
+        for tag in language_tags:
+            if tag in stream_tags and stream_tags[tag]:
+                return stream_tags[tag]
+        
         return None
-
-    def _log_track_info(self, file_path: Path) -> None:
-        """
-        Log summary information about discovered tracks.
+    
+    def _enhance_language_detection(self, result: AnalysisResult, file_path: Path) -> None:
+        """Enhance language detection using configuration-based detection."""
+        filename = file_path.name
         
-        Provides analysis results in the log for debugging and auditing.
-        
-        Args:
-            file_path: Path to the analyzed file
-        """
-        logger.info(f"Found {len(self._tracks)} tracks in {file_path}")
-        logger.debug(f"Audio tracks: {len(self._audio_tracks)}")
-        logger.debug(f"Video tracks: {len(self._video_tracks)}")
-        logger.debug(f"Subtitle tracks: {len(self._subtitle_tracks)}")
-        
-        # Log available languages per track type
-        audio_langs = self.get_available_languages("audio")
-        subtitle_langs = self.get_available_languages("subtitle")
-        
-        if audio_langs:
-            logger.debug(f"Audio languages: {', '.join(audio_langs)}")
-        if subtitle_langs:
-            logger.debug(f"Subtitle languages: {', '.join(subtitle_langs)}")
-
-    def filter_tracks_by_language(
-        self, language_codes: Union[str, List[str]], track_type: Optional[str] = None
-    ) -> List[Track]:
-        """
-        Filter tracks by language to match user preferences.
-        
-        Allows selecting tracks based on language codes and optionally by track type.
-        This is a key function enabling user-friendly extraction by language rather
-        than requiring track ID selection.
-        
-        Args:
-            language_codes: One or more language codes to filter by
-            track_type: Optional track type to restrict filtering ('audio', 'subtitle', 'video')
-            
-        Returns:
-            List of tracks matching the language and type criteria
-            
-        Example:
-            # Find all English and Spanish audio tracks
-            eng_spa_audio = analyzer.filter_tracks_by_language(['eng', 'spa'], 'audio')
-        """
-        try:
-            # Standardize input to list format
-            if isinstance(language_codes, str):
-                language_codes = [language_codes]
+        for track in result.tracks:
+            if not track.language or track.language.lower() in ["und", "unknown"]:
+                # Try to detect language from filename and title
+                detection_result = detect_language_with_confidence(
+                    filename=filename, 
+                    track_title=track.title or ""
+                )
                 
-            logger.info(f"Filtering tracks for languages: {', '.join(language_codes)}")
-            
-            # Create a reusable filter function for the requested languages
-            include_undefined = any(
-                lang.lower() in ("und", "unknown", "") for lang in language_codes
-            )
-            language_filter = create_language_filter(language_codes, include_undefined)
-            
-            # Determine which track collection to filter
-            tracks_to_filter = self._tracks
-            if track_type:
-                if track_type == "audio":
-                    tracks_to_filter = self._audio_tracks
-                elif track_type == "subtitle":
-                    tracks_to_filter = self._subtitle_tracks
-                elif track_type == "video":
-                    tracks_to_filter = self._video_tracks
-                    
-            # Special case: video tracks typically don't have reliable language info
-            # so we include all video tracks when requested
-            if track_type == "video":
-                return tracks_to_filter
-                
-            # Filter tracks by applying language filter
-            filtered_tracks = []
-            for track in tracks_to_filter:
-                # Always include video tracks regardless of language
-                if track.type == "video":
-                    filtered_tracks.append(track)
-                    continue
-                    
-                # Apply language filter for audio and subtitle tracks
-                if language_filter(track.language):
-                    filtered_tracks.append(track)
-                    logger.debug(
-                        f"Including {track.type} track {track.id} with language '{track.language}'"
-                    )
-                else:
-                    logger.debug(
-                        f"Excluding {track.type} track {track.id} with language '{track.language}'"
-                    )
-            
-            # Log summary of filter results
-            if filtered_tracks:
-                logger.info(f"Found {len(filtered_tracks)} tracks matching language filter")
+                # Only use detected language if confidence is high enough
+                if detection_result.language_code and detection_result.confidence >= self.language_confidence_threshold:
+                    track.language = detection_result.language_code
+                    track.metadata["language_detection"] = {
+                        "detected_from": "filename_and_title",
+                        "confidence": detection_result.confidence,
+                        "method": detection_result.detection_method
+                    }
             else:
-                logger.warning(f"No tracks found for languages: {', '.join(language_codes)}")
-                
-            return filtered_tracks
-            
-        except Exception as e:
-            # Log error but return empty list rather than crashing
-            log_exception(e, module_name=f"{MODULE_NAME}.filter_tracks_by_language", level=logging.WARNING)
-            logger.error(f"Error filtering tracks by language: {e}")
-            return []
-
-    def get_available_languages(self, track_type: Optional[str] = None) -> Set[str]:
-        """
-        Identify all unique languages available in the media file.
+                # Normalize existing language code
+                normalized = normalize_language_code(track.language)
+                if normalized and normalized != track.language:
+                    original_lang = track.language
+                    track.language = normalized
+                    track.metadata["language_normalization"] = {
+                        "original": original_lang,
+                        "normalized": normalized
+                    }
+    
+    def _generate_language_summary(self, result: AnalysisResult) -> Dict[str, List[str]]:
+        """Generate language summaries by track type."""
+        languages = {"audio": [], "video": [], "subtitle": []}
         
-        This method gathers language information from tracks to help users
-        understand what languages are available before choosing which to extract.
+        for track in result.tracks:
+            if track.language and track.language.lower() not in ["und", "unknown"]:
+                if track.language not in languages[track.type]:
+                    languages[track.type].append(track.language)
         
-        Args:
-            track_type: Optional track type to restrict search ('audio', 'subtitle', 'video')
-            
-        Returns:
-            Set of language codes found in the matching tracks
-            
-        Example:
-            # Show user what subtitle languages are available
-            available_sub_langs = analyzer.get_available_languages("subtitle")
-            print(f"Available subtitle languages: {', '.join(available_sub_langs)}")
-        """
-        try:
-            # Select appropriate track collection
-            tracks_to_check = self._tracks
-            if track_type:
-                if track_type == "audio":
-                    tracks_to_check = self._audio_tracks
-                elif track_type == "subtitle":
-                    tracks_to_check = self._subtitle_tracks
-                elif track_type == "video":
-                    tracks_to_check = self._video_tracks
-            
-            # Extract and normalize unique language codes
-            languages = set()
-            for track in tracks_to_check:
-                # Skip undefined languages
-                if track.language and track.language.lower() != "und":
-                    # Attempt to normalize language code to standard format
-                    norm_lang = normalize_language_code(track.language)
-                    if norm_lang:
-                        languages.add(norm_lang)
-                    else:
-                        # Fall back to lowercase original if normalization fails
-                        languages.add(track.language.lower())
-            
-            return languages
-            
-        except Exception as e:
-            # Log error but return empty set rather than crashing
-            log_exception(e, module_name=f"{MODULE_NAME}.get_available_languages", level=logging.WARNING)
-            return set()
+        return languages
+    
+    def get_supported_formats(self) -> List[str]:
+        """Get list of supported media formats from configuration."""
+        return self.supported_containers.copy()
+    
+    def is_supported_format(self, file_path: Union[str, Path]) -> bool:
+        """Check if a file format is supported."""
+        if not self.supported_containers:
+            return True  # No restrictions configured
+        
+        suffix = Path(file_path).suffix.lower().lstrip('.')
+        return suffix in self.supported_containers 

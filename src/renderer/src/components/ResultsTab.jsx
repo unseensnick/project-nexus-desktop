@@ -80,6 +80,45 @@ function ResultsTab({
 		)
 	}
 
+	// Show placeholder when no extraction result is available
+	if (!extractionResult) {
+		return (
+			<Card className="shadow-lg">
+				<CardHeader>
+					<CardTitle className="flex items-center gap-2">
+						<FileText className="h-5 w-5 text-gray-500" />
+						No Extraction Results
+					</CardTitle>
+					<CardDescription>No extraction results available</CardDescription>
+				</CardHeader>
+				<CardContent className="space-y-6">
+					<div className="p-4 text-center text-muted-foreground">
+						No extraction results are currently available. Please perform an extraction
+						first.
+					</div>
+				</CardContent>
+				<CardFooter className="flex justify-between">
+					<Button
+						variant="outline"
+						onClick={() => setActiveTab("analyze")}
+						className="flex items-center gap-2"
+					>
+						<ChevronLeft className="h-4 w-4" />
+						Back to Analysis
+					</Button>
+
+					<Button
+						onClick={handleReset}
+						className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700"
+					>
+						<FileText className="h-4 w-4" />
+						Start New Extraction
+					</Button>
+				</CardFooter>
+			</Card>
+		)
+	}
+
 	// Show appropriate results based on mode
 	if (batchMode) {
 		return (
@@ -102,7 +141,7 @@ function ResultsTab({
 							</div>
 							<div className="p-3 text-center">
 								<span className="text-3xl font-bold">
-									{extractionResult.total_files}
+									{extractionResult?.total_files || 0}
 								</span>
 							</div>
 						</div>
@@ -115,7 +154,7 @@ function ResultsTab({
 							</div>
 							<div className="p-3 text-center">
 								<span className="text-3xl font-bold text-green-800 dark:text-green-200">
-									{extractionResult.successful_files}
+									{extractionResult?.successful_files || 0}
 								</span>
 							</div>
 						</div>
@@ -128,7 +167,7 @@ function ResultsTab({
 							</div>
 							<div className="p-3 text-center">
 								<span className="text-3xl font-bold text-red-800 dark:text-red-200">
-									{extractionResult.failed_files}
+									{extractionResult?.failed_files || 0}
 								</span>
 							</div>
 						</div>
@@ -141,7 +180,7 @@ function ResultsTab({
 							</div>
 							<div className="p-3 text-center">
 								<span className="text-3xl font-bold text-blue-800 dark:text-blue-200">
-									{extractionResult.extracted_tracks}
+									{extractionResult?.extracted_tracks || 0}
 								</span>
 							</div>
 						</div>
@@ -159,7 +198,7 @@ function ResultsTab({
 					</div>
 
 					{/* Conditionally displayed error section for failed files */}
-					{extractionResult.failed_files_list &&
+					{extractionResult?.failed_files_list &&
 						extractionResult.failed_files_list.length > 0 && (
 							<div className="p-4 bg-red-50 text-red-800 rounded-lg dark:bg-red-950 dark:text-red-100">
 								<div className="flex items-center gap-2 mb-2">
@@ -211,12 +250,18 @@ function ResultsTab({
 				<CardContent className="space-y-6">
 					{/* Track type summary cards for audio, subtitle and video */}
 					<div className="grid grid-cols-3 gap-4">
-						<TrackSummaryCard type="audio" count={extractionResult.extracted_audio} />
+						<TrackSummaryCard
+							type="audio"
+							count={extractionResult?.extracted_audio || 0}
+						/>
 						<TrackSummaryCard
 							type="subtitle"
-							count={extractionResult.extracted_subtitles}
+							count={extractionResult?.extracted_subtitles || 0}
 						/>
-						<TrackSummaryCard type="video" count={extractionResult.extracted_video} />
+						<TrackSummaryCard
+							type="video"
+							count={extractionResult?.extracted_video || 0}
+						/>
 					</div>
 
 					{/* Output location information */}

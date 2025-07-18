@@ -37,7 +37,45 @@ const dialogApi = {
 	 * @param {Object} options - Dialog configuration options
 	 * @returns {Promise<{canceled: boolean, filePath: string}>} Dialog result
 	 */
-	saveFileDialog: (options) => ipcRenderer.invoke("dialog:saveFile", options)
+	saveFileDialog: (options) => ipcRenderer.invoke("dialog:saveFile", options),
+
+	/**
+	 * Generic Python function caller for plugin-based architecture
+	 * @param {string} functionName - Function name in format "plugin-name.function-name"
+	 * @param {Object} parameters - Parameters to pass to the function
+	 * @returns {Promise<Object>} - Function result
+	 */
+	callPythonFunction: (functionName, parameters) => {
+		return ipcRenderer.invoke("python:call-function", { functionName, parameters })
+	},
+
+	/**
+	 * Subscribe to progress updates for operations
+	 * @param {Function} callback - Function to call with progress updates
+	 * @returns {Function} - Unsubscribe function
+	 */
+	subscribeToProgress: (callback) => {
+		const channel = "python:progress"
+
+		// Remove any existing listeners
+		ipcRenderer.removeAllListeners(channel)
+
+		// Add the new listener
+		ipcRenderer.on(channel, (_, data) => {
+			try {
+				if (data && typeof data === "object") {
+					callback(data)
+				}
+			} catch (error) {
+				console.error("Error in progress callback:", error)
+			}
+		})
+
+		// Return unsubscribe function
+		return () => {
+			ipcRenderer.removeAllListeners(channel)
+		}
+	}
 }
 
 /**

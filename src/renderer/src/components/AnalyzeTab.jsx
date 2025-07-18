@@ -70,7 +70,7 @@ import React from "react"
  * @param {string} props.progressText - Text description of current extraction task
  * @returns {JSX.Element} The rendered analysis tab
  */
-function AnalysisTab({
+function AnalyzeTab({
 	fileName,
 	analyzed,
 	batchMode,
@@ -152,9 +152,18 @@ function AnalysisTab({
 				<CardContent className="space-y-6">
 					{/* Track summary cards showing counts by type */}
 					<div className="grid grid-cols-3 gap-4 mb-6">
-						<TrackSummaryCard type="audio" count={analysisResult.audio_tracks} />
-						<TrackSummaryCard type="subtitle" count={analysisResult.subtitle_tracks} />
-						<TrackSummaryCard type="video" count={analysisResult.video_tracks} />
+						<TrackSummaryCard
+							type="audio"
+							count={analysisResult.summary?.audio_count || 0}
+						/>
+						<TrackSummaryCard
+							type="subtitle"
+							count={analysisResult.summary?.subtitle_count || 0}
+						/>
+						<TrackSummaryCard
+							type="video"
+							count={analysisResult.summary?.video_count || 0}
+						/>
 					</div>
 
 					{/* Track list - only displayed in single file mode */}
@@ -494,6 +503,7 @@ function AnalysisTab({
 					<Button
 						onClick={handleExtractTracks}
 						disabled={
+							batchMode ||
 							(!filePath && !batchMode) ||
 							(!inputPaths.length && batchMode) ||
 							!outputPath ||
@@ -501,7 +511,12 @@ function AnalysisTab({
 							isExtracting ||
 							selectedLanguages.length === 0
 						}
-						className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700"
+						className={`flex items-center gap-2 ${batchMode ? "bg-gray-400 cursor-not-allowed" : "bg-indigo-600 hover:bg-indigo-700"}`}
+						title={
+							batchMode
+								? "Batch mode is not yet available in the new backend architecture"
+								: ""
+						}
 					>
 						{isExtracting ? (
 							<RefreshCw className="h-4 w-4 animate-spin" />
@@ -511,9 +526,9 @@ function AnalysisTab({
 						{isExtracting
 							? "Extracting..."
 							: batchMode
-								? "Extract Batch"
+								? "Batch Mode Coming Soon"
 								: "Extract Tracks"}
-						{!isExtracting && <ChevronRight className="h-4 w-4" />}
+						{!isExtracting && !batchMode && <ChevronRight className="h-4 w-4" />}
 					</Button>
 				</CardFooter>
 			</Card>
@@ -531,4 +546,4 @@ function AnalysisTab({
 	)
 }
 
-export default AnalysisTab
+export default AnalyzeTab

@@ -158,30 +158,27 @@ class PythonBridge {
 						for (const line of lines) {
 							if (line.trim() === "") continue
 
-							// Special handling for progress update messages
-							if (line.startsWith("PROGRESS:")) {
-								try {
-									const progressJson = line.substring(9).trim()
-									console.log(`${this._module}: Progress data: ${progressJson}`)
-									const progressData = JSON.parse(progressJson)
+							try {
+								// Try to parse as JSON - could be progress update or result
+								const jsonData = JSON.parse(line)
 
-									// Forward valid progress updates to renderer
-									if (progressData && typeof progressData === "object") {
+								// Check if this is a progress update
+								if (jsonData.type === "progress_update") {
+									console.log(`${this._module}: Progress update:`, jsonData)
+
+									// Forward progress updates to renderer
+									if (jsonData.data && typeof jsonData.data === "object") {
 										this.mainWindow.webContents.send(
 											`python:progress:${opId}`,
-											progressData
+											jsonData.data
 										)
 									}
-								} catch (err) {
-									console.error(
-										`${this._module}: Error parsing progress data: ${err.message}`
-									)
-									console.error(
-										`${this._module}: Raw progress data: "${line.substring(9)}"`
-									)
+								} else {
+									// This is the final result
+									result = line
 								}
-							} else {
-								// Accumulate regular output for final result
+							} catch (err) {
+								// Not valid JSON, treat as regular output
 								result += line + "\n"
 							}
 						}
@@ -367,6 +364,21 @@ class PythonBridge {
 				return await this.executePythonFunction("find_media_files_in_paths", paths)
 			} catch (err) {
 				console.error(`${this._module}: Error finding media files:`, err)
+				return { success: false, error: err.message }
+			}
+		})
+
+		// Generic Python function call handler for plugin architecture
+		ipcMain.handle("python:call-function", async (_, { functionName, parameters }) => {
+			console.log(`${this._module}: Calling function: ${functionName}`)
+			try {
+				// Call the plugin function directly through the API routing
+				return await this.executePythonFunction("call_plugin_function", [
+					functionName,
+					parameters
+				])
+			} catch (err) {
+				console.error(`${this._module}: Error calling function ${functionName}:`, err)
 				return { success: false, error: err.message }
 			}
 		})

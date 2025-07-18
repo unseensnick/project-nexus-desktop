@@ -1,0 +1,229 @@
+{
+	"supported_formats": {
+		"video": {
+			"extensions": [
+				".mkv",
+				".mp4",
+				".avi",
+				".mov",
+				".wmv",
+				".flv",
+				".webm",
+				".m4v",
+				".mpg",
+				".mpeg",
+				".3gp",
+				".asf",
+				".rm",
+				".rmvb",
+				".vob",
+				".ts",
+				".m2ts",
+				".mts",
+				".divx",
+				".xvid",
+				".f4v",
+				".ogv"
+			],
+			"codecs": {
+				"h264": {
+					"name": "H.264 / AVC",
+					"extensions": [".mp4", ".mkv", ".ts", ".m2ts"],
+					"containers": ["mp4", "mkv", "ts", "avi"]
+				},
+				"h265": {
+					"name": "H.265 / HEVC",
+					"extensions": [".mp4", ".mkv", ".ts", ".m2ts"],
+					"containers": ["mp4", "mkv", "ts"]
+				},
+				"vp8": {
+					"name": "VP8",
+					"extensions": [".webm", ".mkv"],
+					"containers": ["webm", "mkv"]
+				},
+				"vp9": {
+					"name": "VP9",
+					"extensions": [".webm", ".mkv"],
+					"containers": ["webm", "mkv"]
+				},
+				"av1": {
+					"name": "AV1",
+					"extensions": [".webm", ".mkv", ".mp4"],
+					"containers": ["webm", "mkv", "mp4"]
+				},
+				"mpeg2": {
+					"name": "MPEG-2",
+					"extensions": [".mpg", ".mpeg", ".vob", ".ts"],
+					"containers": ["mpg", "mpeg", "vob", "ts"]
+				},
+				"mpeg4": {
+					"name": "MPEG-4",
+					"extensions": [".mp4", ".avi", ".mov"],
+					"containers": ["mp4", "avi", "mov"]
+				},
+				"xvid": {
+					"name": "Xvid",
+					"extensions": [".avi", ".mkv"],
+					"containers": ["avi", "mkv"]
+				},
+				"divx": {
+					"name": "DivX",
+					"extensions": [".avi", ".mkv"],
+					"containers": ["avi", "mkv"]
+				}
+			}
+		},
+		"audio": {
+			"extensions": [
+				".mp3",
+				".flac",
+				".aac",
+				".ogg",
+				".wav",
+				".wma",
+				".m4a",
+				".opus",
+				".ac3",
+				".dts",
+				".ape",
+				".mka",
+				".webm"
+			],
+			"codecs": {
+				"aac": {
+					"name": "AAC",
+					"extensions": [".aac", ".mp4", ".m4a", ".mkv"],
+					"containers": ["mp4", "mkv", "ts", "3gp"]
+				},
+				"mp3": {
+					"name": "MP3",
+					"extensions": [".mp3", ".mkv", ".avi"],
+					"containers": ["mp3", "mkv", "avi"]
+				},
+				"flac": {
+					"name": "FLAC",
+					"extensions": [".flac", ".mkv", ".webm"],
+					"containers": ["flac", "mkv", "webm"]
+				},
+				"vorbis": {
+					"name": "Vorbis",
+					"extensions": [".ogg", ".mkv", ".webm"],
+					"containers": ["ogg", "mkv", "webm"]
+				},
+				"opus": {
+					"name": "Opus",
+					"extensions": [".opus", ".mkv", ".webm"],
+					"containers": ["opus", "mkv", "webm"]
+				},
+				"ac3": {
+					"name": "AC-3",
+					"extensions": [".ac3", ".mkv", ".mp4"],
+					"containers": ["ac3", "mkv", "mp4"]
+				},
+				"dts": {
+					"name": "DTS",
+					"extensions": [".dts", ".mkv", ".mp4"],
+					"containers": ["dts", "mkv", "mp4"]
+				},
+				"pcm": {
+					"name": "PCM",
+					"extensions": [".wav", ".mkv", ".mp4"],
+					"containers": ["wav", "mkv", "mp4"]
+				},
+				"truehd": {
+					"name": "TrueHD",
+					"extensions": [".thd", ".mkv", ".mp4"],
+					"containers": ["mkv", "mp4"]
+				},
+				"eac3": {
+					"name": "E-AC-3",
+					"extensions": [".eac3", ".mkv", ".mp4"],
+					"containers": ["eac3", "mkv", "mp4"]
+				}
+			}
+		},
+		"subtitle": {
+			"extensions": [
+				".srt",
+				".ass",
+				".ssa",
+				".vtt",
+				".sub",
+				".idx",
+				".sup",
+				".pgs",
+				".smi",
+				".rt",
+				".txt"
+			],
+			"codecs": {
+				"subrip": {
+					"name": "SubRip",
+					"extensions": [".srt"],
+					"containers": ["srt", "mkv", "mp4"]
+				},
+				"ass": {
+					"name": "Advanced SubStation Alpha",
+					"extensions": [".ass"],
+					"containers": ["ass", "mkv", "mp4"]
+				},
+				"ssa": {
+					"name": "SubStation Alpha",
+					"extensions": [".ssa"],
+					"containers": ["ssa", "mkv", "mp4"]
+				},
+				"webvtt": {
+					"name": "WebVTT",
+					"extensions": [".vtt"],
+					"containers": ["vtt", "mkv", "webm"]
+				},
+				"vobsub": {
+					"name": "VobSub",
+					"extensions": [".sub", ".idx"],
+					"containers": ["sub", "mkv", "mp4"]
+				},
+				"pgs": {
+					"name": "PGS",
+					"extensions": [".sup"],
+					"containers": ["sup", "mkv", "mp4"]
+				},
+				"dvb_subtitle": {
+					"name": "DVB Subtitle",
+					"extensions": [],
+					"containers": ["mkv", "mp4", "ts"]
+				},
+				"hdmv_pgs_subtitle": {
+					"name": "HDMV PGS",
+					"extensions": [".sup"],
+					"containers": ["mkv", "mp4"]
+				}
+			}
+		}
+	},
+	"extraction_defaults": {
+		"audio": {
+			"preferred_codecs": ["flac", "aac", "mp3"],
+			"fallback_codec": "mp3",
+			"bitrate_thresholds": {
+				"high": 320,
+				"medium": 192,
+				"low": 128
+			}
+		},
+		"video": {
+			"preferred_codecs": ["h264", "h265", "vp9"],
+			"fallback_codec": "h264",
+			"resolution_thresholds": {
+				"4k": 2160,
+				"1080p": 1080,
+				"720p": 720,
+				"480p": 480
+			}
+		},
+		"subtitle": {
+			"preferred_codecs": ["subrip", "ass", "webvtt"],
+			"fallback_codec": "subrip",
+			"encoding_priority": ["utf-8", "utf-16", "iso-8859-1"]
+		}
+	}
+}

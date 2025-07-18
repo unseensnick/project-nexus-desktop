@@ -1,0 +1,124 @@
+{
+	"extraction": {
+		"default_output_directory": "extracted",
+		"overwrite_existing_files": false,
+		"progress_update_interval": 0.5,
+		"cleanup_temp_files": true,
+		"default_extraction_mode": "all",
+		"track_selection": {
+			"audio": {
+				"extract_all": true,
+				"preferred_languages": [
+					"eng",
+					"spa",
+					"fra",
+					"deu",
+					"ita",
+					"por",
+					"rus",
+					"jpn",
+					"kor",
+					"zho"
+				]
+			},
+			"subtitle": {
+				"extract_all": true,
+				"preferred_languages": [
+					"eng",
+					"spa",
+					"fra",
+					"deu",
+					"ita",
+					"por",
+					"rus",
+					"jpn",
+					"kor",
+					"zho"
+				],
+				"skip_forced": false
+			},
+			"video": {
+				"extract_all": false,
+				"preferred_languages": [
+					"eng",
+					"spa",
+					"fra",
+					"deu",
+					"ita",
+					"por",
+					"rus",
+					"jpn",
+					"kor",
+					"zho"
+				]
+			}
+		}
+	},
+	"analysis": {
+		"analysis_timeout": 300,
+		"include_metadata": true,
+		"include_technical_info": true,
+		"language_detection_confidence": 0.6
+	},
+	"ui": {
+		"theme": "system",
+		"sidebar_collapsed": false,
+		"show_advanced_options": false,
+		"confirm_before_extraction": true,
+		"show_progress_details": true,
+		"remember_window_size": true,
+		"remember_last_directory": true
+	},
+	"logging": {
+		"log_level": "INFO",
+		"log_to_file": true,
+		"log_file_max_size": 10485760,
+		"log_file_backup_count": 5,
+		"log_format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+		"log_date_format": "%Y-%m-%d %H:%M:%S",
+		"enable_debug_mode": false,
+		"log_ffmpeg_output": false,
+		"log_extraction_details": true
+	},
+	"validation": {
+		"min_file_size": 1024,
+		"max_file_size": 53687091200,
+		"supported_containers": [
+			"mkv",
+			"mp4",
+			"avi",
+			"mov",
+			"wmv",
+			"flv",
+			"webm",
+			"m4v",
+			"mpg",
+			"mpeg",
+			"3gp",
+			"asf",
+			"rm",
+			"rmvb",
+			"vob",
+			"ts",
+			"m2ts",
+			"mts",
+			"divx",
+			"xvid",
+			"f4v",
+			"ogv"
+		],
+		"require_valid_streams": true,
+		"timeout_detection": 30.0,
+		"max_retries": 3,
+		"retry_delay": 2.0
+	},
+	"security": {
+		"sanitize_file_paths": true,
+		"restrict_output_paths": true,
+		"validate_file_extensions": true,
+		"check_available_space": true,
+		"min_free_space": 1073741824,
+		"prevent_overwrite_system_files": true,
+		"enable_path_traversal_protection": true
+	}
+}

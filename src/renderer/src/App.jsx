@@ -28,16 +28,16 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 // Import Lucide icons
 import { AlertCircle, FileText, Menu } from "lucide-react"
 
-// Import custom hooks
+// Import simple hooks - easy for junior developers to understand
 import useExtraction from "./hooks/useExtraction"
 import useFileSelection from "./hooks/useFileSelection"
 import useMediaAnalysis from "./hooks/useMediaAnalysis"
 
 // Import custom components
-import AnalysisTab from "@/components/AnalysisTab"
+import AnalyzeTab from "@/components/AnalyzeTab"
 import { AppSidebar } from "@/components/AppSidebar"
-import FileSelectionTab from "@/components/FileSelectionTab"
 import ResultsTab from "@/components/ResultsTab"
+import SelectFilesTab from "@/components/SelectFilesTab"
 import { ThemeProvider } from "@/components/ThemeProvider"
 
 /**
@@ -49,10 +49,19 @@ import { ThemeProvider } from "@/components/ThemeProvider"
  * @returns {JSX.Element} The rendered application
  */
 function App() {
-	// Collapsible sidebar state
+	// Simple UI state - easy to understand
 	const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+	const [activeTab, setActiveTab] = useState("select")
+	const [selectedLanguages, setSelectedLanguages] = useState(["eng"]) // Default to English
+	const [extractionOptions, setExtractionOptions] = useState({
+		includeVideo: false,
+		audioOnly: false,
+		subtitleOnly: false,
+		videoOnly: false,
+		removeLetterbox: false
+	})
 
-	// File and directory selection state management
+	// File selection hook - handles file and directory selection
 	const {
 		filePath,
 		outputPath,
@@ -62,64 +71,124 @@ function App() {
 		resetFileSelection
 	} = useFileSelection()
 
-	// Media analysis state management
+	// Media analysis hook - handles file analysis
 	const {
 		analyzed,
 		isAnalyzing,
 		availableLanguages,
 		error: analysisError,
-		handleAnalyzeFile,
-		resetAnalysis
+		handleAnalyzeFile: analyzeFile,
+		resetAnalysis,
+		hasAnalyzed,
+		getTrackSummary
 	} = useMediaAnalysis(filePath)
 
-	// Track extraction state management (handles both single and batch modes)
+	// Extraction hook - handles track extraction
 	const {
 		isExtracting,
+		extractionError,
 		extractionResult,
 		progressValue,
 		progressText,
-		fileProgressMap,
-		error: extractionError,
-		selectedLanguages,
-		extractionOptions,
-		batchMode,
-		toggleBatchMode,
-		inputPaths,
-		maxWorkers,
-		setMaxWorkers,
-		batchAnalyzed,
-		isBatchAnalyzing,
-		handleAnalyzeBatch,
-		handleSelectInputFiles,
-		handleSelectInputDirectory,
-		handleExtractTracks,
-		toggleLanguage,
-		toggleOption,
-		resetExtraction,
-		resetAll
-	} = useExtraction(filePath, outputPath, analyzed)
+		extractTracksByLanguage,
+		resetExtraction
+	} = useExtraction(filePath, outputPath)
 
-	// Tab management and consolidated error handling
-	const [activeTab, setActiveTab] = useState("select")
-	const [error, setError] = useState(null)
+	// Simple error handling - combine all errors into one
+	const error = fileError || analysisError || extractionError
 
-	// Consolidate errors from different workflow stages
+	// Simple tab progression - move to next tab when ready
 	useEffect(() => {
-		setError(fileError || analysisError || extractionError)
-	}, [fileError, analysisError, extractionError])
-
-	// Automatic tab progression based on workflow state
-	useEffect(() => {
-		// Move to analysis tab when file/batch analysis completes
-		if ((analyzed && !batchMode) || (batchAnalyzed && batchMode)) {
+		if (hasAnalyzed && activeTab === "select") {
 			setActiveTab("analyze")
 		}
+	}, [hasAnalyzed, activeTab])
 
-		// Move to results tab when extraction completes
-		if (extractionResult) {
-			setActiveTab("results")
+	// Simple analyze function - easy to understand
+	const handleAnalyzeFile = async () => {
+		if (!filePath) {
+			return // Can't analyze without a file
 		}
-	}, [analyzed, batchAnalyzed, extractionResult, batchMode])
+
+		const result = await analyzeFile(filePath)
+		if (result && result.success) {
+			// Analysis successful, tab will automatically switch
+			console.log("Analysis complete:", result.data)
+		} else {
+			// Analysis failed, error will be shown in the UI automatically
+			console.error("Analysis failed:", result?.error || "Unknown error")
+		}
+	}
+
+	// Simple reset function - clears everything
+	const handleResetAll = () => {
+		resetFileSelection()
+		resetAnalysis()
+		resetExtraction()
+		setSelectedLanguages(["eng"])
+		setExtractionOptions({
+			includeVideo: false,
+			audioOnly: false,
+			subtitleOnly: false,
+			videoOnly: false,
+			removeLetterbox: false
+		})
+		setActiveTab("select")
+	}
+
+	// Simple language toggle - easy to understand
+	const toggleLanguage = (language) => {
+		if (selectedLanguages.includes(language)) {
+			// Remove language
+			setSelectedLanguages((prev) => prev.filter((lang) => lang !== language))
+		} else {
+			// Add language
+			setSelectedLanguages((prev) => [...prev, language])
+		}
+	}
+
+	// Simple extraction option toggle - easy to understand
+	const toggleOption = (option) => {
+		setExtractionOptions((prev) => {
+			const newOptions = { ...prev }
+
+			// Handle mutually exclusive options
+			if (option === "audioOnly" || option === "subtitleOnly" || option === "videoOnly") {
+				// Reset all "only" options
+				newOptions.audioOnly = false
+				newOptions.subtitleOnly = false
+				newOptions.videoOnly = false
+				// Set the selected option
+				newOptions[option] = !prev[option]
+			} else {
+				// Toggle the option
+				newOptions[option] = !prev[option]
+			}
+
+			return newOptions
+		})
+	}
+
+	// Simple extraction function - easy to understand
+	const handleExtractTracks = async () => {
+		if (!filePath || !outputPath) {
+			return // Can't extract without file and output path
+		}
+
+		if (selectedLanguages.length === 0) {
+			return // Can't extract without selected languages
+		}
+
+		const result = await extractTracksByLanguage(selectedLanguages, extractionOptions)
+		if (result && result.success) {
+			console.log("Extraction complete:", result.data)
+			// Force navigation to results tab
+			setTimeout(() => setActiveTab("results"), 100)
+		} else {
+			// Extraction failed, error will be shown in the UI automatically
+			console.error("Extraction failed:", result?.error || "Unknown error")
+		}
+	}
 
 	/**
 	 * Extracts filename from a full path
@@ -130,22 +199,6 @@ function App() {
 		if (!path) return ""
 		return path.split(/[\\/]/).pop()
 	}
-
-	/**
-	 * Resets the entire application state to initial values
-	 * Coordinates reset across all state hooks
-	 */
-	const handleReset = () => {
-		resetFileSelection()
-		resetAnalysis()
-		resetAll()
-		setActiveTab("select")
-	}
-
-	// Determine available languages based on current mode
-	const currentAvailableLanguages = batchMode
-		? (batchAnalyzed?.languages?.audio || []).concat(batchAnalyzed?.languages?.subtitle || [])
-		: availableLanguages
 
 	return (
 		<ThemeProvider>
@@ -172,27 +225,30 @@ function App() {
 							</h2>
 						</div>
 
-						{/* Batch mode toggle switch */}
+						{/* Simple batch mode notice - disabled until backend implementation */}
 						<div className="flex items-center gap-2">
 							<span className="text-sm text-gray-500 dark:text-gray-400">
 								Batch Mode
 							</span>
 							<Switch
-								checked={batchMode}
-								onCheckedChange={toggleBatchMode}
-								className="w-10 h-5 data-[state=checked]:bg-indigo-600"
+								checked={false}
+								disabled={true}
+								className="w-10 h-5 data-[state=checked]:bg-indigo-600 disabled:opacity-50"
 								thumbClassName="size-4"
 							/>
+							<span className="text-xs text-gray-400 dark:text-gray-500">
+								(Coming soon)
+							</span>
 						</div>
 					</header>
 
 					{/* Tab-based content area */}
 					<div className="flex-1 overflow-auto p-6">
 						<Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-							{/* Tab navigation - disabled states prevent skipping steps */}
+							{/* Simple tab navigation */}
 							<TabsList className="grid w-full grid-cols-3 mb-8">
 								<TabsTrigger value="select">1. Select Files</TabsTrigger>
-								<TabsTrigger value="analyze" disabled={!analyzed && !batchAnalyzed}>
+								<TabsTrigger value="analyze" disabled={!hasAnalyzed}>
 									2. Analyze & Configure
 								</TabsTrigger>
 								<TabsTrigger value="results" disabled={!extractionResult}>
@@ -200,36 +256,36 @@ function App() {
 								</TabsTrigger>
 							</TabsList>
 
-							{/* File/directory selection tab */}
+							{/* File selection tab - simplified */}
 							<TabsContent value="select">
-								<FileSelectionTab
+								<SelectFilesTab
 									filePath={filePath}
 									outputPath={outputPath}
 									isAnalyzing={isAnalyzing}
-									isBatchAnalyzing={isBatchAnalyzing}
-									batchMode={batchMode}
-									inputPaths={inputPaths}
+									isBatchAnalyzing={false}
+									batchMode={false}
+									inputPaths={[]}
 									handleSelectFile={handleSelectFile}
 									handleSelectOutputDir={handleSelectOutputDir}
-									handleSelectInputFiles={handleSelectInputFiles}
-									handleSelectInputDirectory={handleSelectInputDirectory}
+									handleSelectInputFiles={() => {}}
+									handleSelectInputDirectory={() => {}}
 									handleAnalyzeFile={handleAnalyzeFile}
-									handleAnalyzeBatch={handleAnalyzeBatch}
+									handleAnalyzeBatch={() => {}}
 								/>
 							</TabsContent>
 
-							{/* Analysis and configuration tab - adapts to current mode */}
+							{/* Analysis configuration tab - simplified */}
 							<TabsContent value="analyze">
-								<AnalysisTab
+								<AnalyzeTab
 									fileName={getFileName(filePath)}
 									analyzed={analyzed}
-									batchMode={batchMode}
-									batchAnalyzed={batchAnalyzed}
-									availableLanguages={currentAvailableLanguages}
+									batchMode={false}
+									batchAnalyzed={null}
+									availableLanguages={availableLanguages}
 									selectedLanguages={selectedLanguages}
 									extractionOptions={extractionOptions}
-									maxWorkers={maxWorkers}
-									setMaxWorkers={setMaxWorkers}
+									maxWorkers={1}
+									setMaxWorkers={() => {}}
 									toggleLanguage={toggleLanguage}
 									toggleOption={toggleOption}
 									handleExtractTracks={handleExtractTracks}
@@ -237,46 +293,41 @@ function App() {
 									setActiveTab={setActiveTab}
 									filePath={filePath}
 									outputPath={outputPath}
-									inputPaths={inputPaths}
+									inputPaths={[]}
+									fileProgressMap={{}}
 									progressValue={progressValue}
 									progressText={progressText}
-									fileProgressMap={fileProgressMap}
 								/>
 							</TabsContent>
 
-							{/* Results tab - only rendered when relevant */}
+							{/* Results tab - shows extraction results */}
 							<TabsContent value="results">
-								{(extractionResult || isExtracting) && (
-									<ResultsTab
-										extractionResult={extractionResult}
-										outputPath={outputPath}
-										isExtracting={isExtracting}
-										progressValue={progressValue}
-										progressText={progressText}
-										fileProgressMap={fileProgressMap}
-										handleReset={handleReset}
-										setActiveTab={setActiveTab}
-										batchMode={batchMode}
-									/>
-								)}
+								<ResultsTab
+									extractionResult={extractionResult}
+									outputPath={outputPath}
+									isExtracting={isExtracting}
+									progressValue={progressValue}
+									progressText={progressText}
+									fileProgressMap={{}}
+									handleReset={handleResetAll}
+									setActiveTab={setActiveTab}
+									batchMode={false}
+								/>
 							</TabsContent>
 						</Tabs>
-
-						{/* Consolidated error display for all workflow stages */}
-						{error && (
-							<Alert variant="destructive" className="mt-6">
-								<AlertCircle className="h-4 w-4" />
-								<AlertTitle>Error</AlertTitle>
-								<AlertDescription>{error}</AlertDescription>
-							</Alert>
-						)}
 					</div>
-
-					{/* Application footer */}
-					<footer className="bg-white border-t p-4 text-sm text-gray-500 flex justify-between dark:bg-gray-800 dark:border-gray-700 dark:text-gray-400">
-						<span>Project Nexus v0.0.1</span>
-					</footer>
 				</main>
+
+				{/* Simple error display - appears at bottom right */}
+				{error && (
+					<div className="fixed bottom-4 right-4 max-w-md">
+						<Alert variant="destructive" className="shadow-lg">
+							<AlertCircle className="h-4 w-4" />
+							<AlertTitle>Error</AlertTitle>
+							<AlertDescription>{error}</AlertDescription>
+						</Alert>
+					</div>
+				)}
 			</div>
 		</ThemeProvider>
 	)

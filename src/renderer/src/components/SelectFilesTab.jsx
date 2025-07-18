@@ -38,7 +38,7 @@ import React from "react"
  * @param {Function} props.handleAnalyzeBatch - Handler to analyze a batch of files
  * @returns {JSX.Element} The file selection interface
  */
-function FileSelectionTab({
+function SelectFilesTab({
 	filePath,
 	outputPath,
 	isAnalyzing,
@@ -162,15 +162,12 @@ function FileSelectionTab({
 				{batchMode ? (
 					<Button
 						onClick={handleAnalyzeBatch}
-						disabled={!outputPath || inputPaths.length === 0 || isBatchAnalyzing}
-						className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700"
+						disabled={true}
+						className="flex items-center gap-2 bg-gray-400 cursor-not-allowed"
+						title="Batch mode is not yet available in the new backend architecture"
 					>
-						{isBatchAnalyzing ? (
-							<RefreshCw className="h-4 w-4 animate-spin" />
-						) : (
-							<Info className="h-4 w-4" />
-						)}
-						{isBatchAnalyzing ? "Analyzing..." : "Analyze Batch"}
+						<Info className="h-4 w-4" />
+						Batch Mode Coming Soon
 					</Button>
 				) : (
 					<Button
@@ -191,4 +188,4 @@ function FileSelectionTab({
 	)
 }
 
-export default FileSelectionTab
+export default SelectFilesTab
