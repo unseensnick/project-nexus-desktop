@@ -102,9 +102,10 @@ function useFileSelection() {
 	 * Uses Electron's dialog API to open a native OS file picker
 	 * configured for multiple media file selection.
 	 *
+	 * @param {boolean} append - Whether to append to existing files (true) or replace them (false)
 	 * @returns {Promise<Array<string>|null>} Selected file paths or null if selection canceled
 	 */
-	const handleSelectInputFiles = async () => {
+	const handleSelectInputFiles = async (append = false) => {
 		try {
 			// Validate that the Electron API is properly exposed
 			if (!window.electronAPI || typeof window.electronAPI.openFileDialog !== "function") {
@@ -128,14 +129,21 @@ function useFileSelection() {
 			// Process dialog result - only update if files were selected
 			if (result && result.filePaths && result.filePaths.length > 0) {
 				console.log("Selected files:", result.filePaths)
-				// Append new files to existing ones, but filter out duplicates
-				setInputPaths((prevPaths) => {
-					const existingPaths = new Set(prevPaths)
-					const uniqueNewPaths = result.filePaths.filter(
-						(path) => !existingPaths.has(path)
-					)
-					return [...prevPaths, ...uniqueNewPaths]
-				})
+
+				if (append) {
+					// Append new files to existing ones, but filter out duplicates
+					setInputPaths((prevPaths) => {
+						const existingPaths = new Set(prevPaths)
+						const uniqueNewPaths = result.filePaths.filter(
+							(path) => !existingPaths.has(path)
+						)
+						return [...prevPaths, ...uniqueNewPaths]
+					})
+				} else {
+					// Replace existing files with new selection
+					setInputPaths(result.filePaths)
+				}
+
 				setError(null)
 				return result.filePaths
 			}
@@ -153,9 +161,10 @@ function useFileSelection() {
 	 * for choosing a directory containing media files for batch processing.
 	 * Then scans the directory for media files and stores the file paths.
 	 *
+	 * @param {boolean} append - Whether to append to existing files (true) or replace them (false)
 	 * @returns {Promise<Array<string>|null>} Selected file paths or null if selection canceled
 	 */
-	const handleSelectInputDirectory = async () => {
+	const handleSelectInputDirectory = async (append = false) => {
 		try {
 			// Validate that the Electron API is properly exposed
 			if (
@@ -194,7 +203,19 @@ function useFileSelection() {
 					)
 
 					if (foundFiles.length > 0) {
-						setInputPaths(foundFiles) // Store actual file paths, not directory path
+						if (append) {
+							// Append new files to existing ones, but filter out duplicates
+							setInputPaths((prevPaths) => {
+								const existingPaths = new Set(prevPaths)
+								const uniqueNewPaths = foundFiles.filter(
+									(path) => !existingPaths.has(path)
+								)
+								return [...prevPaths, ...uniqueNewPaths]
+							})
+						} else {
+							// Replace existing files with new selection
+							setInputPaths(foundFiles)
+						}
 						setError(null)
 						return foundFiles
 					} else {

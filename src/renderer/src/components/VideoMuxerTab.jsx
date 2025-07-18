@@ -103,7 +103,7 @@ function VideoMuxerTab() {
 	// Handle file selection for muxing
 	const handleAddInputFiles = async () => {
 		console.log("Adding input files...")
-		const result = await handleSelectInputFiles()
+		const result = await handleSelectInputFiles(true) // Append files for video muxing
 		console.log("File selection result:", result)
 
 		if (result && result.length > 0) {

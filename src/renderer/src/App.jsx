@@ -68,10 +68,15 @@ function App() {
 		error: fileError,
 		handleSelectFile,
 		handleSelectOutputDir,
-		handleSelectInputFiles,
-		handleSelectInputDirectory,
+		handleSelectInputFiles: originalHandleSelectInputFiles,
+		handleSelectInputDirectory: originalHandleSelectInputDirectory,
 		resetFileSelection
 	} = useFileSelection()
+
+	// Wrapper functions for track extraction - replace files instead of appending
+	const handleSelectInputFiles = (append = false) => originalHandleSelectInputFiles(append)
+	const handleSelectInputDirectory = (append = false) =>
+		originalHandleSelectInputDirectory(append)
 
 	// Media analysis hook - handles file analysis
 	const {

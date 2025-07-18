@@ -97,7 +97,7 @@ function SelectFilesTab({
 							<div className="flex items-center gap-2">
 								<Button
 									variant="default"
-									onClick={handleSelectInputFiles}
+									onClick={() => handleSelectInputFiles(false)}
 									className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700"
 								>
 									<FilesIcon className="h-4 w-4" />
@@ -105,7 +105,7 @@ function SelectFilesTab({
 								</Button>
 								<Button
 									variant="default"
-									onClick={handleSelectInputDirectory}
+									onClick={() => handleSelectInputDirectory(false)}
 									className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700"
 								>
 									<FolderOpen className="h-4 w-4" />
