@@ -21,7 +21,7 @@ import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Union
 
-from core.config import get_language_mappings, get_supported_formats
+from core.config import get_language_mappings, get_supported_formats as get_media_config
 from core.media_analyzer import MediaAnalyzer, AnalysisResult
 from core.progress_manager import ProgressManager
 from utils.language import detect_language_with_confidence, get_language_name, normalize_language_code
@@ -70,7 +70,7 @@ class SharedServices:
             if config_type == "language":
                 cls._config_cache[config_type] = get_language_mappings()
             elif config_type == "media":
-                cls._config_cache[config_type] = get_supported_formats()
+                cls._config_cache[config_type] = get_media_config()
             else:
                 raise ValueError(f"Unknown config type: {config_type}")
         

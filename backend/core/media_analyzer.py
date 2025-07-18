@@ -192,6 +192,13 @@ class MediaAnalyzer:
             # Remove the leading dot and convert to lowercase
             extensions.add(ext.lstrip('.').lower())
         
+        # Extract subtitle extensions
+        subtitle_formats = supported_formats.get("subtitle", {})
+        subtitle_extensions = subtitle_formats.get("extensions", [])
+        for ext in subtitle_extensions:
+            # Remove the leading dot and convert to lowercase
+            extensions.add(ext.lstrip('.').lower())
+        
         return extensions
     
     def analyze_file(self, file_path: Union[str, Path], progress_callback=None) -> AnalysisResult:
@@ -347,8 +354,8 @@ class MediaAnalyzer:
         streams = data.get("streams", [])
         track_counters = {"audio": 0, "video": 0, "subtitle": 0}
         
-        for stream in streams:
-            track = self._process_stream(stream, track_counters)
+        for stream_index, stream in enumerate(streams):
+            track = self._process_stream(stream, track_counters, stream_index)
             if track:
                 result.tracks.append(track)
                 
@@ -365,7 +372,7 @@ class MediaAnalyzer:
         
         return result
     
-    def _process_stream(self, stream: Dict, track_counters: Dict[str, int]) -> Optional[Track]:
+    def _process_stream(self, stream: Dict, track_counters: Dict[str, int], stream_index: int) -> Optional[Track]:
         """Process a single stream into a Track object."""
         codec_type = stream.get("codec_type", "").lower()
         
@@ -378,8 +385,8 @@ class MediaAnalyzer:
         tags = stream.get("tags", {})
         disposition = stream.get("disposition", {})
         
-        # Get track ID for this type
-        track_id = track_counters[codec_type]
+        # Use actual FFmpeg stream index instead of type-specific counter
+        track_id = stream_index
         track_counters[codec_type] += 1
         
         # Extract metadata

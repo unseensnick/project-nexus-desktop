@@ -34,7 +34,7 @@ class TrackExtractor:
     
     # Codec to extension mappings from legacy code
     AUDIO_CODEC_TO_EXTENSION = {
-        "aac": "aac",
+        "aac": "m4a",  # Use M4A container for AAC to fix duration metadata issues
         "mp3": "mp3",
         "ac3": "ac3",
         "eac3": "eac3",
@@ -256,7 +256,9 @@ class TrackExtractor:
                 
                 # Extract each matching track
                 for track_index, track in matching_tracks:
-                    logger.info(f"Extracting {track_type} track {track_index} (language: {track.get('language', 'unknown')})")
+                    # Get the actual stream index from the track data
+                    actual_stream_index = track.get("id", 0)
+                    logger.info(f"Extracting {track_type} track {track_index} (actual stream {actual_stream_index}, language: {track.get('language', 'unknown')})")
                     
                     # Calculate progress based on current track position
                     base_progress = int((current_track_index / total_tracks_to_extract) * 100)
@@ -266,7 +268,7 @@ class TrackExtractor:
                         progress_callback({
                             "stage": "extraction",
                             "percent": base_progress,
-                            "message": f"Extracting {track_type} track {track_index}"
+                            "message": f"Extracting {track_type} track {track_index} (stream {actual_stream_index})"
                         })
                     
                     # Generate output filename
@@ -294,7 +296,7 @@ class TrackExtractor:
                             progress_callback({
                                 "stage": "extraction",
                                 "percent": overall_progress,
-                                "message": progress_data.get("message", f"Extracting {track_type} track {track_index}")
+                                "message": progress_data.get("message", f"Extracting {track_type} track {track_index} (stream {actual_stream_index})")
                             })
                     
                     # Extract the track
@@ -306,13 +308,13 @@ class TrackExtractor:
                         extracted_files.append({
                             "file": str(output_file),
                             "track_type": track_type,
-                            "track_id": track_index,
+                            "track_id": actual_stream_index,  # Use actual stream index
                             "codec": track.get("codec", "unknown"),
                             "language": track.get("language", "unknown")
                         })
-                        logger.info(f"Successfully extracted {track_type} track {track_index}")
+                        logger.info(f"Successfully extracted {track_type} track {track_index} (stream {actual_stream_index})")
                     else:
-                        logger.error(f"Failed to extract {track_type} track {track_index}")
+                        logger.error(f"Failed to extract {track_type} track {track_index} (stream {actual_stream_index})")
                     
                     current_track_index += 1
             
@@ -558,14 +560,28 @@ class TrackExtractor:
                     "message": f"Starting {track_type} track {track_id} extraction"
                 })
             
+            # Get the original file duration to preserve timing
+            original_duration = self._get_file_duration(input_file)
+            logger.info(f"Original file duration: {original_duration} seconds")
+            print(f"Original file duration: {original_duration} seconds")
+            
             # Basic extraction command with correct mapping format
+            # Use actual stream index instead of stream type selector to preserve timing metadata
             command = [
                 "-i", str(input_file),
-                "-map", f"0:{stream_type}:{track_id}",  # e.g., "0:a:0" for first audio track
+                "-map", f"0:{track_id}",  # Use actual stream index (e.g., "0:1" for stream 1)
                 "-c", "copy",  # Copy stream without re-encoding
+                "-map_metadata", "0",  # Copy metadata from input
                 "-y",  # Overwrite output file
                 str(output_file)
             ]
+            
+            # For audio tracks, add duration limit to prevent timing issues
+            if track_type == "audio" and original_duration and original_duration > 0:
+                command.insert(-2, "-t")
+                command.insert(-2, str(original_duration))
+                logger.info(f"Adding duration limit: {original_duration} seconds")
+                print(f"Adding duration limit for audio: {original_duration} seconds")
             
             # Report progress during extraction
             if progress_callback:
@@ -575,12 +591,21 @@ class TrackExtractor:
                     "message": f"Extracting {track_type} track {track_id}"
                 })
             
+            # Log the full command for debugging
+            logger.info(f"FFmpeg command: {' '.join(command)}")
+            print(f"FFmpeg extraction command: {' '.join(command)}")
+            
             # Execute FFmpeg command
             return_code, stdout, stderr = self.ffmpeg_utils.run_ffmpeg_command(command)
             
             if return_code != 0:
                 logger.error(f"FFmpeg extraction failed: {stderr}")
+                print(f"FFmpeg extraction failed: {stderr}")
                 return False
+            
+            # Log successful extraction details
+            logger.info(f"FFmpeg extraction successful: {stdout}")
+            print(f"FFmpeg extraction successful for track {track_id}")
             
             # Verify output file was created
             if not output_file.exists():
@@ -640,7 +665,7 @@ class TrackExtractor:
             # Step 1: Detect crop parameters using cropdetect filter
             detect_cmd = [
                 "-i", str(input_file),
-                "-map", f"0:v:{track_id}",
+                "-map", f"0:{track_id}",  # Use actual stream index
                 "-vf", "cropdetect=24:16:0",  # threshold:round:skip values for detection
                 "-f", "null",
                 "-t", "60",  # Sample first 60 seconds for faster processing
@@ -685,7 +710,7 @@ class TrackExtractor:
             
             crop_cmd = [
                 "-i", str(input_file),
-                "-map", f"0:v:{track_id}",
+                "-map", f"0:{track_id}",  # Use actual stream index
                 "-vf", f"crop={crop_params}",
                 "-c:v", "libx264" if track.get("codec", "").lower() in ("h264", "mpeg4") else "copy",
                 "-y",
@@ -799,9 +824,9 @@ class TrackExtractor:
         
         return most_common_crop 
 
-    def _get_video_duration(self, input_file: str) -> float:
+    def _get_file_duration(self, input_file: str) -> float:
         """
-        Get the duration of a video file in seconds.
+        Get the duration of a media file in seconds.
         """
         try:
             # Use FFprobe to get duration
@@ -816,7 +841,7 @@ class TrackExtractor:
             if return_code == 0 and stdout.strip():
                 try:
                     duration = float(stdout.strip())
-                    logger.info(f"Video duration: {duration} seconds")
+                    logger.info(f"File duration: {duration} seconds")
                     return duration
                 except ValueError:
                     logger.error(f"Could not parse duration: {stdout.strip()}")
@@ -826,8 +851,14 @@ class TrackExtractor:
                 return 0.0
                 
         except Exception as e:
-            logger.error(f"Error getting video duration: {str(e)}")
+            logger.error(f"Error getting file duration: {str(e)}")
             return 0.0
+    
+    def _get_video_duration(self, input_file: str) -> float:
+        """
+        Get the duration of a video file in seconds.
+        """
+        return self._get_file_duration(input_file)
 
     def _parse_time_to_seconds(self, time_str: str) -> float:
         """

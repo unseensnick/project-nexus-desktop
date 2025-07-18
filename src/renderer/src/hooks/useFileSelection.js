@@ -1,3 +1,4 @@
+import { getFileFilters } from "@/lib/config"
 import { useState } from "react"
 
 /**
@@ -40,10 +41,7 @@ function useFileSelection() {
 			// Configure the dialog with appropriate file filters
 			const result = await window.electronAPI.openFileDialog({
 				title: "Select Media File",
-				filters: [
-					{ name: "Media Files", extensions: ["mkv", "mp4", "avi", "mov"] },
-					{ name: "All Files", extensions: ["*"] }
-				],
+				filters: getFileFilters(),
 				properties: ["openFile"]
 			})
 
@@ -114,19 +112,30 @@ function useFileSelection() {
 				throw new Error("File selection dialog not available")
 			}
 
+			// Get file filters from config
+			const filters = getFileFilters()
+			console.log("File filters:", filters)
+
 			// Configure the dialog with appropriate file filters for multiple selection
 			const result = await window.electronAPI.openFileDialog({
 				title: "Select Media Files",
-				filters: [
-					{ name: "Media Files", extensions: ["mkv", "mp4", "avi", "mov"] },
-					{ name: "All Files", extensions: ["*"] }
-				],
+				filters: filters,
 				properties: ["openFile", "multiSelections"]
 			})
 
+			console.log("File dialog result:", result)
+
 			// Process dialog result - only update if files were selected
 			if (result && result.filePaths && result.filePaths.length > 0) {
-				setInputPaths(result.filePaths)
+				console.log("Selected files:", result.filePaths)
+				// Append new files to existing ones, but filter out duplicates
+				setInputPaths((prevPaths) => {
+					const existingPaths = new Set(prevPaths)
+					const uniqueNewPaths = result.filePaths.filter(
+						(path) => !existingPaths.has(path)
+					)
+					return [...prevPaths, ...uniqueNewPaths]
+				})
 				setError(null)
 				return result.filePaths
 			}

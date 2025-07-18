@@ -17,16 +17,14 @@
  */
 
 import { useEffect, useState } from "react"
-import "./assets/main.css"
 
 // Import Shadcn/UI components
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 // Import Lucide icons
-import { AlertCircle, FileText, Menu } from "lucide-react"
+import { AlertCircle, FileText } from "lucide-react"
 
 // Import simple hooks - easy for junior developers to understand
 import useExtraction from "./hooks/useExtraction"
@@ -50,7 +48,6 @@ import { ThemeProvider } from "@/components/ThemeProvider"
  */
 function App() {
 	// Simple UI state - easy to understand
-	const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 	const [activeTab, setActiveTab] = useState("select")
 	const [selectedLanguages, setSelectedLanguages] = useState(["eng"]) // Default to English
 	const [batchMode, setBatchMode] = useState(false)
@@ -254,135 +251,117 @@ function App() {
 	}
 
 	return (
-		<ThemeProvider>
-			<div className="flex h-screen bg-gray-50 text-gray-900 overflow-hidden dark:bg-gray-900 dark:text-gray-100">
-				{/* Navigation sidebar */}
-				<AppSidebar collapsed={sidebarCollapsed} />
+		<div className="flex-1 flex flex-col overflow-hidden">
+			{/* Application header with mode switch */}
+			<header className="bg-white shadow-sm p-4 flex items-center justify-between dark:bg-gray-800 dark:border-b dark:border-gray-700">
+				<div className="flex items-center gap-2">
+					<h2 className="text-xl font-medium flex items-center gap-2">
+						<FileText className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+						Track Extraction
+					</h2>
+				</div>
 
-				{/* Main content area */}
-				<main className="flex-1 flex flex-col overflow-hidden">
-					{/* Application header with sidebar toggle and mode switch */}
-					<header className="bg-white shadow-sm p-4 flex items-center justify-between dark:bg-gray-800 dark:border-b dark:border-gray-700">
-						<div className="flex items-center gap-2">
-							<Button
-								variant="ghost"
-								size="icon"
-								className="rounded-md hover:bg-gray-100 dark:hover:bg-gray-700"
-								onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-							>
-								<Menu className="h-5 w-5" />
-							</Button>
-							<h2 className="text-xl font-medium flex items-center gap-2">
-								<FileText className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
-								Track Extraction
-							</h2>
-						</div>
+				{/* Batch mode toggle */}
+				<div className="flex items-center gap-2">
+					<span className="text-sm text-gray-500 dark:text-gray-400">Batch Mode</span>
+					<Switch
+						checked={batchMode}
+						onCheckedChange={setBatchMode}
+						className="w-10 h-5 data-[state=checked]:bg-indigo-600"
+						thumbClassName="size-4"
+					/>
+					<span className="text-xs text-gray-400 dark:text-gray-500">
+						{batchMode ? "Enabled" : "Single File"}
+					</span>
+				</div>
+			</header>
 
-						{/* Batch mode toggle */}
-						<div className="flex items-center gap-2">
-							<span className="text-sm text-gray-500 dark:text-gray-400">
-								Batch Mode
-							</span>
-							<Switch
-								checked={batchMode}
-								onCheckedChange={setBatchMode}
-								className="w-10 h-5 data-[state=checked]:bg-indigo-600"
-								thumbClassName="size-4"
-							/>
-							<span className="text-xs text-gray-400 dark:text-gray-500">
-								{batchMode ? "Enabled" : "Single File"}
-							</span>
-						</div>
-					</header>
+			{/* Tab-based content area */}
+			<div className="flex-1 overflow-auto p-6">
+				<Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+					{/* Simple tab navigation */}
+					<TabsList className="grid w-full grid-cols-3 mb-8">
+						<TabsTrigger value="select">1. Select Files</TabsTrigger>
+						<TabsTrigger value="analyze" disabled={!hasAnalyzed}>
+							2. Analyze & Configure
+						</TabsTrigger>
+						<TabsTrigger value="results" disabled={!extractionResult}>
+							3. Results
+						</TabsTrigger>
+					</TabsList>
 
-					{/* Tab-based content area */}
-					<div className="flex-1 overflow-auto p-6">
-						<Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-							{/* Simple tab navigation */}
-							<TabsList className="grid w-full grid-cols-3 mb-8">
-								<TabsTrigger value="select">1. Select Files</TabsTrigger>
-								<TabsTrigger value="analyze" disabled={!hasAnalyzed}>
-									2. Analyze & Configure
-								</TabsTrigger>
-								<TabsTrigger value="results" disabled={!extractionResult}>
-									3. Results
-								</TabsTrigger>
-							</TabsList>
+					{/* File selection tab - simplified */}
+					<TabsContent value="select">
+						<SelectFilesTab
+							filePath={filePath}
+							outputPath={outputPath}
+							isAnalyzing={isAnalyzing}
+							isBatchAnalyzing={isBatchAnalyzing}
+							batchMode={batchMode}
+							inputPaths={inputPaths}
+							handleSelectFile={handleSelectFile}
+							handleSelectOutputDir={handleSelectOutputDir}
+							handleSelectInputFiles={handleSelectInputFiles}
+							handleSelectInputDirectory={handleSelectInputDirectory}
+							handleAnalyzeFile={handleAnalyzeFile}
+							handleAnalyzeBatch={handleAnalyzeBatch}
+						/>
+					</TabsContent>
 
-							{/* File selection tab - simplified */}
-							<TabsContent value="select">
-								<SelectFilesTab
-									filePath={filePath}
-									outputPath={outputPath}
-									isAnalyzing={isAnalyzing}
-									isBatchAnalyzing={isBatchAnalyzing}
-									batchMode={batchMode}
-									inputPaths={inputPaths}
-									handleSelectFile={handleSelectFile}
-									handleSelectOutputDir={handleSelectOutputDir}
-									handleSelectInputFiles={handleSelectInputFiles}
-									handleSelectInputDirectory={handleSelectInputDirectory}
-									handleAnalyzeFile={handleAnalyzeFile}
-									handleAnalyzeBatch={handleAnalyzeBatch}
-								/>
-							</TabsContent>
+					{/* Analysis configuration tab - simplified */}
+					<TabsContent value="analyze">
+						<AnalyzeTab
+							fileName={getFileName(filePath)}
+							analyzed={analyzed}
+							batchMode={batchMode}
+							batchAnalyzed={batchAnalyzed}
+							availableLanguages={availableLanguages}
+							selectedLanguages={selectedLanguages}
+							extractionOptions={extractionOptions}
+							maxWorkers={maxWorkers}
+							setMaxWorkers={setMaxWorkers}
+							toggleLanguage={toggleLanguage}
+							toggleOption={toggleOption}
+							handleExtractTracks={handleExtractTracks}
+							isExtracting={isExtracting}
+							setActiveTab={setActiveTab}
+							filePath={filePath}
+							outputPath={outputPath}
+							inputPaths={inputPaths}
+							fileProgressMap={fileProgressMap}
+							progressValue={progressValue}
+							progressText={progressText}
+						/>
+					</TabsContent>
 
-							{/* Analysis configuration tab - simplified */}
-							<TabsContent value="analyze">
-								<AnalyzeTab
-									fileName={getFileName(filePath)}
-									analyzed={analyzed}
-									batchMode={batchMode}
-									batchAnalyzed={batchAnalyzed}
-									availableLanguages={availableLanguages}
-									selectedLanguages={selectedLanguages}
-									extractionOptions={extractionOptions}
-									maxWorkers={maxWorkers}
-									setMaxWorkers={setMaxWorkers}
-									toggleLanguage={toggleLanguage}
-									toggleOption={toggleOption}
-									handleExtractTracks={handleExtractTracks}
-									isExtracting={isExtracting}
-									setActiveTab={setActiveTab}
-									filePath={filePath}
-									outputPath={outputPath}
-									inputPaths={inputPaths}
-									fileProgressMap={fileProgressMap}
-									progressValue={progressValue}
-									progressText={progressText}
-								/>
-							</TabsContent>
-
-							{/* Results tab - shows extraction results */}
-							<TabsContent value="results">
-								<ResultsTab
-									extractionResult={extractionResult}
-									outputPath={outputPath}
-									isExtracting={isExtracting}
-									progressValue={progressValue}
-									progressText={progressText}
-									fileProgressMap={fileProgressMap}
-									handleReset={handleResetAll}
-									setActiveTab={setActiveTab}
-									batchMode={batchMode}
-								/>
-							</TabsContent>
-						</Tabs>
-					</div>
-				</main>
-
-				{/* Simple error display - appears at bottom right */}
-				{error && (
-					<div className="fixed bottom-4 right-4 max-w-md">
-						<Alert variant="destructive" className="shadow-lg">
-							<AlertCircle className="h-4 w-4" />
-							<AlertTitle>Error</AlertTitle>
-							<AlertDescription>{error}</AlertDescription>
-						</Alert>
-					</div>
-				)}
+					{/* Results tab - shows extraction results */}
+					<TabsContent value="results">
+						<ResultsTab
+							extractionResult={extractionResult}
+							outputPath={outputPath}
+							isExtracting={isExtracting}
+							progressValue={progressValue}
+							progressText={progressText}
+							fileProgressMap={fileProgressMap}
+							handleReset={handleResetAll}
+							setActiveTab={setActiveTab}
+							batchMode={batchMode}
+						/>
+					</TabsContent>
+				</Tabs>
 			</div>
-		</ThemeProvider>
+
+			{/* Simple error display - appears at bottom right */}
+			{error && (
+				<div className="fixed bottom-4 right-4 max-w-md">
+					<Alert variant="destructive" className="shadow-lg">
+						<AlertCircle className="h-4 w-4" />
+						<AlertTitle>Error</AlertTitle>
+						<AlertDescription>{error}</AlertDescription>
+					</Alert>
+				</div>
+			)}
+		</div>
 	)
 }
 

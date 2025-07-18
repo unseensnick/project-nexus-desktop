@@ -200,6 +200,91 @@
 			}
 		}
 	},
+	"muxing": {
+		"supported_containers": {
+			"mkv": {
+				"name": "Matroska",
+				"description": "Universal container supporting most codecs",
+				"extensions": [".mkv"],
+				"codecs": [
+					"h264",
+					"h265",
+					"vp8",
+					"vp9",
+					"av1",
+					"aac",
+					"mp3",
+					"flac",
+					"vorbis",
+					"opus",
+					"ac3",
+					"dts"
+				]
+			},
+			"mp4": {
+				"name": "MP4",
+				"description": "Widely compatible container for web and mobile",
+				"extensions": [".mp4", ".m4v"],
+				"codecs": ["h264", "h265", "av1", "aac", "mp3", "ac3"]
+			},
+			"webm": {
+				"name": "WebM",
+				"description": "Web-optimized container for HTML5 video",
+				"extensions": [".webm"],
+				"codecs": ["vp8", "vp9", "av1", "vorbis", "opus"]
+			},
+			"avi": {
+				"name": "AVI",
+				"description": "Legacy container with broad compatibility",
+				"extensions": [".avi"],
+				"codecs": ["h264", "h265", "mpeg4", "xvid", "divx", "mp3", "aac", "ac3"]
+			},
+			"mov": {
+				"name": "QuickTime",
+				"description": "Apple QuickTime container",
+				"extensions": [".mov"],
+				"codecs": ["h264", "h265", "mpeg4", "aac", "mp3", "ac3"]
+			}
+		},
+		"quality_presets": {
+			"high": {
+				"name": "High Quality",
+				"description": "Best quality, larger file size",
+				"crf": 18,
+				"audio_bitrate": "320k",
+				"fast_start": true
+			},
+			"medium": {
+				"name": "Medium Quality",
+				"description": "Balanced quality and file size",
+				"crf": 23,
+				"audio_bitrate": "192k",
+				"fast_start": true
+			},
+			"low": {
+				"name": "Low Quality",
+				"description": "Smaller file size, lower quality",
+				"crf": 28,
+				"audio_bitrate": "128k",
+				"fast_start": false
+			},
+			"copy": {
+				"name": "Copy Mode",
+				"description": "No re-encoding, fastest processing",
+				"crf": null,
+				"audio_bitrate": null,
+				"fast_start": false
+			}
+		},
+		"default_options": {
+			"container": "mkv",
+			"quality": "copy",
+			"fast_start": false,
+			"overwrite": false,
+			"metadata": true,
+			"chapters": true
+		}
+	},
 	"extraction_defaults": {
 		"audio": {
 			"preferred_codecs": ["flac", "aac", "mp3"],

@@ -35,6 +35,8 @@ class OperationType(Enum):
     ANALYSIS = "analysis"
     EXTRACTION = "extraction"
     BATCH_EXTRACTION = "batch_extraction"
+    MUXING = "muxing"
+    BATCH_MUXING = "batch_muxing"
     VALIDATION = "validation"
     CONVERSION = "conversion"
     CUSTOM = "custom"
@@ -449,7 +451,7 @@ class ProgressManager:
             current_item = progress_data.get("current_item")
             completed_items = progress_data.get("completed_items")
             stage_name = progress_data.get("stage")
-            stage_percent = progress_data.get("percent")
+            stage_percent = progress_data.get("percent") or progress_data.get("overall_percent")
             metadata = progress_data.get("metadata")
             
             # Handle message field (convert to metadata format)

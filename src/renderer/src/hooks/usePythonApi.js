@@ -284,7 +284,8 @@ export function usePythonApi() {
 
 		// Utility functions
 		clearError,
-		callPythonFunction
+		callPythonFunction,
+		setupProgressTracking
 	}
 }
 

@@ -16,32 +16,35 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
  *
  * @param {Object} props
  * @param {boolean} props.collapsed - Whether the sidebar is in collapsed state
+ * @param {string} props.activeFeature - Currently active feature
+ * @param {Function} props.onFeatureChange - Callback for feature changes
  * @returns {JSX.Element} The rendered sidebar component
  */
-export function AppSidebar({ collapsed }) {
+export function AppSidebar({ collapsed, activeFeature = "extract-tracks", onFeatureChange }) {
 	// Define sidebar navigation items with their metadata
 	const navItems = [
 		{
+			id: "extract-tracks",
 			title: "Extract Tracks",
 			icon: Layers,
-			isActive: true
+			comingSoon: false
 		},
 		{
-			title: "Subtitle Editor",
-			icon: Subtitles,
-			isActive: false,
-			comingSoon: true
-		},
-		{
+			id: "video-muxing",
 			title: "Video Muxing",
 			icon: Layers,
-			isActive: false,
+			comingSoon: false
+		},
+		{
+			id: "subtitle-editor",
+			title: "Subtitle Editor",
+			icon: Subtitles,
 			comingSoon: true
 		},
 		{
+			id: "video-editing",
 			title: "Video Editing",
 			icon: Scissors,
-			isActive: false,
 			comingSoon: true
 		}
 	]
@@ -72,7 +75,7 @@ export function AppSidebar({ collapsed }) {
 								<Tooltip>
 									<TooltipTrigger asChild>
 										<Toggle
-											pressed={item.isActive}
+											pressed={activeFeature === item.id}
 											className={`w-full ${
 												collapsed
 													? "justify-center px-0"
@@ -83,7 +86,12 @@ export function AppSidebar({ collapsed }) {
 													: ""
 											}`}
 											disabled={item.comingSoon}
-											variant={item.isActive ? "default" : "ghost"}
+											variant={
+												activeFeature === item.id ? "default" : "ghost"
+											}
+											onClick={() =>
+												!item.comingSoon && onFeatureChange?.(item.id)
+											}
 										>
 											<item.icon className="size-4" />
 											{!collapsed && (

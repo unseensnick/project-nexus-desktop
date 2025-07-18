@@ -23,7 +23,8 @@ logger = logging.getLogger(__name__)
 
 # Available plugins - add new plugins here
 AVAILABLE_PLUGINS = {
-    "track-extractor": "plugins.track_extractor.api"
+    "track-extractor": "plugins.track_extractor.api",
+    "video-muxer": "plugins.video_muxer.api"
 }
 
 
