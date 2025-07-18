@@ -13,6 +13,7 @@ Key features:
 - Support for audio, video, and subtitle tracks
 """
 
+import json
 import logging
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -32,44 +33,6 @@ class TrackExtractor:
     It provides clear, simple methods for extracting tracks by ID or language.
     """
     
-    # Codec to extension mappings from legacy code
-    AUDIO_CODEC_TO_EXTENSION = {
-        "aac": "m4a",  # Use M4A container for AAC to fix duration metadata issues
-        "mp3": "mp3",
-        "ac3": "ac3",
-        "eac3": "eac3",
-        "dts": "dts",
-        "flac": "flac",
-        "opus": "opus",
-        "vorbis": "ogg",
-        "pcm_s16le": "wav",
-        "pcm_s24le": "wav",
-        "default": "mka"
-    }
-    
-    VIDEO_CODEC_TO_EXTENSION = {
-        "h264": "mp4",
-        "hevc": "mp4",
-        "av1": "mkv",
-        "vp9": "mkv",
-        "vp8": "mkv",
-        "mpeg2video": "mkv",
-        "mpeg4": "mp4",
-        "default": "mkv"
-    }
-    
-    SUBTITLE_CODEC_TO_EXTENSION = {
-        "subrip": "srt",
-        "ass": "ass",
-        "ssa": "ass",
-        "webvtt": "vtt",
-        "mov_text": "srt",
-        "pgs": "sup",
-        "dvd_subtitle": "sup",
-        "dvb_subtitle": "sup",
-        "default": "srt"
-    }
-    
     def __init__(self, analyzer=None):
         """
         Initialize the track extractor.
@@ -79,6 +42,74 @@ class TrackExtractor:
         """
         self.analyzer = analyzer
         self.ffmpeg_utils = FFmpegUtils()
+        self.config = self._load_config()
+    
+    def _load_config(self) -> Dict:
+        """
+        Load configuration from media-formats.json file.
+        
+        Returns:
+            Dictionary containing the loaded configuration
+        """
+        try:
+            config_path = Path(__file__).parent.parent.parent.parent / "config" / "media-formats.json"
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+            logger.info("Successfully loaded media formats configuration")
+            return config
+        except Exception as e:
+            logger.error(f"Failed to load config file: {e}")
+            # Fallback to default mappings if config loading fails
+            return self._get_default_mappings()
+    
+    def _get_default_mappings(self) -> Dict:
+        """
+        Get default codec mappings as fallback when config file is not available.
+        
+        Returns:
+            Dictionary with default codec mappings
+        """
+        return {
+            "supported_formats": {
+                "audio": {
+                    "codecs": {
+                        "aac": {"extensions": [".m4a"]},
+                        "mp3": {"extensions": [".mp3"]},
+                        "ac3": {"extensions": [".ac3"]},
+                        "eac3": {"extensions": [".eac3"]},
+                        "dts": {"extensions": [".dts"]},
+                        "flac": {"extensions": [".flac"]},
+                        "opus": {"extensions": [".opus"]},
+                        "vorbis": {"extensions": [".ogg"]},
+                        "pcm_s16le": {"extensions": [".wav"]},
+                        "pcm_s24le": {"extensions": [".wav"]}
+                    }
+                },
+                "video": {
+                    "codecs": {
+                        "h264": {"extensions": [".mp4"]},
+                        "hevc": {"extensions": [".mp4"]},
+                        "av1": {"extensions": [".mkv"]},
+                        "vp9": {"extensions": [".mkv"]},
+                        "vp8": {"extensions": [".mkv"]},
+                        "mpeg2video": {"extensions": [".mkv"]},
+                        "mpeg4": {"extensions": [".mp4"]}
+                    }
+                },
+                "subtitle": {
+                    "codecs": {
+                        "subrip": {"extensions": [".srt"]},
+                        "ass": {"extensions": [".ass"]},
+                        "ssa": {"extensions": [".ass"]},
+                        "webvtt": {"extensions": [".vtt"]},
+                        "mov_text": {"extensions": [".srt"]},
+                        "pgs": {"extensions": [".sup"]},
+                        "dvd_subtitle": {"extensions": [".sup"]},
+                        "dvb_subtitle": {"extensions": [".sup"]}
+                    }
+                }
+            }
+        }
     
     def extract_single_track(
         self,
@@ -472,7 +503,7 @@ class TrackExtractor:
     
     def _get_extension_for_codec(self, codec: str, track_type: str) -> str:
         """
-        Get appropriate file extension for codec and track type.
+        Get appropriate file extension for codec and track type from config.
         
         Args:
             codec: Codec name
@@ -481,28 +512,52 @@ class TrackExtractor:
         Returns:
             File extension without dot
         """
-        if track_type == "audio":
-            return self.AUDIO_CODEC_TO_EXTENSION.get(codec, 
-                   self.AUDIO_CODEC_TO_EXTENSION["default"])
-        elif track_type == "video":
-            return self.VIDEO_CODEC_TO_EXTENSION.get(codec, 
-                   self.VIDEO_CODEC_TO_EXTENSION["default"])
-        elif track_type == "subtitle":
-            return self.SUBTITLE_CODEC_TO_EXTENSION.get(codec, 
-                   self.SUBTITLE_CODEC_TO_EXTENSION["default"])
-        else:
-            return "bin"
+        try:
+            # Get codecs for the track type from config
+            codecs = self.config.get("supported_formats", {}).get(track_type, {}).get("codecs", {})
+            
+            # Look for the codec in the config
+            codec_info = codecs.get(codec.lower())
+            if codec_info and codec_info.get("extensions"):
+                # Return the first extension without the dot
+                extension = codec_info["extensions"][0]
+                return extension.lstrip(".")
+            
+            # If codec not found, try to find a similar codec
+            for config_codec, info in codecs.items():
+                if codec.lower() in config_codec or config_codec in codec.lower():
+                    if info.get("extensions"):
+                        extension = info["extensions"][0]
+                        return extension.lstrip(".")
+            
+            # Fallback to default extension for track type
+            logger.warning(f"Codec '{codec}' not found in config for {track_type}, using default")
+            return self._get_default_extension(track_type)
+            
+        except Exception as e:
+            logger.error(f"Error getting extension for codec '{codec}' ({track_type}): {e}")
+            return self._get_default_extension(track_type)
     
     def _get_default_extension(self, track_type: str) -> str:
         """
-        Get default extension for track type.
+        Get default extension for track type, using config if available.
         
         Args:
             track_type: Type of track
-            
+        
         Returns:
             Default file extension
         """
+        try:
+            codecs = self.config.get("supported_formats", {}).get(track_type, {}).get("codecs", {})
+            # Try to get the first extension from the first codec in the config
+            for codec_info in codecs.values():
+                if codec_info.get("extensions"):
+                    extension = codec_info["extensions"][0]
+                    return extension.lstrip(".")
+        except Exception as e:
+            logger.error(f"Error getting default extension for {track_type}: {e}")
+        # Fallback to hardcoded defaults
         defaults = {
             "audio": "mka",
             "video": "mkv",

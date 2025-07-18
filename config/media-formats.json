@@ -92,7 +92,7 @@
 			"codecs": {
 				"aac": {
 					"name": "AAC",
-					"extensions": [".aac", ".mp4", ".m4a", ".mkv"],
+					"extensions": [".m4a", ".aac", ".mp4", ".mkv"],
 					"containers": ["mp4", "mkv", "ts", "3gp"]
 				},
 				"mp3": {

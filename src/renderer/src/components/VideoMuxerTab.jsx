@@ -94,6 +94,7 @@ function VideoMuxerTab() {
 		chapters: true
 	})
 	const [activeTab, setActiveTab] = useState("input")
+	const [customFilename, setCustomFilename] = useState("")
 
 	// Track management
 	const [tracks, setTracks] = useState([])
@@ -127,6 +128,20 @@ function VideoMuxerTab() {
 			const updatedInputPaths = [...inputPaths, ...newFiles]
 			setInputPaths(updatedInputPaths)
 
+			// Set default filename if custom filename is empty
+			if (!customFilename.trim()) {
+				const firstVideoFile = newFiles.find((path) => {
+					const fileName = path.split(/[\\/]/).pop().toLowerCase()
+					return fileName.match(/\.(mp4|mkv|avi|mov|webm|flv|wmv|m4v)$/)
+				})
+
+				if (firstVideoFile) {
+					const videoFileName = firstVideoFile.split(/[\\/]/).pop()
+					const defaultFilename = videoFileName.replace(/\.[^/.]+$/, "")
+					setCustomFilename(defaultFilename)
+				}
+			}
+
 			// Analyze compatibility for all files together
 			const compatibility = await analyzeCompatibility(updatedInputPaths)
 			console.log("Compatibility result:", compatibility)
@@ -158,6 +173,28 @@ function VideoMuxerTab() {
 		// Update input paths
 		const newInputPaths = inputPaths.filter((_, index) => index !== indexToRemove)
 		setInputPaths(newInputPaths)
+
+		// Update default filename if the removed file was the source of the current filename
+		const removedFileNameWithoutExt = removedFilePath
+			.split(/[\\/]/)
+			.pop()
+			.replace(/\.[^/.]+$/, "")
+		if (customFilename === removedFileNameWithoutExt) {
+			// Find a new video file to use as default
+			const newFirstVideoFile = newInputPaths.find((path) => {
+				const fileName = path.split(/[\\/]/).pop().toLowerCase()
+				return fileName.match(/\.(mp4|mkv|avi|mov|webm|flv|wmv|m4v)$/)
+			})
+
+			if (newFirstVideoFile) {
+				const videoFileName = newFirstVideoFile.split(/[\\/]/).pop()
+				const newDefaultFilename = videoFileName.replace(/\.[^/.]+$/, "")
+				setCustomFilename(newDefaultFilename)
+			} else {
+				// No video files left, clear the filename
+				setCustomFilename("")
+			}
+		}
 
 		// Re-analyze compatibility for remaining files
 		if (newInputPaths.length > 0) {
@@ -212,8 +249,30 @@ function VideoMuxerTab() {
 		let finalOutputPath = outputPath
 		if (!outputPath.includes(".")) {
 			// It's a directory, create a filename
-			const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)
-			finalOutputPath = `${outputPath}/muxed_output_${timestamp}${outputExtension}`
+			let filename = ""
+
+			// Use custom filename if provided, otherwise use first video file name
+			if (customFilename.trim()) {
+				filename = customFilename.trim()
+			} else {
+				// Find the first video file to use as base name
+				const firstVideoFile = inputPaths.find((path) => {
+					const fileName = path.split(/[\\/]/).pop().toLowerCase()
+					return fileName.match(/\.(mp4|mkv|avi|mov|webm|flv|wmv|m4v)$/)
+				})
+
+				if (firstVideoFile) {
+					// Extract filename without extension
+					const videoFileName = firstVideoFile.split(/[\\/]/).pop()
+					filename = videoFileName.replace(/\.[^/.]+$/, "")
+				} else {
+					// Fallback to timestamp if no video file found
+					const timestamp = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19)
+					filename = `muxed_output_${timestamp}`
+				}
+			}
+
+			finalOutputPath = `${outputPath}/${filename}${outputExtension}`
 		} else if (!outputPath.endsWith(outputExtension)) {
 			// It has an extension but wrong one, replace it
 			const basePath = outputPath.replace(/\.[^/.]+$/, "")
@@ -296,7 +355,14 @@ function VideoMuxerTab() {
 						</p>
 					</div>
 					<div className="flex gap-2">
-						<Button variant="outline" onClick={resetMuxing} disabled={isMuxing}>
+						<Button
+							variant="outline"
+							onClick={() => {
+								resetMuxing()
+								setCustomFilename("")
+							}}
+							disabled={isMuxing}
+						>
 							<Square className="h-4 w-4 mr-2" />
 							Reset
 						</Button>
@@ -377,6 +443,7 @@ function VideoMuxerTab() {
 											onClick={() => {
 												setInputPaths([])
 												setTracks([])
+												setCustomFilename("")
 											}}
 										>
 											<Trash2 className="h-4 w-4 mr-2" />
@@ -524,11 +591,11 @@ function VideoMuxerTab() {
 							<CardContent className="space-y-6">
 								{/* Output File */}
 								<div className="space-y-2">
-									<Label>Destination File</Label>
+									<Label>Destination Directory</Label>
 									<div className="flex gap-2">
 										<Input
 											defaultValue={outputPath || ""}
-											placeholder="Select output file..."
+											placeholder="Select output directory..."
 											readOnly
 											className="flex-1"
 										/>
@@ -537,6 +604,71 @@ function VideoMuxerTab() {
 											Browse
 										</Button>
 									</div>
+								</div>
+
+								{/* Custom Filename */}
+								<div className="space-y-2">
+									<Label>Output Filename (Optional)</Label>
+									<Input
+										value={customFilename}
+										onChange={(e) => setCustomFilename(e.target.value)}
+										placeholder="Enter custom filename (without extension)..."
+										className="flex-1"
+									/>
+									<p className="text-xs text-muted-foreground">
+										Leave empty to use the first video file name as default
+									</p>
+									{outputPath && (
+										<div className="text-xs text-muted-foreground">
+											<strong>Preview:</strong>{" "}
+											{(() => {
+												const outputExtension =
+													outputOptions.container === "mkv"
+														? ".mkv"
+														: outputOptions.container === "mp4"
+															? ".mp4"
+															: outputOptions.container === "webm"
+																? ".webm"
+																: outputOptions.container === "avi"
+																	? ".avi"
+																	: outputOptions.container ===
+																		  "mov"
+																		? ".mov"
+																		: ".mkv"
+
+												let filename = ""
+												if (customFilename.trim()) {
+													filename = customFilename.trim()
+												} else {
+													const firstVideoFile = inputPaths.find(
+														(path) => {
+															const fileName = path
+																.split(/[\\/]/)
+																.pop()
+																.toLowerCase()
+															return fileName.match(
+																/\.(mp4|mkv|avi|mov|webm|flv|wmv|m4v)$/
+															)
+														}
+													)
+
+													if (firstVideoFile) {
+														const videoFileName = firstVideoFile
+															.split(/[\\/]/)
+															.pop()
+														filename = videoFileName.replace(
+															/\.[^/.]+$/,
+															""
+														)
+													} else {
+														filename = "muxed_output"
+													}
+												}
+
+												return `${outputPath}/${filename}${outputExtension}`
+											})()}
+										</div>
+									)}
 								</div>
 
 								<Separator />
