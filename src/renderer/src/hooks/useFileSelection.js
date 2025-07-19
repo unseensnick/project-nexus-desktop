@@ -9,6 +9,7 @@ import { useState } from "react"
  * 2. Choose output directories for extracted tracks
  * 3. Manage selection state and related errors
  * 4. Reset file selections when needed
+ * 5. Handle drag and drop file selection
  *
  * It abstracts away the details of communicating with Electron's dialog API
  * and provides a clean React-based interface for the rest of the application.
@@ -56,6 +57,57 @@ function useFileSelection() {
 			setError(`Error selecting file: ${err.message}`)
 		}
 		return null
+	}
+
+	/**
+	 * Handle file selection from drag and drop or direct path input.
+	 *
+	 * @param {string} filePath - Path to the file to select
+	 * @returns {Promise<boolean>} True if file was successfully selected
+	 */
+	const handleFileFromPath = async (filePath) => {
+		try {
+			// Validate that we have a valid file path
+			if (!filePath || typeof filePath !== "string") {
+				setError("Invalid file path provided")
+				return false
+			}
+
+			// Normalize file path to ensure it's in the correct format
+			const normalizedPath = filePath.replace(/\\/g, "/")
+
+			// Validate that the backend API is available for file validation
+			if (!window.electronAPI?.callPythonFunction) {
+				throw new Error("Backend is not available. Please restart the application.")
+			}
+
+			// Call the backend to validate the file and check if it's a supported media file
+			let validationResult
+			try {
+				validationResult = await window.electronAPI.callPythonFunction(
+					"track-extractor.validate_media_file",
+					{ file_path: normalizedPath }
+				)
+			} catch (error) {
+				console.error("Backend call failed:", error)
+				throw error
+			}
+
+			if (validationResult.success && validationResult.data.is_valid) {
+				setFilePath(normalizedPath)
+				setError(null)
+				return true
+			} else {
+				const errorMsg =
+					validationResult.error || "Selected file is not a supported media file"
+				setError(errorMsg)
+				return false
+			}
+		} catch (err) {
+			console.error("Error validating dropped file:", err)
+			setError(`Error validating file: ${err.message}`)
+			return false
+		}
 	}
 
 	/**
@@ -155,6 +207,94 @@ function useFileSelection() {
 	}
 
 	/**
+	 * Handle multiple files from drag and drop or direct path input.
+	 *
+	 * @param {Array<string>} filePaths - Array of file paths to add
+	 * @param {boolean} append - Whether to append to existing files
+	 * @returns {Promise<boolean>} True if files were successfully added
+	 */
+	const handleFilesFromPaths = async (filePaths, append = false) => {
+		try {
+			console.log("handleFilesFromPaths called with:", filePaths)
+			console.log("append mode:", append)
+
+			// Filter out undefined or null paths and normalize file paths
+			const validPaths = filePaths.filter((path) => path && typeof path === "string")
+			console.log("Valid paths after filtering:", validPaths)
+
+			if (validPaths.length === 0) {
+				setError("No valid file paths provided")
+				return false
+			}
+
+			// Normalize file paths to ensure they're in the correct format
+			const normalizedPaths = validPaths.map((path) => {
+				// Convert backslashes to forward slashes for consistency
+				return path.replace(/\\/g, "/")
+			})
+			console.log("Normalized paths:", normalizedPaths)
+
+			// Validate that the backend API is available for file validation
+			if (!window.electronAPI?.callPythonFunction) {
+				throw new Error("Backend is not available. Please restart the application.")
+			}
+
+			// Call the backend to validate the files and filter supported media files
+			let validationResult
+			try {
+				console.log("Calling backend validation with paths:", normalizedPaths)
+				validationResult = await window.electronAPI.callPythonFunction(
+					"track-extractor.validate_media_files",
+					{ file_paths: normalizedPaths }
+				)
+				console.log("Backend validation result:", validationResult)
+			} catch (error) {
+				console.error("Backend call failed:", error)
+				throw error
+			}
+
+			if (validationResult.success) {
+				const validFiles = validationResult.data.valid_files || []
+				console.log("Valid files from backend:", validFiles)
+
+				if (validFiles.length > 0) {
+					if (append) {
+						// Append new files to existing ones, but filter out duplicates
+						setInputPaths((prevPaths) => {
+							console.log("Previous input paths:", prevPaths)
+							const existingPaths = new Set(prevPaths)
+							const uniqueNewPaths = validFiles.filter(
+								(path) => !existingPaths.has(path)
+							)
+							const newPaths = [...prevPaths, ...uniqueNewPaths]
+							console.log("New input paths after append:", newPaths)
+							return newPaths
+						})
+					} else {
+						// Replace existing files with new selection
+						console.log("Setting input paths to:", validFiles)
+						setInputPaths(validFiles)
+					}
+					setError(null)
+					return true
+				} else {
+					const errorMsg = "No supported media files found in the selection"
+					setError(errorMsg)
+					return false
+				}
+			} else {
+				const errorMsg = validationResult.error || "Error validating selected files"
+				setError(errorMsg)
+				return false
+			}
+		} catch (err) {
+			console.error("Error validating files:", err)
+			setError(`Error validating files: ${err.message}`)
+			return false
+		}
+	}
+
+	/**
 	 * Open a native directory selection dialog for input directory.
 	 *
 	 * Uses Electron's dialog API to open a native OS folder picker
@@ -162,76 +302,82 @@ function useFileSelection() {
 	 * Then scans the directory for media files and stores the file paths.
 	 *
 	 * @param {boolean} append - Whether to append to existing files (true) or replace them (false)
+	 * @param {string} preSelectedPath - Optional pre-selected directory path (for drag and drop)
 	 * @returns {Promise<Array<string>|null>} Selected file paths or null if selection canceled
 	 */
-	const handleSelectInputDirectory = async (append = false) => {
+	const handleSelectInputDirectory = async (append = false, preSelectedPath = null) => {
 		try {
-			// Validate that the Electron API is properly exposed
-			if (
-				!window.electronAPI ||
-				typeof window.electronAPI.openDirectoryDialog !== "function"
-			) {
-				console.error("electronAPI.openDirectoryDialog is not available")
-				throw new Error("Directory selection dialog not available")
-			}
+			let selectedDir = preSelectedPath
 
-			// Configure and open the directory selection dialog
-			const result = await window.electronAPI.openDirectoryDialog({
-				title: "Select Input Directory",
-				properties: ["openDirectory"]
-			})
-
-			// Process dialog result - only continue if a directory was selected
-			if (result && result.filePaths && result.filePaths.length > 0) {
-				const selectedDir = result.filePaths[0]
-
-				// Validate that the backend API is available for finding media files
-				if (!window.electronAPI?.callPythonFunction) {
-					throw new Error("Backend is not available. Please restart the application.")
+			// If no pre-selected path, open directory dialog
+			if (!selectedDir) {
+				// Validate that the Electron API is properly exposed
+				if (
+					!window.electronAPI ||
+					typeof window.electronAPI.openDirectoryDialog !== "function"
+				) {
+					console.error("electronAPI.openDirectoryDialog is not available")
+					throw new Error("Directory selection dialog not available")
 				}
 
-				// Call the backend to find media files in the selected directory
-				const mediaFilesResult = await window.electronAPI.callPythonFunction(
-					"track-extractor.find_media_files",
-					{ paths: [selectedDir] }
-				)
+				// Configure and open the directory selection dialog
+				const result = await window.electronAPI.openDirectoryDialog({
+					title: "Select Input Directory",
+					properties: ["openDirectory"]
+				})
 
-				if (mediaFilesResult.success) {
-					const foundFiles = mediaFilesResult.data.files || []
-					console.log(
-						`Found ${foundFiles.length} media files in directory: ${selectedDir}`
-					)
-
-					if (foundFiles.length > 0) {
-						if (append) {
-							// Append new files to existing ones, but filter out duplicates
-							setInputPaths((prevPaths) => {
-								const existingPaths = new Set(prevPaths)
-								const uniqueNewPaths = foundFiles.filter(
-									(path) => !existingPaths.has(path)
-								)
-								return [...prevPaths, ...uniqueNewPaths]
-							})
-						} else {
-							// Replace existing files with new selection
-							setInputPaths(foundFiles)
-						}
-						setError(null)
-						return foundFiles
-					} else {
-						// No media files found in the directory
-						setError(`No supported media files found in directory: ${selectedDir}`)
-						setInputPaths([])
-						return null
-					}
+				// Process dialog result - only continue if a directory was selected
+				if (result && result.filePaths && result.filePaths.length > 0) {
+					selectedDir = result.filePaths[0]
 				} else {
-					// Backend error finding media files
-					const errorMessage =
-						mediaFilesResult.error || "Failed to scan directory for media files"
-					setError(errorMessage)
+					return null
+				}
+			}
+
+			// Validate that the backend API is available for finding media files
+			if (!window.electronAPI?.callPythonFunction) {
+				throw new Error("Backend is not available. Please restart the application.")
+			}
+
+			// Call the backend to find media files in the selected directory
+			const mediaFilesResult = await window.electronAPI.callPythonFunction(
+				"track-extractor.find_media_files",
+				{ paths: [selectedDir] }
+			)
+
+			if (mediaFilesResult.success) {
+				const foundFiles = mediaFilesResult.data.files || []
+				console.log(`Found ${foundFiles.length} media files in directory: ${selectedDir}`)
+
+				if (foundFiles.length > 0) {
+					if (append) {
+						// Append new files to existing ones, but filter out duplicates
+						setInputPaths((prevPaths) => {
+							const existingPaths = new Set(prevPaths)
+							const uniqueNewPaths = foundFiles.filter(
+								(path) => !existingPaths.has(path)
+							)
+							return [...prevPaths, ...uniqueNewPaths]
+						})
+					} else {
+						// Replace existing files with new selection
+						setInputPaths(foundFiles)
+					}
+					setError(null)
+					return foundFiles
+				} else {
+					// No media files found in the directory
+					setError(`No supported media files found in directory: ${selectedDir}`)
 					setInputPaths([])
 					return null
 				}
+			} else {
+				// Backend error finding media files
+				const errorMessage =
+					mediaFilesResult.error || "Failed to scan directory for media files"
+				setError(errorMessage)
+				setInputPaths([])
+				return null
 			}
 		} catch (err) {
 			console.error("Error in directory selection:", err)
@@ -266,8 +412,10 @@ function useFileSelection() {
 		error, // Current error message if any
 		setError, // Function to manually set error state
 		handleSelectFile, // Function to open file selection dialog
+		handleFileFromPath, // Function to handle file from path (drag & drop)
 		handleSelectOutputDir, // Function to open directory selection dialog
 		handleSelectInputFiles, // Function to open multiple file selection dialog
+		handleFilesFromPaths, // Function to handle multiple files from paths (drag & drop)
 		handleSelectInputDirectory, // Function to open input directory selection dialog
 		resetFileSelection // Function to reset all state values
 	}

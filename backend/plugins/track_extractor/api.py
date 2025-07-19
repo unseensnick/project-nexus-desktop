@@ -413,6 +413,148 @@ def find_media_files(paths: List[str]) -> Dict:
         }
 
 
+def validate_media_file(file_path: str) -> Dict:
+    """
+    Validate a single media file to check if it's supported.
+    
+    This function checks if a file exists and is a supported media format
+    that can be processed by the track extractor. It also handles path
+    resolution for drag and drop scenarios where only filenames are provided.
+    
+    Args:
+        file_path: Path to the file to validate
+        
+    Returns:
+        Dictionary with validation result:
+        {
+            "success": bool,
+            "data": {
+                "is_valid": bool,
+                "file_path": str,
+                "file_name": str
+            },
+            "error": str (if success=False)
+        }
+    """
+    try:
+        SharedServices.log_info(f"Validating media file: {file_path}", PLUGIN_NAME)
+        
+        # Try to resolve the file path first (handles drag and drop scenarios)
+        resolved_path = SharedServices.resolve_file_path(file_path)
+        if resolved_path:
+            file_path = resolved_path
+            SharedServices.log_info(f"Resolved file path: {file_path}", PLUGIN_NAME)
+        
+        # Check if file exists and is supported
+        is_valid = SharedServices.validate_file(file_path)
+        
+        SharedServices.log_info(f"Validation result for {file_path}: {is_valid}", PLUGIN_NAME)
+        
+        if is_valid:
+            file_name = Path(file_path).name
+            SharedServices.log_info(f"File validated successfully: {file_name}", PLUGIN_NAME)
+            
+            return {
+                "success": True,
+                "data": {
+                    "is_valid": True,
+                    "file_path": file_path,
+                    "file_name": file_name
+                }
+            }
+        else:
+            error_msg = f"File is not a supported media format: {file_path}"
+            SharedServices.log_warning(error_msg, PLUGIN_NAME)
+            
+            return {
+                "success": True,
+                "data": {
+                    "is_valid": False,
+                    "file_path": file_path,
+                    "file_name": Path(file_path).name
+                }
+            }
+        
+    except Exception as e:
+        error_msg = f"File validation failed: {e}"
+        SharedServices.log_error(error_msg, PLUGIN_NAME)
+        return {
+            "success": False,
+            "error": error_msg
+        }
+
+
+def validate_media_files(file_paths: List[str]) -> Dict:
+    """
+    Validate multiple media files to check if they're supported.
+    
+    This function checks multiple files and returns only the valid ones
+    that can be processed by the track extractor. It also handles path
+    resolution for drag and drop scenarios where only filenames are provided.
+    
+    Args:
+        file_paths: List of file paths to validate
+        
+    Returns:
+        Dictionary with validation results:
+        {
+            "success": bool,
+            "data": {
+                "valid_files": List[str],
+                "invalid_files": List[str],
+                "total_valid": int,
+                "total_invalid": int
+            },
+            "error": str (if success=False)
+        }
+    """
+    try:
+        SharedServices.log_info(f"Validating {len(file_paths)} media files", PLUGIN_NAME)
+        SharedServices.log_info(f"File paths: {file_paths}", PLUGIN_NAME)
+        
+        valid_files = []
+        invalid_files = []
+        
+        for file_path in file_paths:
+            SharedServices.log_info(f"Validating individual file: {file_path}", PLUGIN_NAME)
+            
+            # Try to resolve the file path first (handles drag and drop scenarios)
+            resolved_path = SharedServices.resolve_file_path(file_path)
+            if resolved_path:
+                file_path = resolved_path
+                SharedServices.log_info(f"Resolved file path: {file_path}", PLUGIN_NAME)
+            
+            if SharedServices.validate_file(file_path):
+                valid_files.append(file_path)
+                SharedServices.log_info(f"File is valid: {file_path}", PLUGIN_NAME)
+            else:
+                invalid_files.append(file_path)
+                SharedServices.log_warning(f"File is invalid: {file_path}", PLUGIN_NAME)
+        
+        SharedServices.log_info(
+            f"Validation complete: {len(valid_files)} valid, {len(invalid_files)} invalid", 
+            PLUGIN_NAME
+        )
+        
+        return {
+            "success": True,
+            "data": {
+                "valid_files": valid_files,
+                "invalid_files": invalid_files,
+                "total_valid": len(valid_files),
+                "total_invalid": len(invalid_files)
+            }
+        }
+        
+    except Exception as e:
+        error_msg = f"File validation failed: {e}"
+        SharedServices.log_error(error_msg, PLUGIN_NAME)
+        return {
+            "success": False,
+            "error": error_msg
+        }
+
+
 def get_supported_formats() -> Dict:
     """
     Get list of supported media formats.

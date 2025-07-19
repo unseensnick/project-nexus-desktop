@@ -77,6 +77,56 @@ const dialogApi = {
 		return () => {
 			ipcRenderer.removeAllListeners(channel)
 		}
+	},
+
+	/**
+	 * Get file path from File object (for drag and drop)
+	 * @param {File} file - File object from drag and drop
+	 * @returns {string|null} - File system path or null if not available
+	 */
+	getFilePath: (file) => {
+		// Try multiple approaches to get the file path
+		try {
+			// Method 1: Try webUtils.getPathForFile (Electron's official method)
+			const { webUtils } = require("electron")
+			const path = webUtils.getPathForFile(file)
+			if (path) {
+				return path
+			}
+		} catch (error) {
+			console.warn("webUtils.getPathForFile failed:", error)
+		}
+
+		try {
+			// Method 2: Try the legacy path property (works in some Electron versions)
+			if (file.path) {
+				return file.path
+			}
+		} catch (error) {
+			console.warn("file.path failed:", error)
+		}
+
+		try {
+			// Method 3: Try to get path from file name and current directory
+			// This is a fallback that works for files dropped from the same directory
+			const { path } = require("path")
+			const { app } = require("electron")
+
+			// Get the app's current working directory
+			const cwd = process.cwd()
+			const filePath = path.join(cwd, file.name)
+
+			// Check if the file exists at this path
+			const { existsSync } = require("fs")
+			if (existsSync(filePath)) {
+				return filePath
+			}
+		} catch (error) {
+			console.warn("Fallback path resolution failed:", error)
+		}
+
+		console.error("All methods to get file path failed")
+		return null
 	}
 }
 

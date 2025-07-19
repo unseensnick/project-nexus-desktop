@@ -90,11 +90,89 @@ class SharedServices:
             True if file is valid and supported, False otherwise
         """
         try:
+            # Convert to Path object for easier handling
+            path = Path(file_path)
+            
+            # Check if file exists
+            if not path.exists():
+                logger.warning(f"File does not exist: {file_path}")
+                return False
+            
+            # Check if it's actually a file (not a directory)
+            if not path.is_file():
+                logger.warning(f"Path is not a file: {file_path}")
+                return False
+            
+            # Check if file format is supported
             analyzer = cls.get_media_analyzer()
             return analyzer.is_supported_format(file_path)
         except Exception as e:
             logger.warning(f"File validation failed for {file_path}: {e}")
             return False
+
+    @classmethod
+    def resolve_file_path(cls, file_path: str) -> Optional[str]:
+        """
+        Resolve a file path, handling cases where only filename is provided.
+        
+        This method tries to find the actual file path when only a filename
+        is provided (common in drag and drop scenarios).
+        
+        Args:
+            file_path: Path or filename to resolve
+            
+        Returns:
+            Resolved absolute file path or None if not found
+        """
+        try:
+            path = Path(file_path)
+            
+            # If it's already an absolute path and exists, return it
+            if path.is_absolute() and path.exists():
+                return str(path)
+            
+            # If it's a relative path and exists, make it absolute
+            if path.exists():
+                return str(path.resolve())
+            
+            # If it's just a filename, try to find it in common locations
+            if not path.parent or str(path.parent) == ".":
+                filename = path.name
+                logger.info(f"Attempting to resolve filename: {filename}")
+                
+                # Try current working directory
+                cwd_path = Path.cwd() / filename
+                if cwd_path.exists() and cwd_path.is_file():
+                    logger.info(f"Found file in current directory: {cwd_path}")
+                    return str(cwd_path.resolve())
+                
+                # Try user's home directory
+                home_path = Path.home() / filename
+                if home_path.exists() and home_path.is_file():
+                    logger.info(f"Found file in home directory: {home_path}")
+                    return str(home_path.resolve())
+                
+                # Try desktop directory
+                desktop_path = Path.home() / "Desktop" / filename
+                if desktop_path.exists() and desktop_path.is_file():
+                    logger.info(f"Found file on desktop: {desktop_path}")
+                    return str(desktop_path.resolve())
+                
+                # Try downloads directory
+                downloads_path = Path.home() / "Downloads" / filename
+                if downloads_path.exists() and downloads_path.is_file():
+                    logger.info(f"Found file in downloads: {downloads_path}")
+                    return str(downloads_path.resolve())
+                
+                logger.warning(f"Could not resolve filename: {filename}")
+                return None
+            
+            logger.warning(f"File not found: {file_path}")
+            return None
+            
+        except Exception as e:
+            logger.warning(f"File path resolution failed for {file_path}: {e}")
+            return None
     
     @classmethod
     def get_supported_formats(cls) -> List[str]:

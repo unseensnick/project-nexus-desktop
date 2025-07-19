@@ -75,6 +75,8 @@ function App() {
 		handleSelectOutputDir,
 		handleSelectInputFiles: originalHandleSelectInputFiles,
 		handleSelectInputDirectory: originalHandleSelectInputDirectory,
+		handleFileFromPath,
+		handleFilesFromPaths,
 		resetFileSelection
 	} = useFileSelection()
 
@@ -302,17 +304,6 @@ function App() {
 						{/* Tab-based content area */}
 						<div className="flex-1 overflow-auto p-6">
 							<Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-								{/* Simple tab navigation */}
-								<TabsList className="grid w-full grid-cols-3 mb-8">
-									<TabsTrigger value="select">1. Select Files</TabsTrigger>
-									<TabsTrigger value="analyze" disabled={!hasAnalyzed}>
-										2. Analyze & Configure
-									</TabsTrigger>
-									<TabsTrigger value="results" disabled={!extractionResult}>
-										3. Results
-									</TabsTrigger>
-								</TabsList>
-
 								{/* File selection tab - simplified */}
 								<TabsContent value="select">
 									<SelectFilesTab
@@ -328,6 +319,8 @@ function App() {
 										handleSelectInputDirectory={handleSelectInputDirectory}
 										handleAnalyzeFile={handleAnalyzeFile}
 										handleAnalyzeBatch={handleAnalyzeBatch}
+										handleFileFromPath={handleFileFromPath}
+										handleFilesFromPaths={handleFilesFromPaths}
 									/>
 								</TabsContent>
 
