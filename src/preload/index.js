@@ -8,7 +8,7 @@
  */
 
 import { electronAPI } from "@electron-toolkit/preload"
-import { contextBridge, ipcRenderer } from "electron"
+import { contextBridge, ipcRenderer, webUtils } from "electron"
 
 // Custom APIs for renderer
 const api = {}
@@ -81,14 +81,13 @@ const dialogApi = {
 
 	/**
 	 * Get file path from File object (for drag and drop)
+	 * Uses webUtils.getPathForFile which is the official Electron method
 	 * @param {File} file - File object from drag and drop
 	 * @returns {string|null} - File system path or null if not available
 	 */
 	getFilePath: (file) => {
-		// Try multiple approaches to get the file path
 		try {
-			// Method 1: Try webUtils.getPathForFile (Electron's official method)
-			const { webUtils } = require("electron")
+			// Use webUtils.getPathForFile (imported at top level)
 			const path = webUtils.getPathForFile(file)
 			if (path) {
 				return path
@@ -98,90 +97,17 @@ const dialogApi = {
 		}
 
 		try {
-			// Method 2: Try the legacy path property (works in some Electron versions)
+			// Fallback: Try the legacy path property (works in older Electron versions)
 			if (file.path) {
 				return file.path
 			}
 		} catch (error) {
-			console.warn("file.path failed:", error)
+			console.warn("file.path fallback failed:", error)
 		}
 
-		try {
-			// Method 3: Try to get path from file name and current directory
-			// This is a fallback that works for files dropped from the same directory
-			const { path } = require("path")
-			const { app } = require("electron")
-
-			// Get the app's current working directory
-			const cwd = process.cwd()
-			const filePath = path.join(cwd, file.name)
-
-			// Check if the file exists at this path
-			const { existsSync } = require("fs")
-			if (existsSync(filePath)) {
-				return filePath
-			}
-		} catch (error) {
-			console.warn("Fallback path resolution failed:", error)
-		}
-
-		console.error("All methods to get file path failed")
+		// Return null if all methods fail
+		console.warn("Could not determine file path for:", file.name)
 		return null
-	}
-}
-
-/**
- * Python API for interacting with Python backend processes
- * Provides methods to analyze media files, extract tracks, and monitor progress
- */
-const pythonApi = {
-	/**
-	 * Analyze a media file to identify tracks
-	 * @param {string} filePath - Path to the media file
-	 * @returns {Promise<Object>} - Analysis results with track information
-	 */
-	analyzeFile: (filePath) => {
-		return ipcRenderer.invoke("python:analyze-file", filePath)
-	},
-
-	/**
-	 * Extract tracks from a media file
-	 * @param {Object} options - Extraction options including file path, languages, and track types
-	 * @returns {Promise<Object>} - Extraction results including success status and extracted tracks
-	 */
-	extractTracks: (options) => {
-		return ipcRenderer.invoke("python:extract-tracks", options)
-	},
-
-	/**
-	 * Register a callback for progress updates during extraction
-	 * @param {string} operationId - Unique ID for the operation
-	 * @param {Function} callback - Function to call with progress updates
-	 * @returns {Function} - Unsubscribe function to remove the listener
-	 */
-	onProgress: (operationId, callback) => {
-		const channel = `python:progress:${operationId}`
-
-		// Remove any existing listeners
-		ipcRenderer.removeAllListeners(channel)
-
-		// Add the new listener with error handling
-		ipcRenderer.on(channel, (_, data) => {
-			try {
-				if (data && typeof data === "object") {
-					callback(data)
-				} else {
-					console.warn(`Received invalid progress data: ${data}`)
-				}
-			} catch (error) {
-				console.error("Error in progress callback:", error)
-			}
-		})
-
-		// Return a function to unsubscribe
-		return () => {
-			ipcRenderer.removeAllListeners(channel)
-		}
 	},
 
 	/**
@@ -210,6 +136,46 @@ const pythonApi = {
 	findMediaFiles: (paths) => {
 		return ipcRenderer.invoke("python:find-media-files", paths)
 	}
+}
+
+// For compatibility - create pythonApi alias that points to the same functions
+const pythonApi = {
+	/**
+	 * Subscribe to progress updates for operations (alias for dialogApi.subscribeToProgress)
+	 * @param {Function} callback - Function to call with progress updates
+	 * @param {string} operationId - Optional operation ID for specific operation tracking
+	 * @returns {Function} - Unsubscribe function
+	 */
+	subscribeToProgress: dialogApi.subscribeToProgress,
+
+	/**
+	 * Call Python function through the bridge (alias for dialogApi.callPythonFunction)
+	 * @param {string} functionName - Function name in format "plugin-name.function-name"
+	 * @param {Object} parameters - Parameters to pass to the function
+	 * @returns {Promise<Object>} - Function result
+	 */
+	callPythonFunction: dialogApi.callPythonFunction,
+
+	/**
+	 * Extract specific track (alias for dialogApi.extractSpecificTrack)
+	 * @param {Object} options - Extraction options including track ID and type
+	 * @returns {Promise<Object>} - Extraction result for the specific track
+	 */
+	extractSpecificTrack: dialogApi.extractSpecificTrack,
+
+	/**
+	 * Batch extract tracks (alias for dialogApi.batchExtract)
+	 * @param {Object} options - Batch extraction options including file paths and worker count
+	 * @returns {Promise<Object>} - Batch extraction results and statistics
+	 */
+	batchExtract: dialogApi.batchExtract,
+
+	/**
+	 * Find media files (alias for dialogApi.findMediaFiles)
+	 * @param {Array<string>} paths - Directories or file paths to search
+	 * @returns {Promise<Object>} - Object containing found media files
+	 */
+	findMediaFiles: dialogApi.findMediaFiles
 }
 
 // Expose APIs to renderer based on context isolation status

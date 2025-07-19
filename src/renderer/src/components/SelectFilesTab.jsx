@@ -93,129 +93,43 @@ function SelectFilesTab({
 			console.log("Drop event triggered")
 
 			try {
-				// Process dropped items using a simpler, more reliable approach
+				const droppedFiles = Array.from(e.dataTransfer.files)
 				const droppedPaths = []
-				const droppedItems = []
 
-				// Check API support
-				const supportsFileSystemAccessAPI =
-					"getAsFileSystemHandle" in DataTransferItem.prototype
-				const supportsWebkitGetAsEntry = "webkitGetAsEntry" in DataTransferItem.prototype
+				console.log("Processing", droppedFiles.length, "dropped items")
 
-				console.log("API Support:", {
-					supportsFileSystemAccessAPI,
-					supportsWebkitGetAsEntry
-				})
+				// Extract file paths using the simplified approach
+				for (const file of droppedFiles) {
+					let filePath = null
 
-				console.log("Total items in dataTransfer:", e.dataTransfer.items.length)
-
-				// Process all items in the dataTransfer
-				const processPromises = []
-
-				for (let i = 0; i < e.dataTransfer.items.length; i++) {
-					const item = e.dataTransfer.items[i]
-					console.log(`Processing item ${i + 1}/${e.dataTransfer.items.length}:`, item)
-
-					if (item.kind === "file") {
-						// Create a promise for each file processing to handle async operations properly
-						const processPromise = (async () => {
-							let handle = null
-							let filePath = null
-							let isDirectory = false
-
-							// Try to get file path using multiple methods
-							const file = item.getAsFile()
-							if (file) {
-								console.log("Got file object:", file.name, file.size, file.type)
-
-								// Method 1: Try webUtils.getPathForFile
-								if (window.electronAPI?.getFilePath) {
-									try {
-										filePath = window.electronAPI.getFilePath(file)
-										console.log("Got file path via webUtils:", filePath)
-									} catch (error) {
-										console.warn("webUtils.getPathForFile failed:", error)
-									}
-								}
-
-								// Method 2: Try legacy path property
-								if (!filePath && file.path) {
-									filePath = file.path
-									console.log("Got file path via legacy property:", filePath)
-								}
-
-								// Method 3: Try to get path from file name (fallback)
-								if (!filePath) {
-									// This is a fallback that might work for files in the current directory
-									console.log("Trying fallback path resolution for:", file.name)
-									// We'll handle this in the backend by passing the file name
-									filePath = file.name
-								}
-
-								// Determine if it's a directory by checking the handle
-								if (supportsFileSystemAccessAPI) {
-									try {
-										handle = await item.getAsFileSystemHandle()
-										isDirectory = handle.kind === "directory"
-										console.log("Handle type:", handle.kind)
-									} catch (error) {
-										console.warn("Modern API failed:", error)
-									}
-								} else if (supportsWebkitGetAsEntry) {
-									try {
-										const entry = item.webkitGetAsEntry()
-										if (entry) {
-											handle = entry
-											isDirectory = entry.isDirectory
-											console.log(
-												"Entry type:",
-												entry.isDirectory ? "directory" : "file"
-											)
-										}
-									} catch (error) {
-										console.warn("Webkit API failed:", error)
-									}
-								}
-
-								if (filePath) {
-									return {
-										handle,
-										path: filePath,
-										isDirectory,
-										fileName: file.name,
-										fileSize: file.size,
-										fileType: file.type
-									}
-								} else {
-									console.warn("Could not get file path for:", file.name)
-									return null
-								}
-							} else {
-								console.warn("Could not get file object from item")
-								return null
-							}
-						})()
-
-						processPromises.push(processPromise)
-					} else {
-						console.log("Skipping non-file item:", item.kind)
+					// Try to get file path using Electron's webUtils
+					if (window.electronAPI?.getFilePath) {
+						try {
+							filePath = window.electronAPI.getFilePath(file)
+							console.log("Got file path via webUtils:", filePath)
+						} catch (error) {
+							console.warn("webUtils.getFilePath failed:", error)
+						}
 					}
-				}
 
-				// Wait for all file processing to complete
-				const results = await Promise.all(processPromises)
+					// Fallback to legacy path property
+					if (!filePath && file.path) {
+						filePath = file.path
+						console.log("Got file path via legacy property:", filePath)
+					}
 
-				// Add valid results to our arrays
-				for (const result of results) {
-					if (result) {
-						droppedPaths.push(result.path)
-						droppedItems.push(result)
-						console.log("Added file to droppedPaths:", result.path)
+					// Final fallback: use file name (let backend resolve)
+					if (!filePath) {
+						filePath = file.name
+						console.log("Using file name as fallback:", filePath)
+					}
+
+					if (filePath) {
+						droppedPaths.push(filePath)
 					}
 				}
 
 				console.log("Extracted paths:", droppedPaths)
-				console.log("Dropped items:", droppedItems)
 
 				if (droppedPaths.length === 0) {
 					console.warn("No valid file paths extracted from drop")
@@ -228,25 +142,52 @@ function SelectFilesTab({
 					return
 				}
 
-				// Check if we have directories
-				const hasDirectories = droppedItems.some((item) => item.isDirectory)
-				console.log("Has directories:", hasDirectories)
+				// Check if any of the dropped items might be directories
+				// Directories typically have size 0 and empty type in the File API
+				const possibleDirectories = droppedFiles.filter(
+					(file) => file.size === 0 && file.type === "" && !file.name.includes(".")
+				)
 
 				// Process based on mode and content type
 				if (batchMode) {
-					if (hasDirectories && droppedPaths.length === 1) {
-						// Single directory dropped in batch mode - scan it
-						console.log("Single directory dropped, scanning...")
-						await handleSelectInputDirectory(false, droppedPaths[0])
+					if (possibleDirectories.length === 1 && droppedFiles.length === 1) {
+						// Single potential directory dropped in batch mode - try to scan it
+						console.log("Possible directory dropped, attempting to scan...")
+						try {
+							// Use the backend to check if it's a directory and scan for media files
+							const result = await window.electronAPI.callPythonFunction(
+								"track-extractor.find_media_files",
+								{ paths: droppedPaths }
+							)
+
+							if (
+								result.success &&
+								result.data.files &&
+								result.data.files.length > 0
+							) {
+								console.log(
+									"Directory scan successful, found",
+									result.data.files.length,
+									"files"
+								)
+								await handleFilesFromPaths(result.data.files, false)
+							} else {
+								console.log("No media files found, treating as regular files")
+								await handleFilesFromPaths(droppedPaths, false)
+							}
+						} catch (error) {
+							console.warn("Directory scan failed, treating as files:", error)
+							await handleFilesFromPaths(droppedPaths, false)
+						}
 					} else {
-						// Multiple files or mixed content - use files directly
-						console.log("Multiple files dropped, processing...")
+						// Multiple files or mixed content - process as files
+						console.log("Multiple items or files dropped, processing as files...")
 						await handleFilesFromPaths(droppedPaths, false)
 					}
 				} else {
 					// Single mode - take first file only
-					if (hasDirectories) {
-						console.warn("Directory dropped in single mode - not supported")
+					if (possibleDirectories.length > 0) {
+						console.warn("Possible directory dropped in single mode - not supported")
 						return
 					}
 
@@ -267,9 +208,8 @@ function SelectFilesTab({
 			batchMode,
 			handleFileFromPath,
 			handleFilesFromPaths,
-			handleSelectInputDirectory,
-			handleSelectFile,
-			handleSelectInputFiles
+			handleSelectInputFiles,
+			handleSelectFile
 		]
 	)
 
