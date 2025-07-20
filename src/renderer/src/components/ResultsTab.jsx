@@ -11,6 +11,14 @@
 
 import ProgressCard from "@/components/ProgressCard"
 import TrackSummaryCard from "@/components/TrackSummaryCard"
+import {
+	Breadcrumb,
+	BreadcrumbItem,
+	BreadcrumbLink,
+	BreadcrumbList,
+	BreadcrumbPage,
+	BreadcrumbSeparator
+} from "@/components/ui/breadcrumb"
 import { Button } from "@/components/ui/button"
 import {
 	Card,
@@ -27,8 +35,12 @@ import {
 	FileX,
 	Folder,
 	FolderOpen,
+	Headphones,
 	Layers,
-	RefreshCw
+	RefreshCw,
+	Settings,
+	Subtitles,
+	Video
 } from "lucide-react"
 import React from "react"
 
@@ -60,181 +72,309 @@ function ResultsTab({
 	// Display extraction progress view while operation is running
 	if (isExtracting) {
 		return (
-			<Card className="shadow-lg">
-				<CardHeader>
-					<CardTitle className="flex items-center gap-2">
-						<RefreshCw className="h-5 w-5 animate-spin" />
-						{batchMode ? "Batch Extraction in Progress" : "Extraction in Progress"}
-					</CardTitle>
-					<CardDescription>{progressText}</CardDescription>
-				</CardHeader>
-				<CardContent className="space-y-6">
-					<ProgressCard
-						progressText={progressText}
-						progressValue={progressValue}
-						fileProgressMap={fileProgressMap}
-						batchMode={batchMode}
-					/>
-				</CardContent>
-			</Card>
+			<div className="flex flex-col h-full bg-zinc-900 text-white">
+				{/* Breadcrumbs */}
+				<div className="mb-6 px-1">
+					<Breadcrumb>
+						<BreadcrumbList>
+							<BreadcrumbItem>
+								<BreadcrumbLink className="flex items-center gap-2 text-sm text-green-500">
+									<FolderOpen className="h-4 w-4" />
+									Select Files
+								</BreadcrumbLink>
+							</BreadcrumbItem>
+							<BreadcrumbSeparator />
+							<BreadcrumbItem>
+								<BreadcrumbLink className="flex items-center gap-2 text-sm text-green-500">
+									<Settings className="h-4 w-4" />
+									Analyze & Configure
+								</BreadcrumbLink>
+							</BreadcrumbItem>
+							<BreadcrumbSeparator />
+							<BreadcrumbItem>
+								<BreadcrumbPage className="flex items-center gap-2 text-sm text-blue-500 font-medium">
+									<RefreshCw className="h-4 w-4" />
+									Results
+								</BreadcrumbPage>
+							</BreadcrumbItem>
+						</BreadcrumbList>
+					</Breadcrumb>
+				</div>
+
+				<Card className="bg-zinc-900 border-zinc-700 shadow-lg">
+					<CardHeader className="bg-zinc-950 border-b border-zinc-700">
+						<CardTitle className="flex items-center gap-2 text-zinc-50">
+							<RefreshCw className="h-5 w-5 animate-spin text-blue-400" />
+							{batchMode ? "Batch Extraction in Progress" : "Extraction in Progress"}
+						</CardTitle>
+						<CardDescription className="text-zinc-400">{progressText}</CardDescription>
+					</CardHeader>
+					<CardContent className="space-y-6 p-5">
+						<ProgressCard
+							progressText={progressText}
+							progressValue={progressValue}
+							fileProgressMap={fileProgressMap}
+							batchMode={batchMode}
+						/>
+					</CardContent>
+				</Card>
+			</div>
 		)
 	}
 
 	// Show placeholder when no extraction result is available
 	if (!extractionResult) {
 		return (
-			<Card className="shadow-lg">
-				<CardHeader>
-					<CardTitle className="flex items-center gap-2">
-						<FileText className="h-5 w-5 text-gray-500" />
-						No Extraction Results
-					</CardTitle>
-					<CardDescription>No extraction results available</CardDescription>
-				</CardHeader>
-				<CardContent className="space-y-6">
-					<div className="p-4 text-center text-muted-foreground">
-						No extraction results are currently available. Please perform an extraction
-						first.
-					</div>
-				</CardContent>
-				<CardFooter className="flex justify-between">
-					<Button
-						variant="outline"
-						onClick={() => setActiveTab("analyze")}
-						className="flex items-center gap-2"
-					>
-						<ChevronLeft className="h-4 w-4" />
-						Back to Analysis
-					</Button>
+			<div className="flex flex-col h-full bg-zinc-900 text-white">
+				{/* Breadcrumbs */}
+				<div className="mb-6 px-1">
+					<Breadcrumb>
+						<BreadcrumbList>
+							<BreadcrumbItem>
+								<BreadcrumbLink className="flex items-center gap-2 text-sm text-zinc-500">
+									<FolderOpen className="h-4 w-4" />
+									Select Files
+								</BreadcrumbLink>
+							</BreadcrumbItem>
+							<BreadcrumbSeparator />
+							<BreadcrumbItem>
+								<BreadcrumbLink className="flex items-center gap-2 text-sm text-zinc-500">
+									<Settings className="h-4 w-4" />
+									Analyze & Configure
+								</BreadcrumbLink>
+							</BreadcrumbItem>
+							<BreadcrumbSeparator />
+							<BreadcrumbItem>
+								<BreadcrumbPage className="flex items-center gap-2 text-sm text-blue-500 font-medium">
+									<RefreshCw className="h-4 w-4" />
+									Results
+								</BreadcrumbPage>
+							</BreadcrumbItem>
+						</BreadcrumbList>
+					</Breadcrumb>
+				</div>
 
-					<Button
-						onClick={handleReset}
-						className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700"
-					>
-						<FileText className="h-4 w-4" />
-						Start New Extraction
-					</Button>
-				</CardFooter>
-			</Card>
+				<Card className="bg-zinc-900 border-zinc-700 shadow-lg">
+					<CardHeader className="bg-zinc-950 border-b border-zinc-700">
+						<CardTitle className="flex items-center gap-2 text-zinc-500">
+							<FileText className="h-5 w-5" />
+							No Extraction Results
+						</CardTitle>
+						<CardDescription className="text-zinc-400">
+							No extraction results available
+						</CardDescription>
+					</CardHeader>
+					<CardContent className="space-y-6 p-5">
+						<div className="p-16 text-center">
+							<FileX className="h-16 w-16 mx-auto mb-4 text-zinc-600" />
+							<div className="text-lg font-semibold text-zinc-400 mb-2">
+								No Extraction Results
+							</div>
+							<div className="text-sm text-zinc-500 mb-6">
+								No extraction results are currently available. Please perform an
+								extraction first.
+							</div>
+						</div>
+					</CardContent>
+					<CardFooter className="bg-zinc-800 border-t border-zinc-700 flex justify-between p-5">
+						<Button
+							variant="outline"
+							onClick={() => setActiveTab("analyze")}
+							className="flex items-center gap-2 border-zinc-600 hover:bg-zinc-700 bg-zinc-700 text-zinc-200"
+						>
+							<ChevronLeft className="h-4 w-4" />
+							Back to Analysis
+						</Button>
+
+						<Button
+							onClick={handleReset}
+							className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white"
+						>
+							<FileText className="h-4 w-4" />
+							Start New Extraction
+						</Button>
+					</CardFooter>
+				</Card>
+			</div>
 		)
 	}
 
 	// Show appropriate results based on mode
 	if (batchMode) {
 		return (
-			<Card className="shadow-lg">
-				<CardHeader>
-					<CardTitle className="flex items-center gap-2">
-						<Check className="h-5 w-5 text-green-500" />
-						Batch Extraction Results
-					</CardTitle>
-					<CardDescription>Summary of the batch extraction operation</CardDescription>
-				</CardHeader>
-				<CardContent className="space-y-6">
-					{/* Batch metrics dashboard with color-coded status cards */}
-					<div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-						{/* Total files processed indicator */}
-						<div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg overflow-hidden shadow-sm border border-gray-200 dark:border-gray-700/50">
-							<div className="p-2 flex items-center gap-1 border-b border-gray-200 dark:border-gray-700/50 bg-gray-100 dark:bg-gray-700/50">
-								<Layers className="h-4 w-4" />
-								<span className="text-sm font-medium">Total Files</span>
-							</div>
-							<div className="p-3 text-center">
-								<span className="text-3xl font-bold">
-									{extractionResult?.total_files || 0}
-								</span>
-							</div>
-						</div>
-						<div className="bg-green-50 dark:bg-green-950/50 rounded-lg overflow-hidden shadow-sm border border-green-100 dark:border-green-900/50">
-							<div className="p-2 flex items-center gap-1 border-b border-green-100 dark:border-green-900/50 bg-green-100 dark:bg-green-900/50">
-								<Check className="h-4 w-4 text-green-600 dark:text-green-400" />
-								<span className="text-sm font-medium text-green-700 dark:text-green-300">
-									Successful
-								</span>
-							</div>
-							<div className="p-3 text-center">
-								<span className="text-3xl font-bold text-green-800 dark:text-green-200">
-									{extractionResult?.successful_files || 0}
-								</span>
-							</div>
-						</div>
-						<div className="bg-red-50 dark:bg-red-950/50 rounded-lg overflow-hidden shadow-sm border border-red-100 dark:border-red-900/50">
-							<div className="p-2 flex items-center gap-1 border-b border-red-100 dark:border-red-900/50 bg-red-100 dark:bg-red-900/50">
-								<FileX className="h-4 w-4 text-red-600 dark:text-red-400" />
-								<span className="text-sm font-medium text-red-700 dark:text-red-300">
-									Failed
-								</span>
-							</div>
-							<div className="p-3 text-center">
-								<span className="text-3xl font-bold text-red-800 dark:text-red-200">
-									{extractionResult?.failed_files || 0}
-								</span>
-							</div>
-						</div>
-						<div className="bg-blue-50 dark:bg-blue-950/50 rounded-lg overflow-hidden shadow-sm border border-blue-100 dark:border-blue-900/50">
-							<div className="p-2 flex items-center gap-1 border-b border-blue-100 dark:border-blue-900/50 bg-blue-100 dark:bg-blue-900/50">
-								<Layers className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-								<span className="text-sm font-medium text-blue-700 dark:text-blue-300">
-									Tracks Extracted
-								</span>
-							</div>
-							<div className="p-3 text-center">
-								<span className="text-3xl font-bold text-blue-800 dark:text-blue-200">
-									{extractionResult?.extracted_tracks || 0}
-								</span>
-							</div>
-						</div>
-					</div>
+			<div className="flex flex-col h-full bg-zinc-900 text-white">
+				{/* Breadcrumbs */}
+				<div className="mb-6 px-1">
+					<Breadcrumb>
+						<BreadcrumbList>
+							<BreadcrumbItem>
+								<BreadcrumbLink className="flex items-center gap-2 text-sm text-green-500">
+									<FolderOpen className="h-4 w-4" />
+									Select Files
+								</BreadcrumbLink>
+							</BreadcrumbItem>
+							<BreadcrumbSeparator />
+							<BreadcrumbItem>
+								<BreadcrumbLink className="flex items-center gap-2 text-sm text-green-500">
+									<Settings className="h-4 w-4" />
+									Analyze & Configure
+								</BreadcrumbLink>
+							</BreadcrumbItem>
+							<BreadcrumbSeparator />
+							<BreadcrumbItem>
+								<BreadcrumbPage className="flex items-center gap-2 text-sm text-blue-500 font-medium">
+									<RefreshCw className="h-4 w-4" />
+									Results
+								</BreadcrumbPage>
+							</BreadcrumbItem>
+						</BreadcrumbList>
+					</Breadcrumb>
+				</div>
 
-					{/* Output location information panel */}
-					<div className="p-4 bg-muted rounded-lg">
-						<div className="flex items-start gap-2">
-							<FolderOpen className="h-5 w-5 mt-0.5 flex-shrink-0" />
-							<div>
-								<div className="font-medium">Output Location</div>
-								<div className="text-sm break-all">{outputPath}</div>
-							</div>
-						</div>
-					</div>
-
-					{/* Conditionally displayed error section for failed files */}
-					{extractionResult?.failed_files_list &&
-						extractionResult.failed_files_list.length > 0 && (
-							<div className="p-4 bg-red-50 text-red-800 rounded-lg dark:bg-red-950 dark:text-red-100">
-								<div className="flex items-center gap-2 mb-2">
-									<FileX className="h-5 w-5" />
-									<h3 className="font-semibold">Failed Files</h3>
+				<Card className="bg-zinc-900 border-zinc-700 shadow-lg">
+					<CardHeader className="bg-zinc-950 border-b border-zinc-700">
+						<CardTitle className="flex items-center gap-2 text-zinc-50">
+							<Check className="h-5 w-5 text-green-400" />
+							Batch Extraction Results
+						</CardTitle>
+						<CardDescription className="text-zinc-400">
+							Summary of the batch extraction operation
+						</CardDescription>
+					</CardHeader>
+					<CardContent className="space-y-6 p-5">
+						{/* Batch metrics dashboard with color-coded status cards */}
+						<div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+							{/* Total files processed indicator */}
+							<div className="bg-zinc-800 border border-zinc-700 rounded-xl overflow-hidden">
+								<div className="bg-zinc-950 border-b border-zinc-700 px-3 py-2 flex items-center gap-2">
+									<Layers className="h-4 w-4 text-zinc-400" />
+									<span className="text-xs font-semibold text-zinc-300 uppercase tracking-wide">
+										Total Files
+									</span>
 								</div>
-								<div className="max-h-60 overflow-auto">
+								<div className="p-3 text-center">
+									<div className="text-2xl font-bold text-zinc-50 mb-1">
+										{extractionResult?.total_files || 0}
+									</div>
+								</div>
+							</div>
+
+							{/* Successful files indicator */}
+							<div className="bg-green-900 border border-green-600 rounded-xl overflow-hidden">
+								<div className="bg-green-800 border-b border-green-600 px-3 py-2 flex items-center gap-2">
+									<Check className="h-4 w-4 text-green-300" />
+									<span className="text-xs font-semibold text-green-200 uppercase tracking-wide">
+										Successful
+									</span>
+								</div>
+								<div className="p-3 text-center">
+									<div className="text-2xl font-bold text-green-100 mb-1">
+										{extractionResult?.successful_files || 0}
+									</div>
+								</div>
+							</div>
+
+							{/* Failed files indicator */}
+							<div className="bg-red-900 border border-red-600 rounded-xl overflow-hidden">
+								<div className="bg-red-800 border-b border-red-600 px-3 py-2 flex items-center gap-2">
+									<FileX className="h-4 w-4 text-red-300" />
+									<span className="text-xs font-semibold text-red-200 uppercase tracking-wide">
+										Failed
+									</span>
+								</div>
+								<div className="p-3 text-center">
+									<div className="text-2xl font-bold text-red-100 mb-1">
+										{extractionResult?.failed_files || 0}
+									</div>
+								</div>
+							</div>
+
+							{/* Tracks extracted indicator */}
+							<div className="bg-blue-900 border border-blue-600 rounded-xl overflow-hidden">
+								<div className="bg-blue-800 border-b border-blue-600 px-3 py-2 flex items-center gap-2">
+									<Layers className="h-4 w-4 text-blue-300" />
+									<span className="text-xs font-semibold text-blue-200 uppercase tracking-wide">
+										Tracks Extracted
+									</span>
+								</div>
+								<div className="p-3 text-center">
+									<div className="text-2xl font-bold text-blue-100 mb-1">
+										{extractionResult?.extracted_tracks || 0}
+									</div>
+								</div>
+							</div>
+						</div>
+
+						{/* Output location information panel */}
+						<div className="bg-zinc-800 border border-zinc-700 rounded-xl p-4">
+							<div className="flex items-start gap-3">
+								<FolderOpen className="h-5 w-5 mt-0.5 flex-shrink-0 text-blue-400" />
+								<div>
+									<div className="font-semibold text-zinc-50 mb-2">
+										Output Location
+									</div>
+									<div className="text-sm text-zinc-400 font-mono break-all">
+										{outputPath}
+									</div>
+								</div>
+							</div>
+						</div>
+
+						{/* Conditionally displayed error section for failed files */}
+						{extractionResult?.failed_files_list &&
+						extractionResult.failed_files_list.length > 0 ? (
+							<div className="bg-red-900 border border-red-600 rounded-xl p-4">
+								<div className="flex items-center gap-2 mb-3">
+									<FileX className="h-5 w-5 text-red-300" />
+									<div className="font-semibold text-red-100">Failed Files</div>
+								</div>
+								<div className="max-h-48 overflow-y-auto space-y-2">
 									{extractionResult.failed_files_list.map(
 										([file, error], index) => (
-											<div key={index} className="mb-1 text-sm">
-												<span className="font-medium">{file}</span>: {error}
+											<div key={index} className="bg-red-800 rounded-lg p-2">
+												<div className="text-sm font-medium text-red-100 mb-1">
+													{file}
+												</div>
+												<div className="text-xs text-red-200">{error}</div>
 											</div>
 										)
 									)}
 								</div>
 							</div>
+						) : (
+							<div className="bg-green-900 border border-green-600 rounded-xl p-4">
+								<div className="flex items-center gap-2 mb-2">
+									<Check className="h-5 w-5 text-green-300" />
+									<div className="font-semibold text-green-100">
+										All files processed successfully!
+									</div>
+								</div>
+								<div className="text-sm text-green-200">
+									Batch extraction completed without errors. All tracks have been
+									extracted to their respective folders.
+								</div>
+							</div>
 						)}
-				</CardContent>
-				<CardFooter className="flex justify-between">
-					<Button
-						variant="outline"
-						onClick={() => setActiveTab("select")}
-						className="flex items-center gap-2"
-					>
-						<ChevronLeft className="h-4 w-4" />
-						Back to File Selection
-					</Button>
+					</CardContent>
+					<CardFooter className="bg-zinc-800 border-t border-zinc-700 flex justify-between p-5">
+						<Button
+							variant="outline"
+							onClick={() => setActiveTab("select")}
+							className="flex items-center gap-2 border-zinc-600 hover:bg-zinc-700 bg-zinc-700 text-zinc-200"
+						>
+							<ChevronLeft className="h-4 w-4" />
+							Back to File Selection
+						</Button>
 
-					<Button
-						onClick={handleReset}
-						className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700"
-					>
-						Start New Extraction
-					</Button>
-				</CardFooter>
-			</Card>
+						<Button
+							onClick={handleReset}
+							className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white"
+						>
+							Start New Extraction
+						</Button>
+					</CardFooter>
+				</Card>
+			</div>
 		)
 	} else {
 		// Single file results view with track type breakdown
@@ -259,63 +399,136 @@ function ResultsTab({
 		}
 
 		return (
-			<Card className="shadow-lg">
-				<CardHeader>
-					<CardTitle className="flex items-center gap-2">
-						<Check className="h-5 w-5 text-green-500" />
-						Extraction Results
-					</CardTitle>
-					<CardDescription>Summary of the extracted tracks</CardDescription>
-				</CardHeader>
-				<CardContent className="space-y-6">
-					{/* Track type summary cards for audio, subtitle and video */}
-					<div className="grid grid-cols-3 gap-4">
-						<TrackSummaryCard type="audio" count={trackCounts.audio} />
-						<TrackSummaryCard type="subtitle" count={trackCounts.subtitle} />
-						<TrackSummaryCard type="video" count={trackCounts.video} />
-					</div>
+			<div className="flex flex-col h-full bg-zinc-900 text-white">
+				{/* Breadcrumbs */}
+				<div className="mb-6 px-1">
+					<Breadcrumb>
+						<BreadcrumbList>
+							<BreadcrumbItem>
+								<BreadcrumbLink className="flex items-center gap-2 text-sm text-green-500">
+									<FolderOpen className="h-4 w-4" />
+									Select Files
+								</BreadcrumbLink>
+							</BreadcrumbItem>
+							<BreadcrumbSeparator />
+							<BreadcrumbItem>
+								<BreadcrumbLink className="flex items-center gap-2 text-sm text-green-500">
+									<Settings className="h-4 w-4" />
+									Analyze & Configure
+								</BreadcrumbLink>
+							</BreadcrumbItem>
+							<BreadcrumbSeparator />
+							<BreadcrumbItem>
+								<BreadcrumbPage className="flex items-center gap-2 text-sm text-blue-500 font-medium">
+									<RefreshCw className="h-4 w-4" />
+									Results
+								</BreadcrumbPage>
+							</BreadcrumbItem>
+						</BreadcrumbList>
+					</Breadcrumb>
+				</div>
 
-					{/* Output location information */}
-					<div className="p-4 bg-muted rounded-lg">
-						<div className="flex items-start gap-2">
-							<Folder className="h-5 w-5 mt-0.5 flex-shrink-0" />
-							<div>
-								<div className="font-medium">Output Location</div>
-								<div className="text-sm break-all">{outputPath}</div>
+				<Card className="bg-zinc-900 border-zinc-700 shadow-lg">
+					<CardHeader className="bg-zinc-950 border-b border-zinc-700">
+						<CardTitle className="flex items-center gap-2 text-zinc-50">
+							<Check className="h-5 w-5 text-green-400" />
+							Extraction Results
+						</CardTitle>
+						<CardDescription className="text-zinc-400">
+							Summary of the extracted tracks
+						</CardDescription>
+					</CardHeader>
+					<CardContent className="space-y-6 p-5">
+						{/* Track type summary cards for audio, subtitle and video */}
+						<div className="grid grid-cols-3 gap-4">
+							{/* Audio Track Card */}
+							<div className="bg-zinc-800 border border-zinc-700 rounded-xl p-5 text-center">
+								<div className="w-8 h-8 mx-auto mb-3 bg-blue-800 rounded-lg flex items-center justify-center">
+									<Headphones className="h-5 w-5 text-blue-400" />
+								</div>
+								<div className="text-2xl font-bold text-zinc-50 mb-1">
+									{trackCounts.audio}
+								</div>
+								<div className="text-xs text-zinc-400 font-medium uppercase tracking-wide">
+									Audio
+								</div>
+							</div>
+
+							{/* Subtitle Track Card */}
+							<div className="bg-zinc-800 border border-zinc-700 rounded-xl p-5 text-center">
+								<div className="w-8 h-8 mx-auto mb-3 bg-green-800 rounded-lg flex items-center justify-center">
+									<Subtitles className="h-5 w-5 text-green-400" />
+								</div>
+								<div className="text-2xl font-bold text-zinc-50 mb-1">
+									{trackCounts.subtitle}
+								</div>
+								<div className="text-xs text-zinc-400 font-medium uppercase tracking-wide">
+									Subtitle
+								</div>
+							</div>
+
+							{/* Video Track Card */}
+							<div className="bg-zinc-800 border border-zinc-700 rounded-xl p-5 text-center">
+								<div className="w-8 h-8 mx-auto mb-3 bg-orange-800 rounded-lg flex items-center justify-center">
+									<Video className="h-5 w-5 text-orange-400" />
+								</div>
+								<div className="text-2xl font-bold text-zinc-50 mb-1">
+									{trackCounts.video}
+								</div>
+								<div className="text-xs text-zinc-400 font-medium uppercase tracking-wide">
+									Video
+								</div>
 							</div>
 						</div>
-					</div>
 
-					{/* Success confirmation message */}
-					<div className="p-4 bg-green-50 text-green-800 rounded-lg dark:bg-green-950 dark:text-green-300">
-						<div className="flex items-center gap-2">
-							<Check className="h-5 w-5" />
-							<span className="font-medium">Extraction completed successfully!</span>
+						{/* Output location information */}
+						<div className="bg-zinc-800 border border-zinc-700 rounded-xl p-4">
+							<div className="flex items-start gap-3">
+								<Folder className="h-5 w-5 mt-0.5 flex-shrink-0 text-blue-400" />
+								<div>
+									<div className="font-semibold text-zinc-50 mb-2">
+										Output Location
+									</div>
+									<div className="text-sm text-zinc-400 font-mono break-all">
+										{outputPath}
+									</div>
+								</div>
+							</div>
 						</div>
-						<p className="mt-1 text-sm">
-							All tracks have been extracted according to your specifications.
-						</p>
-					</div>
-				</CardContent>
-				<CardFooter className="flex justify-between">
-					<Button
-						variant="outline"
-						onClick={() => setActiveTab("analyze")}
-						className="flex items-center gap-2"
-					>
-						<ChevronLeft className="h-4 w-4" />
-						Back to Analysis
-					</Button>
 
-					<Button
-						onClick={handleReset}
-						className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700"
-					>
-						<FileText className="h-4 w-4" />
-						Start New Extraction
-					</Button>
-				</CardFooter>
-			</Card>
+						{/* Success confirmation message */}
+						<div className="bg-green-900 border border-green-600 rounded-xl p-4">
+							<div className="flex items-center gap-2 mb-2">
+								<Check className="h-5 w-5 text-green-300" />
+								<div className="font-semibold text-green-100">
+									Extraction completed successfully!
+								</div>
+							</div>
+							<div className="text-sm text-green-200">
+								All tracks have been extracted according to your specifications.
+							</div>
+						</div>
+					</CardContent>
+					<CardFooter className="bg-zinc-800 border-t border-zinc-700 flex justify-between p-5">
+						<Button
+							variant="outline"
+							onClick={() => setActiveTab("analyze")}
+							className="flex items-center gap-2 border-zinc-600 hover:bg-zinc-700 bg-zinc-700 text-zinc-200"
+						>
+							<ChevronLeft className="h-4 w-4" />
+							Back to Analysis
+						</Button>
+
+						<Button
+							onClick={handleReset}
+							className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 text-white"
+						>
+							<FileText className="h-4 w-4" />
+							Start New Extraction
+						</Button>
+					</CardFooter>
+				</Card>
+			</div>
 		)
 	}
 }

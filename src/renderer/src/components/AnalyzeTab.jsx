@@ -14,6 +14,14 @@
 import ProgressCard from "@/components/ProgressCard"
 import TrackSummaryCard from "@/components/TrackSummaryCard"
 import { Badge } from "@/components/ui/badge"
+import {
+	Breadcrumb,
+	BreadcrumbItem,
+	BreadcrumbLink,
+	BreadcrumbList,
+	BreadcrumbPage,
+	BreadcrumbSeparator
+} from "@/components/ui/breadcrumb"
 import { Button } from "@/components/ui/button"
 import {
 	Card,
@@ -27,17 +35,22 @@ import { Separator } from "@/components/ui/separator"
 import { Switch } from "@/components/ui/switch"
 import {
 	Check,
+	CheckCircle,
 	ChevronLeft,
 	ChevronRight,
 	Cpu,
 	File,
+	FileVideo,
+	FolderOpen,
 	Globe,
 	Headphones,
 	Layers,
+	List,
 	Minus,
 	Monitor,
 	Plus,
 	RefreshCw,
+	Settings,
 	SlidersHorizontal,
 	Subtitles,
 	Video
@@ -97,7 +110,7 @@ function AnalyzeTab({
 
 	// Select the appropriate analysis result based on current mode
 	const analysisResult = batchMode ? batchAnalyzed : analyzed
-	const displayName = batchMode ? `Batch (${inputPaths.length} files)` : fileName
+	const displayName = batchMode ? `Batch (${inputPaths?.length || 0} files)` : fileName
 
 	/**
 	 * Determines human-readable description of current extraction mode
@@ -111,10 +124,27 @@ function AnalyzeTab({
 		return "Audio and Subtitles" // Default mode
 	}
 
+	// Helper function to format file size
+	const formatFileSize = (bytes) => {
+		if (!bytes) return ""
+		const sizes = ["B", "KB", "MB", "GB"]
+		const i = Math.floor(Math.log(bytes) / Math.log(1024))
+		return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${sizes[i]}`
+	}
+
+	// Helper function to format duration
+	const formatDuration = (seconds) => {
+		if (!seconds) return ""
+		const h = Math.floor(seconds / 3600)
+		const m = Math.floor((seconds % 3600) / 60)
+		const s = Math.floor(seconds % 60)
+		return h > 0 ? `${h}h ${m}m ${s}s` : `${m}m ${s}s`
+	}
+
 	// Display placeholder when no analysis is available yet
 	if (!analysisResult) {
 		return (
-			<Card>
+			<Card className="shadow-lg">
 				<CardHeader>
 					<CardTitle>No Analysis Available</CardTitle>
 					<CardDescription>Please analyze a file or batch first</CardDescription>
@@ -139,404 +169,594 @@ function AnalyzeTab({
 	}
 
 	return (
-		<>
-			<Card className="shadow-lg">
-				<CardHeader>
-					<CardTitle>
-						{batchMode ? "Batch Analysis" : `Analyze File: ${fileName}`}
-					</CardTitle>
-					<CardDescription>
-						Configure extraction options based on the analysis
-					</CardDescription>
-				</CardHeader>
-				<CardContent className="space-y-6">
-					{/* Track summary cards showing counts by type */}
-					<div className="grid grid-cols-3 gap-4 mb-6">
-						<TrackSummaryCard
-							type="audio"
-							count={analysisResult.summary?.audio_count || 0}
-						/>
-						<TrackSummaryCard
-							type="subtitle"
-							count={analysisResult.summary?.subtitle_count || 0}
-						/>
-						<TrackSummaryCard
-							type="video"
-							count={analysisResult.summary?.video_count || 0}
-						/>
+		<div className="h-screen bg-gray-900 text-white overflow-hidden">
+			<div className="grid grid-cols-[1fr_320px] grid-rows-[1fr_80px] h-full gap-px bg-gray-800">
+				{/* Main Content Area */}
+				<div className="bg-gray-800 flex flex-col overflow-hidden px-4 py-4 max-h-full">
+					{/* Breadcrumbs */}
+					<div className="mb-4 px-1">
+						<Breadcrumb>
+							<BreadcrumbList>
+								<BreadcrumbItem>
+									<BreadcrumbLink className="flex items-center gap-2 text-sm text-green-500">
+										<FolderOpen className="h-4 w-4" />
+										Select Files
+									</BreadcrumbLink>
+								</BreadcrumbItem>
+								<BreadcrumbSeparator />
+								<BreadcrumbItem>
+									<BreadcrumbPage className="flex items-center gap-2 text-sm text-blue-500 font-medium">
+										<Settings className="h-4 w-4" />
+										Analyze & Configure
+									</BreadcrumbPage>
+								</BreadcrumbItem>
+								<BreadcrumbSeparator />
+								<BreadcrumbItem>
+									<BreadcrumbLink className="flex items-center gap-2 text-sm text-gray-500">
+										<RefreshCw className="h-4 w-4" />
+										Results
+									</BreadcrumbLink>
+								</BreadcrumbItem>
+							</BreadcrumbList>
+						</Breadcrumb>
 					</div>
 
-					{/* Track list - only displayed in single file mode */}
-					{!batchMode && (
-						<div className="mb-6">
-							<div className="bg-gray-100 dark:bg-gray-800 py-2 px-3 font-medium rounded-t-lg">
-								Available Tracks
-							</div>
-							<div className="border rounded-b-lg">
-								<div className="max-h-36 overflow-y-auto">
-									{analyzed.tracks.map((track, idx) => (
-										<div
-											key={idx}
-											className="py-2 px-3 hover:bg-gray-50 dark:hover:bg-gray-800 flex items-center justify-between border-b last:border-b-0"
-										>
-											<div className="flex items-center gap-2">
-												{track.type === "audio" ? (
-													<Badge
-														variant="outline"
-														className="bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800 flex items-center gap-1 px-1 min-w-16"
-													>
-														<Headphones className="h-3 w-3 text-blue-600 dark:text-blue-400" />
-														<span className="text-blue-700 dark:text-blue-300">
-															Audio
-														</span>
-													</Badge>
-												) : track.type === "subtitle" ? (
-													<Badge
-														variant="outline"
-														className="bg-green-50 dark:bg-green-950 border-green-200 dark:border-green-800 flex items-center gap-1 px-1 min-w-16"
-													>
-														<Subtitles className="h-3 w-3 text-green-600 dark:text-green-400" />
-														<span className="text-green-700 dark:text-green-300">
-															Subtitle
-														</span>
-													</Badge>
-												) : (
-													<Badge
-														variant="outline"
-														className="bg-amber-50 dark:bg-amber-950 border-amber-200 dark:border-amber-800 flex items-center gap-1 px-1 min-w-16"
-													>
-														<Video className="h-3 w-3 text-amber-600 dark:text-amber-400" />
-														<span className="text-amber-700 dark:text-amber-300">
-															Video
-														</span>
-													</Badge>
-												)}
-
-												<span className="font-medium">
-													{track.language
-														? `[${track.language}]`
-														: track.type === "video"
-															? "[und]"
-															: ""}{" "}
-													{track.title ||
-														(track.type === "video"
-															? "Main Video"
-															: `Main ${track.type}`)}
-												</span>
-
-												{track.default && (
-													<Badge
-														variant="secondary"
-														className="text-xs px-1 py-0 h-5"
-													>
-														Default
-													</Badge>
-												)}
-
-												{track.forced && (
-													<Badge className="text-xs px-1 py-0 h-5">
-														Forced
-													</Badge>
-												)}
-											</div>
-
-											<Badge variant="outline" className="text-xs">
-												{track.codec}
-											</Badge>
-										</div>
-									))}
-								</div>
-							</div>
+					{/* File Header */}
+					<div className="bg-gray-900 border border-gray-700 rounded-xl p-4 flex items-center gap-4 mb-4">
+						<div className="w-12 h-12 bg-blue-900 rounded-lg flex items-center justify-center flex-shrink-0">
+							<FileVideo className="h-6 w-6 text-blue-400" />
 						</div>
-					)}
-
-					{/* Batch info - only displayed in batch mode */}
-					{batchMode && (
-						<div className="bg-muted p-4 rounded-lg">
-							<div className="flex items-center gap-2 mb-2">
-								<Layers className="h-4 w-4" />
-								<span className="font-medium">Batch Information</span>
+						<div className="flex-1 min-w-0">
+							<div className="text-xl font-semibold text-white mb-1">
+								{displayName}
 							</div>
-							<div className="text-sm space-y-1">
-								<div>
-									<span className="font-medium">Total Files:</span>{" "}
-									{inputPaths.length}
-								</div>
-								<div>
-									<span className="font-medium">Sample File:</span>{" "}
-									{batchAnalyzed.sample_file}
-								</div>
-								<div>
-									<span className="font-medium">
-										Languages based on sample file
-									</span>
-								</div>
-							</div>
-						</div>
-					)}
-
-					<Separator />
-
-					{/* Language selection interface with toggleable badges */}
-					<div className="mb-6">
-						<div className="bg-gray-100 dark:bg-gray-800 py-2 px-3 flex items-center gap-2 rounded-t-lg">
-							<Globe className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
-							<span className="font-medium">Select Languages to Extract</span>
-						</div>
-						<div className="border rounded-b-lg p-4">
-							<div className="flex flex-wrap gap-2">
-								{availableLanguages.map((lang, idx) => (
-									<Badge
-										key={idx}
-										variant={
-											selectedLanguages.includes(lang) ? "default" : "outline"
-										}
-										className={`cursor-pointer text-sm py-1 px-3 ${
-											selectedLanguages.includes(lang)
-												? "bg-indigo-100 text-indigo-800 dark:bg-indigo-950 dark:text-indigo-300 border-indigo-300"
-												: ""
-										}`}
-										onClick={() => toggleLanguage(lang)}
-									>
-										{lang}
-										{selectedLanguages.includes(lang) && (
-											<Check className="ml-1 h-3 w-3" />
+							<div className="text-sm text-gray-400">
+								{analysisResult.fileSize && (
+									<>
+										{formatFileSize(analysisResult.fileSize)}
+										{analysisResult.resolution && (
+											<> • {analysisResult.resolution}</>
 										)}
-									</Badge>
-								))}
+										{analysisResult.duration && (
+											<> • {formatDuration(analysisResult.duration)}</>
+										)}
+									</>
+								)}
 							</div>
+						</div>
+						<div className="flex items-center gap-2 bg-green-900 text-green-200 text-xs font-medium px-3 py-1.5 rounded-md flex-shrink-0">
+							<CheckCircle className="h-4 w-4" />
+							Analysis Complete
 						</div>
 					</div>
 
-					{/* Extraction configuration options */}
-					<div className="mb-6">
-						<div className="bg-gray-100 dark:bg-gray-800 py-2 px-3 flex items-center gap-2 rounded-t-lg">
-							<SlidersHorizontal className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
-							<span className="font-medium">Extraction Options</span>
+					{/* Track Summary */}
+					<div className="grid grid-cols-3 gap-4 mb-4">
+						<div className="bg-gray-700 border border-gray-600 rounded-xl p-4 text-center">
+							<div className="w-8 h-8 mx-auto mb-3 bg-purple-900 rounded-md flex items-center justify-center">
+								<Headphones className="h-4 w-4 text-purple-400" />
+							</div>
+							<div className="text-2xl font-bold text-white mb-1">
+								{analysisResult.audio_tracks?.length || 0}
+							</div>
+							<div className="text-xs text-gray-300 font-medium">Audio</div>
 						</div>
-						<div className="border rounded-b-lg p-4 dark:border-gray-700">
-							<div className="space-y-4">
-								{/* Track type selection with mutually exclusive options */}
+
+						<div className="bg-gray-700 border border-gray-600 rounded-xl p-4 text-center">
+							<div className="w-8 h-8 mx-auto mb-3 bg-green-900 rounded-md flex items-center justify-center">
+								<Subtitles className="h-4 w-4 text-green-400" />
+							</div>
+							<div className="text-2xl font-bold text-white mb-1">
+								{analysisResult.subtitle_tracks?.length || 0}
+							</div>
+							<div className="text-xs text-gray-300 font-medium">Subtitle</div>
+						</div>
+
+						<div className="bg-gray-700 border border-gray-600 rounded-xl p-4 text-center">
+							<div className="w-8 h-8 mx-auto mb-3 bg-orange-900 rounded-md flex items-center justify-center">
+								<Video className="h-4 w-4 text-orange-400" />
+							</div>
+							<div className="text-2xl font-bold text-white mb-1">
+								{analysisResult.video_tracks?.length || 0}
+							</div>
+							<div className="text-xs text-gray-300 font-medium">Video</div>
+						</div>
+					</div>
+
+					{/* Configuration Area */}
+					<div className="flex-1 overflow-y-auto space-y-4 min-h-0">
+						{/* Available Tracks (Single File Mode) */}
+						{!batchMode && (
+							<div className="bg-gray-700 border border-gray-600 rounded-xl overflow-hidden">
+								<div className="bg-gray-800 border-b border-gray-600 px-4 py-3 flex items-center gap-2">
+									<List className="h-4 w-4 text-blue-400" />
+									<div className="text-sm font-semibold text-white">
+										Available Tracks
+									</div>
+								</div>
+								<div className="p-4">
+									<div className="max-h-40 overflow-y-auto">
+										<div className="space-y-0 divide-y divide-gray-600">
+											{/* Video Tracks */}
+											{analysisResult.video_tracks?.map((track, index) => (
+												<div
+													key={`video-${index}`}
+													className="py-3 first:pt-0 last:pb-0 flex items-center justify-between hover:bg-gray-600/50 px-0 transition-colors"
+												>
+													<div className="flex items-center gap-3">
+														<div className="px-2 py-1 rounded text-xs font-semibold bg-orange-900 text-orange-200 border border-orange-600 min-w-[60px] text-center">
+															Video
+														</div>
+														<div>
+															<div className="text-sm font-medium text-white">
+																[{track.language || "und"}]{" "}
+																{track.title || "Main Video"}
+															</div>
+															<div className="text-xs text-gray-400">
+																{track.default && "Default"}
+															</div>
+														</div>
+													</div>
+													<div className="flex items-center gap-2">
+														{track.default && (
+															<div className="bg-purple-600 text-white text-xs px-2 py-1 rounded font-medium">
+																Default
+															</div>
+														)}
+														<div className="bg-gray-600 text-gray-200 text-xs px-2 py-1 rounded font-medium">
+															{track.codec || "h264"}
+														</div>
+													</div>
+												</div>
+											))}
+
+											{/* Audio Tracks */}
+											{analysisResult.audio_tracks?.map((track, index) => (
+												<div
+													key={`audio-${index}`}
+													className="py-3 first:pt-0 last:pb-0 flex items-center justify-between hover:bg-gray-600/50 px-0 transition-colors"
+												>
+													<div className="flex items-center gap-3">
+														<div className="px-2 py-1 rounded text-xs font-semibold bg-blue-900 text-blue-200 border border-blue-600 min-w-[60px] text-center">
+															Audio
+														</div>
+														<div>
+															<div className="text-sm font-medium text-white">
+																[{track.language || "jpn"}]{" "}
+																{track.title || "Main Audio Track"}
+															</div>
+															<div className="text-xs text-gray-400">
+																{track.default && "Default"}
+															</div>
+														</div>
+													</div>
+													<div className="flex items-center gap-2">
+														{track.default && (
+															<div className="bg-purple-600 text-white text-xs px-2 py-1 rounded font-medium">
+																Default
+															</div>
+														)}
+														<div className="bg-gray-600 text-gray-200 text-xs px-2 py-1 rounded font-medium">
+															{track.codec || "aac"}
+														</div>
+													</div>
+												</div>
+											))}
+
+											{/* Subtitle Tracks */}
+											{analysisResult.subtitle_tracks?.map((track, index) => (
+												<div
+													key={`subtitle-${index}`}
+													className="py-3 first:pt-0 last:pb-0 flex items-center justify-between hover:bg-gray-600/50 px-0 transition-colors"
+												>
+													<div className="flex items-center gap-3">
+														<div className="px-2 py-1 rounded text-xs font-semibold bg-green-900 text-green-200 border border-green-600 min-w-[60px] text-center">
+															Subtitle
+														</div>
+														<div>
+															<div className="text-sm font-medium text-white">
+																[{track.language || "eng"}]{" "}
+																{track.title || "Subtitles"}
+															</div>
+															<div className="text-xs text-gray-400">
+																{track.default && "Default"}{" "}
+																{track.forced && "Forced"}
+															</div>
+														</div>
+													</div>
+													<div className="flex items-center gap-2">
+														{track.default && (
+															<div className="bg-purple-600 text-white text-xs px-2 py-1 rounded font-medium">
+																Default
+															</div>
+														)}
+														{track.forced && (
+															<div className="bg-red-600 text-white text-xs px-2 py-1 rounded font-medium">
+																Forced
+															</div>
+														)}
+														<div className="bg-gray-600 text-gray-200 text-xs px-2 py-1 rounded font-medium">
+															{track.format || "SRT"}
+														</div>
+													</div>
+												</div>
+											))}
+										</div>
+									</div>
+								</div>
+							</div>
+						)}
+
+						{/* Batch Information (Batch Mode) */}
+						{batchMode && (
+							<div className="bg-gray-700 border border-gray-600 rounded-xl overflow-hidden">
+								<div className="bg-gray-800 border-b border-gray-600 px-5 py-4 flex items-center gap-2">
+									<Layers className="h-4 w-4 text-blue-400" />
+									<div className="text-sm font-semibold text-white">
+										Batch Information
+									</div>
+								</div>
+								<div className="p-5">
+									<div className="bg-gray-600 border border-gray-500 rounded-lg p-4">
+										<div className="text-sm text-gray-200 space-y-1">
+											<div>
+												<span className="font-medium text-white">
+													Total Files:
+												</span>{" "}
+												{inputPaths?.length || 0}
+											</div>
+											<div>
+												<span className="font-medium text-white">
+													Sample File:
+												</span>{" "}
+												{fileName}
+											</div>
+											<div>
+												<span className="font-medium text-white">
+													Languages based on sample file
+												</span>
+											</div>
+										</div>
+									</div>
+								</div>
+							</div>
+						)}
+
+						{/* Language Selection */}
+						<div className="bg-gray-700 border border-gray-600 rounded-xl overflow-hidden">
+							<div className="bg-gray-800 border-b border-gray-600 px-5 py-4 flex items-center gap-2">
+								<Globe className="h-4 w-4 text-purple-400" />
+								<div className="text-sm font-semibold text-white">
+									Select Languages to Extract
+								</div>
+							</div>
+							<div className="p-5">
+								<div className="flex flex-wrap gap-2">
+									{availableLanguages.map((lang) => {
+										const isSelected = selectedLanguages.includes(lang)
+										const languageNames = {
+											eng: "English",
+											spa: "Spanish",
+											fre: "French",
+											ger: "German",
+											jpn: "Japanese"
+										}
+										return (
+											<button
+												key={lang}
+												onClick={() => toggleLanguage(lang)}
+												className={`px-3 py-2 rounded-md text-sm font-medium border transition-all duration-150 flex items-center gap-2 ${
+													isSelected
+														? "bg-purple-600 border-purple-600 text-white"
+														: "bg-gray-600 border-gray-500 text-gray-200 hover:border-gray-400 hover:bg-gray-500"
+												}`}
+											>
+												{languageNames[lang] || lang}
+												{isSelected && <Check className="h-3 w-3" />}
+											</button>
+										)
+									})}
+								</div>
+							</div>
+						</div>
+
+						{/* Extraction Options */}
+						<div className="bg-gray-700 border border-gray-600 rounded-xl overflow-hidden">
+							<div className="bg-gray-800 border-b border-gray-600 px-5 py-4 flex items-center gap-2">
+								<SlidersHorizontal className="h-4 w-4 text-purple-400" />
+								<div className="text-sm font-semibold text-white">
+									Extraction Options
+								</div>
+							</div>
+							<div className="p-4 space-y-4">
+								{/* Track Type Selection */}
 								<div>
-									<div className="mb-2 text-sm text-muted-foreground">
+									<div className="text-sm font-medium text-gray-200 mb-3">
 										Track Type Selection
 									</div>
 									<div className="grid grid-cols-3 gap-3">
-										<div className="p-3 bg-gray-50 dark:bg-gray-800/50 border dark:border-gray-700 rounded-lg flex items-center justify-between">
-											<div className="flex items-center gap-2">
-												<Headphones className="h-4 w-4 text-blue-600 dark:text-blue-400" />
-												<span className="text-gray-700 dark:text-gray-200">
+										<div className="bg-gray-600 border border-gray-500 rounded-lg p-4 flex items-center justify-between hover:border-gray-400 transition-colors">
+											<div className="flex items-center gap-2 h-8">
+												<Headphones className="h-4 w-4 text-purple-400" />
+												<span className="text-sm font-medium text-white">
 													Audio Only
 												</span>
 											</div>
-											<Switch
-												checked={extractionOptions.audioOnly}
-												onCheckedChange={() => toggleOption("audioOnly")}
-												disabled={extractionOptions.videoOnly}
-											/>
+											<div
+												className={`w-9 h-5 rounded-full transition-colors cursor-pointer relative ${
+													extractionOptions.audioOnly
+														? "bg-purple-600"
+														: "bg-gray-500"
+												}`}
+												onClick={() => toggleOption("audioOnly")}
+											>
+												<div
+													className={`w-4 h-4 bg-white rounded-full absolute top-0.5 transition-transform ${
+														extractionOptions.audioOnly
+															? "translate-x-4"
+															: "translate-x-0.5"
+													}`}
+												/>
+											</div>
 										</div>
 
-										<div className="p-3 bg-gray-50 dark:bg-gray-800/50 border dark:border-gray-700 rounded-lg flex items-center justify-between">
-											<div className="flex items-center gap-2">
-												<Subtitles className="h-4 w-4 text-green-600 dark:text-green-400" />
-												<span className="text-gray-700 dark:text-gray-200">
+										<div className="bg-gray-600 border border-gray-500 rounded-lg p-4 flex items-center justify-between hover:border-gray-400 transition-colors">
+											<div className="flex items-center gap-2 h-8">
+												<Subtitles className="h-4 w-4 text-green-400" />
+												<span className="text-sm font-medium text-white">
 													Subtitle Only
 												</span>
 											</div>
-											<Switch
-												checked={extractionOptions.subtitleOnly}
-												onCheckedChange={() => toggleOption("subtitleOnly")}
-												disabled={extractionOptions.videoOnly}
-											/>
+											<div
+												className={`w-9 h-5 rounded-full transition-colors cursor-pointer relative ${
+													extractionOptions.subtitleOnly
+														? "bg-purple-600"
+														: "bg-gray-500"
+												}`}
+												onClick={() => toggleOption("subtitleOnly")}
+											>
+												<div
+													className={`w-4 h-4 bg-white rounded-full absolute top-0.5 transition-transform ${
+														extractionOptions.subtitleOnly
+															? "translate-x-4"
+															: "translate-x-0.5"
+													}`}
+												/>
+											</div>
 										</div>
 
-										<div className="p-3 bg-gray-50 dark:bg-gray-800/50 border dark:border-gray-700 rounded-lg flex items-center justify-between">
-											<div className="flex items-center gap-2">
-												<Video className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-												<span className="text-gray-700 dark:text-gray-200">
+										<div className="bg-gray-600 border border-gray-500 rounded-lg p-4 flex items-center justify-between hover:border-gray-400 transition-colors">
+											<div className="flex items-center gap-2 h-8">
+												<Video className="h-4 w-4 text-orange-400" />
+												<span className="text-sm font-medium text-white">
 													Video Only
 												</span>
 											</div>
-											<Switch
-												checked={extractionOptions.videoOnly}
-												onCheckedChange={() => toggleOption("videoOnly")}
-											/>
+											<div
+												className={`w-9 h-5 rounded-full transition-colors cursor-pointer relative ${
+													extractionOptions.videoOnly
+														? "bg-purple-600"
+														: "bg-gray-500"
+												}`}
+												onClick={() => toggleOption("videoOnly")}
+											>
+												<div
+													className={`w-4 h-4 bg-white rounded-full absolute top-0.5 transition-transform ${
+														extractionOptions.videoOnly
+															? "translate-x-4"
+															: "translate-x-0.5"
+													}`}
+												/>
+											</div>
 										</div>
 									</div>
 								</div>
 
-								{/* Additional options for fine-tuning extraction behavior */}
+								{/* Additional Options */}
 								<div>
-									<div className="mb-2 text-sm text-muted-foreground">
+									<div className="text-sm font-medium text-gray-200 mb-3">
 										Additional Options
 									</div>
 									<div className="grid grid-cols-2 gap-3">
-										<div className="p-3 bg-gray-50 dark:bg-gray-800/50 border dark:border-gray-700 rounded-lg flex items-center justify-between">
-											<div className="flex items-center gap-2">
-												<Video className="h-4 w-4 text-amber-600 dark:text-amber-400" />
-												<span className="text-gray-700 dark:text-gray-200">
+										<div className="bg-gray-600 border border-gray-500 rounded-lg p-4 flex items-center justify-between hover:border-gray-400 transition-colors">
+											<div className="flex items-center gap-2 h-8">
+												<Video className="h-4 w-4 text-orange-400" />
+												<span className="text-sm font-medium text-white">
 													Include Video
 												</span>
 											</div>
-											<Switch
-												checked={extractionOptions.includeVideo}
-												onCheckedChange={() => toggleOption("includeVideo")}
-												disabled={extractionOptions.videoOnly}
-											/>
+											<div
+												className={`w-9 h-5 rounded-full transition-colors cursor-pointer relative ${
+													extractionOptions.includeVideo
+														? "bg-purple-600"
+														: "bg-gray-500"
+												}`}
+												onClick={() =>
+													!extractionOptions.videoOnly &&
+													toggleOption("includeVideo")
+												}
+											>
+												<div
+													className={`w-4 h-4 bg-white rounded-full absolute top-0.5 transition-transform ${
+														extractionOptions.includeVideo
+															? "translate-x-4"
+															: "translate-x-0.5"
+													}`}
+												/>
+											</div>
 										</div>
 
-										<div className="p-3 bg-gray-50 dark:bg-gray-800/50 border dark:border-gray-700 rounded-lg flex items-center justify-between">
-											<div className="flex items-center gap-2">
-												<Monitor className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
-												<span className="text-gray-700 dark:text-gray-200">
+										<div className="bg-gray-600 border border-gray-500 rounded-lg p-4 flex items-center justify-between hover:border-gray-400 transition-colors">
+											<div className="flex items-center gap-2 h-8">
+												<Monitor className="h-4 w-4 text-gray-400" />
+												<span className="text-sm font-medium text-white">
 													Remove Letterbox
 												</span>
 											</div>
-											<Switch
-												checked={extractionOptions.removeLetterbox}
-												onCheckedChange={() =>
-													toggleOption("removeLetterbox")
-												}
-											/>
+											<div
+												className={`w-9 h-5 rounded-full transition-colors cursor-pointer relative ${
+													extractionOptions.removeLetterbox
+														? "bg-purple-600"
+														: "bg-gray-500"
+												}`}
+												onClick={() => toggleOption("removeLetterbox")}
+											>
+												<div
+													className={`w-4 h-4 bg-white rounded-full absolute top-0.5 transition-transform ${
+														extractionOptions.removeLetterbox
+															? "translate-x-4"
+															: "translate-x-0.5"
+													}`}
+												/>
+											</div>
 										</div>
 									</div>
 								</div>
-							</div>
-						</div>
-					</div>
 
-					{/* Worker thread configuration - only shown in batch mode */}
-					{batchMode && (
-						<div className="mb-6">
-							<div className="bg-gray-100 dark:bg-gray-800 py-2 px-3 flex items-center gap-2 rounded-t-lg">
-								<Cpu className="h-4 w-4 text-indigo-600 dark:text-indigo-400" />
-								<span className="font-medium">Worker Threads</span>
-							</div>
-							<div className="border rounded-b-lg p-4">
-								<div className="flex items-center gap-4">
-									{/* Custom number input with increment/decrement buttons */}
-									<div className="relative flex items-center">
-										<input
-											id="worker-count"
-											type="number"
-											min={1}
-											max={maxAllowedWorkers}
-											value={maxWorkers}
-											onChange={(e) =>
-												setMaxWorkers(
-													Math.max(
-														1,
-														Math.min(
-															maxAllowedWorkers,
-															parseInt(e.target.value) || 1
+								{/* Worker Threads (Batch Mode) */}
+								{batchMode && (
+									<div className="mt-4 p-4 bg-gray-600 border border-gray-500 rounded-lg">
+										<div className="flex items-center justify-between mb-2">
+											<div className="flex items-center gap-2">
+												<Cpu className="h-4 w-4 text-gray-300" />
+												<span className="text-sm font-medium text-white">
+													Worker Threads
+												</span>
+											</div>
+											<div className="relative flex items-center">
+												<input
+													type="number"
+													min={1}
+													max={maxAllowedWorkers}
+													value={maxWorkers}
+													onChange={(e) =>
+														setMaxWorkers(
+															Math.max(
+																1,
+																Math.min(
+																	maxAllowedWorkers,
+																	parseInt(e.target.value) || 1
+																)
+															)
 														)
-													)
-												)
-											}
-											className="h-10 w-16 pl-2 pr-8 border rounded-md border-input bg-background text-center focus:outline-none focus:ring-1 focus:ring-indigo-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
-											aria-label="Worker count"
-										/>
-										<div className="absolute right-0.5 inset-y-0.5 flex flex-col rounded-r-sm overflow-hidden">
-											<button
-												onClick={() =>
-													setMaxWorkers(
-														Math.min(maxAllowedWorkers, maxWorkers + 1)
-													)
-												}
-												className="h-4.5 w-6 flex items-center justify-center bg-muted hover:bg-muted/90 active:bg-muted/70 transition-colors"
-												disabled={maxWorkers >= maxAllowedWorkers}
-												aria-label="Increase worker count"
-											>
-												<Plus className="h-2.5 w-2.5" />
-											</button>
-											<button
-												onClick={() =>
-													setMaxWorkers(Math.max(1, maxWorkers - 1))
-												}
-												className="h-4.5 w-6 flex items-center justify-center bg-muted hover:bg-muted/90 active:bg-muted/70 transition-colors"
-												disabled={maxWorkers <= 1}
-												aria-label="Decrease worker count"
-											>
-												<Minus className="h-2.5 w-2.5" />
-											</button>
+													}
+													className="w-16 h-8 bg-gray-700 border border-gray-500 rounded-md text-white text-center text-sm focus:outline-none focus:ring-1 focus:ring-purple-500 [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
+												/>
+												<div className="absolute right-0.5 inset-y-0.5 flex flex-col">
+													<button
+														onClick={() =>
+															setMaxWorkers(
+																Math.min(
+																	maxAllowedWorkers,
+																	maxWorkers + 1
+																)
+															)
+														}
+														className="h-3.5 w-5 flex items-center justify-center bg-gray-500 hover:bg-gray-400 text-gray-200 rounded-tr-sm transition-colors text-xs"
+														disabled={maxWorkers >= maxAllowedWorkers}
+													>
+														+
+													</button>
+													<button
+														onClick={() =>
+															setMaxWorkers(
+																Math.max(1, maxWorkers - 1)
+															)
+														}
+														className="h-3.5 w-5 flex items-center justify-center bg-gray-500 hover:bg-gray-400 text-gray-200 rounded-br-sm transition-colors text-xs"
+														disabled={maxWorkers <= 1}
+													>
+														-
+													</button>
+												</div>
+											</div>
+										</div>
+										<div className="text-xs text-gray-300">
+											(1-{maxAllowedWorkers} threads recommended) More workers
+											speed up processing but use more system resources.
 										</div>
 									</div>
-									<div className="text-xs text-muted-foreground flex-1">
-										(1-{maxAllowedWorkers} threads recommended) More workers
-										speed up processing but use more system resources.
-									</div>
-								</div>
+								)}
 							</div>
 						</div>
-					)}
+					</div>
+				</div>
 
-					{/* Configuration summary for user reference */}
-					<div className="bg-gray-50 dark:bg-gray-900 rounded-lg p-4 mb-6 border">
-						<div className="text-sm">
-							<div className="font-medium mb-2">Current Settings</div>
-							<p className="mb-1 text-gray-700 dark:text-gray-300">
-								Languages: {selectedLanguages.join(", ") || "None selected"}
-							</p>
-							<p className="text-gray-700 dark:text-gray-300">
-								Mode:{" "}
-								{extractionOptions.includeVideo && !extractionOptions.videoOnly
-									? "All tracks"
-									: getCurrentModeText()}
-								{extractionOptions.removeLetterbox &&
-									(extractionOptions.videoOnly ||
-										extractionOptions.includeVideo) &&
-									" (letterbox removal)"}
-							</p>
+				{/* Right Sidebar - Progress & Actions */}
+				<div className="bg-gray-800 p-4 flex flex-col gap-4 overflow-y-auto min-h-0">
+					{/* Configuration Summary */}
+					<div className="bg-purple-900 border border-purple-600 rounded-xl p-4">
+						<div className="flex items-center gap-2 mb-3">
+							<Settings className="h-4 w-4 text-purple-300" />
+							<div className="text-sm font-semibold text-white">Current Settings</div>
+						</div>
+						<div className="text-sm text-purple-100 space-y-1">
+							<div>
+								<span className="font-medium text-white">Languages:</span>{" "}
+								{selectedLanguages.join(", ") || "None selected"}
+							</div>
+							<div>
+								<span className="font-medium text-white">Mode:</span>{" "}
+								{getCurrentModeText()}
+							</div>
 						</div>
 					</div>
-				</CardContent>
-				<CardFooter className="flex justify-between pt-2">
-					<Button
-						variant="outline"
-						onClick={() => setActiveTab("select")}
-						className="flex items-center gap-2"
-					>
-						<ChevronLeft className="h-4 w-4" />
-						Back to File Selection
-					</Button>
 
-					<Button
-						onClick={handleExtractTracks}
-						disabled={
-							(!filePath && !batchMode) ||
-							(!inputPaths.length && batchMode) ||
-							!outputPath ||
-							!analysisResult ||
-							isExtracting ||
-							selectedLanguages.length === 0
-						}
-						className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700"
-					>
-						{isExtracting ? (
-							<RefreshCw className="h-4 w-4 animate-spin" />
-						) : (
-							<File className="h-4 w-4" />
-						)}
-						{isExtracting
-							? "Extracting..."
-							: batchMode
-								? "Extract Batch"
-								: "Extract Tracks"}
-						{!isExtracting && <ChevronRight className="h-4 w-4" />}
-					</Button>
-				</CardFooter>
-			</Card>
+					{/* Progress visualization - only shown during active extraction */}
+					{isExtracting && (
+						<ProgressCard
+							progressText={progressText}
+							progressValue={progressValue}
+							fileProgressMap={fileProgressMap}
+							batchMode={batchMode}
+						/>
+					)}
+				</div>
 
-			{/* Progress visualization - only shown during active extraction */}
-			{isExtracting && (
-				<ProgressCard
-					progressText={progressText}
-					progressValue={progressValue}
-					fileProgressMap={fileProgressMap}
-					batchMode={batchMode}
-				/>
-			)}
-		</>
+				{/* Fixed Action Bar */}
+				<div className="col-span-2 bg-gray-900 border-t border-gray-700 px-4 py-4 flex justify-between items-center">
+					<div className="text-sm text-gray-400">
+						{!outputPath
+							? "Select output directory to continue"
+							: "Ready to extract tracks"}
+					</div>
+					<div className="flex items-center gap-3">
+						<Button
+							variant="outline"
+							onClick={() => setActiveTab("select")}
+							className="flex items-center gap-2 border-gray-600 hover:bg-gray-700 bg-gray-700 text-gray-200"
+						>
+							<ChevronLeft className="h-4 w-4" />
+							Back to File Selection
+						</Button>
+						<Button
+							onClick={handleExtractTracks}
+							disabled={
+								(!filePath && !batchMode) ||
+								(!inputPaths?.length && batchMode) ||
+								!outputPath ||
+								!analysisResult ||
+								isExtracting ||
+								selectedLanguages.length === 0
+							}
+							className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white"
+						>
+							{isExtracting ? (
+								<RefreshCw className="h-4 w-4 animate-spin" />
+							) : (
+								<File className="h-4 w-4" />
+							)}
+							{isExtracting
+								? "Extracting..."
+								: batchMode
+									? "Extract Batch"
+									: "Extract Tracks"}
+							{!isExtracting && <ChevronRight className="h-4 w-4" />}
+						</Button>
+					</div>
+				</div>
+			</div>
+		</div>
 	)
 }
 

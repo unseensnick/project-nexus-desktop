@@ -25,9 +25,9 @@ let mainWindow
 function createWindow() {
 	// Create the browser window with optimized dimensions and security settings
 	mainWindow = new BrowserWindow({
-		width: 1024, // Increased width for better UI experience
-		height: 1180, // Increased height for better UI experience
-		show: false, // Hide until ready-to-show for smoother startup
+		width: 1024,
+		height: 1180,
+		show: false,
 		autoHideMenuBar: true,
 		...(process.platform === "linux" ? { icon } : {}),
 		webPreferences: {
@@ -136,7 +136,10 @@ process.on("SIGTERM", () => {
 	app.quit()
 })
 
-// Function to kill FFmpeg processes
+/**
+ * Function to kill FFmpeg processes
+ * Ensures all FFmpeg and FFprobe processes are terminated on application shutdown
+ */
 function killFFmpegProcesses() {
 	const { exec } = require("child_process")
 
@@ -176,4 +179,3 @@ function killFFmpegProcesses() {
 		})
 	}
 }
-

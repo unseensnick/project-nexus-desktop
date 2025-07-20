@@ -7,6 +7,14 @@
  * to select input files/directories and specify where extracted content should be saved.
  */
 
+import {
+	Breadcrumb,
+	BreadcrumbItem,
+	BreadcrumbLink,
+	BreadcrumbList,
+	BreadcrumbPage,
+	BreadcrumbSeparator
+} from "@/components/ui/breadcrumb"
 import { Button } from "@/components/ui/button"
 import { Label } from "@/components/ui/label"
 import {
@@ -244,29 +252,39 @@ function SelectFilesTab({
 	}, [])
 
 	return (
-		<div className="flex flex-col h-full">
+		<div className="flex flex-col h-full bg-gray-900 text-white">
 			{/* Breadcrumbs */}
-			<div className="flex items-center gap-2 mb-6 px-1">
-				<div className="flex items-center gap-2 text-sm text-blue-500 font-medium">
-					<FolderOpen className="h-4 w-4" />
-					<span>Select Files</span>
-				</div>
-				<ChevronRight className="h-4 w-4 text-gray-500" />
-				<div className="flex items-center gap-2 text-sm text-gray-500">
-					<Settings className="h-4 w-4" />
-					<span>Analyze & Configure</span>
-				</div>
-				<ChevronRight className="h-4 w-4 text-gray-500" />
-				<div className="flex items-center gap-2 text-sm text-gray-500">
-					<RefreshCw className="h-4 w-4" />
-					<span>Results</span>
-				</div>
+			<div className="mb-6 px-1">
+				<Breadcrumb>
+					<BreadcrumbList>
+						<BreadcrumbItem>
+							<BreadcrumbPage className="flex items-center gap-2 text-sm text-blue-500 font-medium">
+								<FolderOpen className="h-4 w-4" />
+								Select Files
+							</BreadcrumbPage>
+						</BreadcrumbItem>
+						<BreadcrumbSeparator />
+						<BreadcrumbItem>
+							<BreadcrumbLink className="flex items-center gap-2 text-sm text-zinc-500">
+								<Settings className="h-4 w-4" />
+								Analyze & Configure
+							</BreadcrumbLink>
+						</BreadcrumbItem>
+						<BreadcrumbSeparator />
+						<BreadcrumbItem>
+							<BreadcrumbLink className="flex items-center gap-2 text-sm text-zinc-500">
+								<RefreshCw className="h-4 w-4" />
+								Results
+							</BreadcrumbLink>
+						</BreadcrumbItem>
+					</BreadcrumbList>
+				</Breadcrumb>
 			</div>
 
 			{/* File Upload Section */}
-			<div className="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden mb-6">
-				<div className="bg-gray-900 border-b border-gray-700 px-5 py-4 flex items-center gap-2">
-					<Upload className="h-4 w-4 text-blue-500" />
+			<div className="bg-gray-700 border border-gray-600 rounded-xl overflow-hidden mb-6">
+				<div className="bg-gray-800 border-b border-gray-600 px-5 py-4 flex items-center gap-2">
+					<Upload className="h-4 w-4 text-blue-400" />
 					<div className="text-sm font-semibold text-white">
 						{batchMode ? "Select Media Files" : "Select Media File"}
 					</div>
@@ -278,7 +296,7 @@ function SelectFilesTab({
 							className={`border-2 border-dashed rounded-xl p-12 text-center transition-all duration-200 cursor-pointer ${
 								isDragOver
 									? "border-blue-500 bg-blue-900/20 scale-105"
-									: "border-gray-600 bg-gray-900 hover:border-blue-500 hover:bg-gray-800"
+									: "border-gray-500 bg-gray-800 hover:border-blue-500 hover:bg-gray-700"
 							}`}
 							onClick={handleUploadZoneClick}
 							onDragOver={handleDragOver}
@@ -287,10 +305,10 @@ function SelectFilesTab({
 						>
 							<Upload
 								className={`h-12 w-12 mx-auto mb-4 transition-colors ${
-									isDragOver ? "text-blue-500" : "text-gray-500"
+									isDragOver ? "text-blue-500" : "text-gray-400"
 								}`}
 							/>
-							<div className="text-base font-medium text-gray-200 mb-2">
+							<div className="text-base font-medium text-white mb-2">
 								{batchMode
 									? "Drop files/folders here or click to browse"
 									: "Drop file here or click to browse"}
@@ -309,9 +327,9 @@ function SelectFilesTab({
 								inputPaths.map((path, index) => (
 									<div
 										key={index}
-										className="bg-gray-900 border border-gray-700 rounded-lg p-4 flex items-center gap-4"
+										className="bg-gray-800 border border-gray-600 rounded-lg p-4 flex items-center gap-4"
 									>
-										<div className="w-10 h-10 bg-blue-900 rounded-lg flex items-center justify-center text-blue-500 flex-shrink-0">
+										<div className="w-10 h-10 bg-blue-900 rounded-lg flex items-center justify-center text-blue-400 flex-shrink-0">
 											<File className="h-5 w-5" />
 										</div>
 										<div className="flex-1 min-w-0">
@@ -321,7 +339,7 @@ function SelectFilesTab({
 											<div className="text-xs text-gray-400">{path}</div>
 										</div>
 										<div className="flex gap-2">
-											<button className="w-8 h-8 rounded-md text-gray-400 hover:bg-gray-700 hover:text-gray-200 transition-colors flex items-center justify-center">
+											<button className="w-8 h-8 rounded-md text-gray-400 hover:bg-gray-600 hover:text-white transition-colors flex items-center justify-center">
 												<Info className="h-4 w-4" />
 											</button>
 											<button className="w-8 h-8 rounded-md text-gray-400 hover:bg-red-900 hover:text-red-300 transition-colors flex items-center justify-center">
@@ -332,8 +350,8 @@ function SelectFilesTab({
 								))
 							) : (
 								// Single file card
-								<div className="bg-gray-900 border border-gray-700 rounded-lg p-4 flex items-center gap-4">
-									<div className="w-10 h-10 bg-blue-900 rounded-lg flex items-center justify-center text-blue-500 flex-shrink-0">
+								<div className="bg-gray-800 border border-gray-600 rounded-lg p-4 flex items-center gap-4">
+									<div className="w-10 h-10 bg-blue-900 rounded-lg flex items-center justify-center text-blue-400 flex-shrink-0">
 										<File className="h-5 w-5" />
 									</div>
 									<div className="flex-1 min-w-0">
@@ -344,7 +362,7 @@ function SelectFilesTab({
 										<div className="text-xs text-gray-400">{filePath}</div>
 									</div>
 									<div className="flex gap-2">
-										<button className="w-8 h-8 rounded-md text-gray-400 hover:bg-gray-700 hover:text-gray-200 transition-colors flex items-center justify-center">
+										<button className="w-8 h-8 rounded-md text-gray-400 hover:bg-gray-600 hover:text-white transition-colors flex items-center justify-center">
 											<Info className="h-4 w-4" />
 										</button>
 										<button className="w-8 h-8 rounded-md text-gray-400 hover:bg-red-900 hover:text-red-300 transition-colors flex items-center justify-center">
@@ -361,7 +379,7 @@ function SelectFilesTab({
 			{/* Batch Choice Modal */}
 			{showBatchChoice && (
 				<div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-					<div className="bg-gray-800 border border-gray-700 rounded-xl p-6 max-w-md w-full mx-4">
+					<div className="bg-gray-800 border border-gray-600 rounded-xl p-6 max-w-md w-full mx-4">
 						<h3 className="text-lg font-semibold text-white mb-4">
 							Select Batch Input Type
 						</h3>
@@ -370,7 +388,7 @@ function SelectFilesTab({
 								onClick={() => handleBatchChoice("files")}
 								className="w-full p-4 bg-gray-700 hover:bg-gray-600 rounded-lg flex items-center gap-3 transition-colors"
 							>
-								<FilesIcon className="h-5 w-5 text-blue-500" />
+								<FilesIcon className="h-5 w-5 text-blue-400" />
 								<div className="text-left">
 									<div className="text-white font-medium">
 										Select Multiple Files
@@ -384,7 +402,7 @@ function SelectFilesTab({
 								onClick={() => handleBatchChoice("folder")}
 								className="w-full p-4 bg-gray-700 hover:bg-gray-600 rounded-lg flex items-center gap-3 transition-colors"
 							>
-								<Folder className="h-5 w-5 text-green-500" />
+								<Folder className="h-5 w-5 text-green-400" />
 								<div className="text-left">
 									<div className="text-white font-medium">Select Folder</div>
 									<div className="text-sm text-gray-400">
@@ -404,9 +422,9 @@ function SelectFilesTab({
 			)}
 
 			{/* Output Directory Section */}
-			<div className="bg-gray-800 border border-gray-700 rounded-xl overflow-hidden mb-6">
-				<div className="bg-gray-900 border-b border-gray-700 px-5 py-4 flex items-center gap-2">
-					<Folder className="h-4 w-4 text-blue-500" />
+			<div className="bg-gray-700 border border-gray-600 rounded-xl overflow-hidden mb-6">
+				<div className="bg-gray-800 border-b border-gray-600 px-5 py-4 flex items-center gap-2">
+					<Folder className="h-4 w-4 text-purple-400" />
 					<div className="text-sm font-semibold text-white">Output Directory</div>
 				</div>
 				<div className="p-5">
@@ -414,12 +432,12 @@ function SelectFilesTab({
 						<Button
 							variant="default"
 							onClick={handleSelectOutputDir}
-							className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700"
+							className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white"
 						>
 							<Folder className="h-4 w-4" />
 							Select Folder
 						</Button>
-						<div className="flex-1 px-4 py-3 bg-gray-900 border border-gray-700 rounded-lg text-gray-200 text-sm min-h-[44px] flex items-center gap-2">
+						<div className="flex-1 px-4 py-3 bg-gray-800 border border-gray-600 rounded-lg text-white text-sm min-h-[44px] flex items-center gap-2">
 							<Folder className="h-4 w-4 flex-shrink-0 text-gray-400" />
 							<span className="truncate">
 								{outputPath ? outputPath : "No directory selected"}
@@ -430,7 +448,7 @@ function SelectFilesTab({
 			</div>
 
 			{/* Action Bar */}
-			<div className="mt-auto bg-gray-900 border-t border-gray-700 px-6 py-5 flex justify-between items-center">
+			<div className="mt-auto bg-gray-800 border-t border-gray-600 px-6 py-5 flex justify-between items-center">
 				<div className="text-sm text-gray-400">
 					{!hasFiles
 						? "No files selected • Choose media files to continue"
@@ -444,7 +462,7 @@ function SelectFilesTab({
 					disabled={
 						!hasFiles || !outputPath || (batchMode ? isBatchAnalyzing : isAnalyzing)
 					}
-					className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 disabled:text-gray-400"
+					className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 disabled:text-gray-400 text-white"
 				>
 					{batchMode ? (
 						isBatchAnalyzing ? (
