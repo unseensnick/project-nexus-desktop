@@ -37,7 +37,7 @@ import { AppSidebar } from "@/components/AppSidebar"
 import ResultsTab from "@/components/ResultsTab"
 import SelectFilesTab from "@/components/SelectFilesTab"
 import { ThemeProvider } from "@/components/ThemeProvider"
-import { VideoMuxerTab } from "@/components/VideoMuxerTab"
+import VideoMuxerTab from "@/components/VideoMuxerTab"
 
 /**
  * Main application component that manages the extraction workflow

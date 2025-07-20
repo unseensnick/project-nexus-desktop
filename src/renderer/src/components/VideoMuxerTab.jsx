@@ -33,10 +33,10 @@ import {
 	TableHeader,
 	TableRow
 } from "@/components/ui/table"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 
 import {
 	CheckCircle,
+	ChevronDown,
 	Clock,
 	File,
 	Folder,
@@ -89,12 +89,18 @@ function VideoMuxerTab() {
 		metadata: true,
 		chapters: true
 	})
-	const [activeTab, setActiveTab] = useState("input")
 	const [customFilename, setCustomFilename] = useState("")
 
 	// Track management
 	const [tracks, setTracks] = useState([])
 	const [selectedTrack, setSelectedTrack] = useState(null)
+
+	// Property section collapsed states
+	const [collapsedSections, setCollapsedSections] = useState({
+		general: false,
+		flags: false,
+		muxing: false
+	})
 
 	// Handle file selection for muxing
 	const handleAddInputFiles = async () => {
@@ -308,6 +314,15 @@ function VideoMuxerTab() {
 		}
 	}
 
+	// Handle reset
+	const handleReset = () => {
+		resetMuxing()
+		setCustomFilename("")
+		setInputPaths([])
+		setTracks([])
+		setSelectedTrack(null)
+	}
+
 	// Get track icon based on type
 	const getTrackIcon = (type) => {
 		switch (type) {
@@ -326,42 +341,331 @@ function VideoMuxerTab() {
 	const getTrackBadge = (type) => {
 		switch (type) {
 			case "video":
-				return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
+				return "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200"
 			case "audio":
-				return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
+				return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
 			case "subtitle":
-				return "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200"
+				return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
 			default:
 				return "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200"
 		}
 	}
 
+	// Toggle property section
+	const togglePropertySection = (section) => {
+		setCollapsedSections((prev) => ({
+			...prev,
+			[section]: !prev[section]
+		}))
+	}
+
+	// Select all tracks
+	const selectAllTracks = () => {
+		setTracks((prev) => prev.map((track) => ({ ...track, selected: true })))
+	}
+
+	// Select no tracks
+	const selectNoTracks = () => {
+		setTracks((prev) => prev.map((track) => ({ ...track, selected: false })))
+	}
+
 	return (
-		<div className="flex h-full gap-4 bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white">
-			{/* Main Content Area */}
-			<div className="flex-1 flex flex-col gap-4 p-4">
-				{/* Header */}
-				<div className="flex items-center justify-between">
-					<div>
-						<h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-							Video Muxer
-						</h1>
-						<p className="text-gray-600 dark:text-gray-300">
-							Combine video, audio, and subtitle tracks into a single file
-						</p>
-					</div>
-					<div className="flex gap-2">
-						<Button
-							variant="outline"
-							onClick={() => {
-								resetMuxing()
-								setCustomFilename("")
-							}}
-							disabled={isMuxing}
+		<div className="h-full bg-background text-foreground">
+			{/* Progress Overlay */}
+			{isMuxing && (
+				<div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
+					<Card className="w-96">
+						<CardContent className="pt-6">
+							<div className="flex items-center gap-3 mb-6">
+								<Clock className="h-6 w-6 text-primary animate-spin" />
+								<h3 className="text-lg font-semibold">Muxing Video Files</h3>
+							</div>
+							<div className="text-center mb-4">
+								<div className="text-2xl font-bold text-primary mb-2">
+									{progress?.data?.overall_percent
+										? Math.round(progress.data.overall_percent)
+										: 0}
+									%
+								</div>
+								<Progress
+									value={progress?.data?.overall_percent || 0}
+									className="w-full mb-3"
+								/>
+								<p className="text-sm text-muted-foreground">
+									{progress?.data?.message || "Preparing files..."}
+								</p>
+							</div>
+						</CardContent>
+					</Card>
+				</div>
+			)}
+
+			{/* Main Grid Layout */}
+			<div className="grid grid-cols-[1fr_380px] grid-rows-[1fr_auto] h-full gap-px bg-border">
+				{/* Main Content */}
+				<div className="bg-card flex flex-col overflow-hidden">
+					{/* Source Files Section */}
+					<div className="border-b bg-muted/30">
+						<div className="p-4 border-b flex items-center justify-between">
+							<div className="flex items-center gap-2">
+								<File className="h-4 w-4" />
+								<h3 className="font-medium">Source Files</h3>
+							</div>
+							<div className="flex gap-2">
+								<Button
+									variant="outline"
+									onClick={handleReset}
+									disabled={isMuxing}
+									size="sm"
+								>
+									<Square className="h-4 w-4 mr-2" />
+									Reset
+								</Button>
+								<Button onClick={handleAddInputFiles} size="sm">
+									<Plus className="h-4 w-4 mr-2" />
+									Add Files
+								</Button>
+							</div>
+						</div>
+						<div
+							className={`p-4 ${inputPaths.length > 0 ? "max-h-48 overflow-y-auto" : ""}`}
 						>
-							<Square className="h-4 w-4 mr-2" />
-							Reset
-						</Button>
+							{inputPaths.length > 0 ? (
+								<div className="space-y-2">
+									{inputPaths.map((path, index) => (
+										<div
+											key={index}
+											className="flex items-center gap-3 p-3 bg-background border rounded-lg hover:border-primary/50 transition-colors"
+										>
+											<div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
+												<Video className="h-5 w-5 text-primary" />
+											</div>
+											<div className="flex-1 min-w-0">
+												<div className="font-medium text-sm truncate">
+													{path.split(/[\\/]/).pop()}
+												</div>
+												<div className="text-xs text-muted-foreground flex gap-3">
+													<span className="flex items-center gap-1">
+														<File className="h-3 w-3" />
+														{Math.floor(Math.random() * 5) + 1} GB
+													</span>
+													<span>MPEG-4</span>
+												</div>
+											</div>
+											<Button
+												variant="ghost"
+												size="sm"
+												onClick={() => handleRemoveFile(index)}
+												className="h-8 w-8 p-0 text-muted-foreground hover:text-destructive"
+											>
+												<Trash2 className="h-4 w-4" />
+											</Button>
+										</div>
+									))}
+								</div>
+							) : (
+								<div className="text-center py-8 text-muted-foreground">
+									<File className="h-12 w-12 mx-auto mb-4 opacity-50" />
+									<p className="font-medium">No Files Added</p>
+									<p className="text-sm">
+										Drag and drop files here or click "Add Files" to begin.
+									</p>
+								</div>
+							)}
+						</div>
+					</div>
+
+					{/* Tracks Section */}
+					<div className="flex-1 flex flex-col overflow-hidden">
+						<div className="p-4 border-b flex items-center justify-between">
+							<div className="flex items-center gap-2">
+								<Settings className="h-4 w-4" />
+								<h3 className="font-medium">Tracks, Chapters and Tags</h3>
+							</div>
+							<div className="flex gap-2">
+								<Button variant="outline" size="sm" onClick={selectAllTracks}>
+									Select All
+								</Button>
+								<Button variant="outline" size="sm" onClick={selectNoTracks}>
+									Select None
+								</Button>
+							</div>
+						</div>
+						<div className="flex-1 overflow-auto">
+							{tracks.length > 0 ? (
+								<Table>
+									<TableHeader className="sticky top-0 bg-muted/50">
+										<TableRow>
+											<TableHead className="w-12"></TableHead>
+											<TableHead>Type</TableHead>
+											<TableHead>Codec</TableHead>
+											<TableHead>Language</TableHead>
+											<TableHead>Name</TableHead>
+											<TableHead>Source File</TableHead>
+											<TableHead>Properties</TableHead>
+											<TableHead className="text-center">Default</TableHead>
+											<TableHead className="text-center">Forced</TableHead>
+										</TableRow>
+									</TableHeader>
+									<TableBody>
+										{tracks.map((track, index) => (
+											<TableRow
+												key={track.uniqueId || index}
+												className={
+													selectedTrack?.uniqueId === track.uniqueId
+														? "bg-primary/10"
+														: "hover:bg-muted/30"
+												}
+												onClick={() => setSelectedTrack(track)}
+											>
+												<TableCell>
+													<Switch
+														checked={track.selected}
+														onCheckedChange={() =>
+															toggleTrack(track.uniqueId)
+														}
+													/>
+												</TableCell>
+												<TableCell>
+													<div className="flex items-center gap-2">
+														{getTrackIcon(track.type)}
+														<Badge
+															className={getTrackBadge(track.type)}
+														>
+															{track.type}
+														</Badge>
+													</div>
+												</TableCell>
+												<TableCell className="font-mono text-sm">
+													{track.codec_name}
+												</TableCell>
+												<TableCell className="text-sm uppercase">
+													{track.language || "und"}
+												</TableCell>
+												<TableCell className="max-w-48 truncate">
+													{track.title || `${track.type} ${track.index}`}
+												</TableCell>
+												<TableCell className="text-sm text-muted-foreground max-w-44 truncate">
+													{track.sourceFile}
+												</TableCell>
+												<TableCell className="text-sm text-muted-foreground font-mono">
+													{track.type === "video" &&
+													track.width &&
+													track.height
+														? `${track.width}×${track.height}`
+														: track.type === "audio" &&
+															  track.sample_rate
+															? `${track.sample_rate}Hz`
+															: ""}
+												</TableCell>
+												<TableCell className="text-center">
+													{track.index === 0 ? (
+														<CheckCircle className="h-4 w-4 text-green-500 mx-auto" />
+													) : (
+														<XCircle className="h-4 w-4 text-muted-foreground mx-auto" />
+													)}
+												</TableCell>
+												<TableCell className="text-center">
+													<XCircle className="h-4 w-4 text-muted-foreground mx-auto" />
+												</TableCell>
+											</TableRow>
+										))}
+									</TableBody>
+								</Table>
+							) : (
+								<div className="flex-1 flex items-center justify-center text-muted-foreground">
+									<div className="text-center">
+										<Settings className="h-16 w-16 mx-auto mb-4 opacity-50" />
+										<p className="font-medium text-lg">No Tracks Available</p>
+										<p className="text-sm">
+											Add source files to see available tracks for muxing.
+										</p>
+									</div>
+								</div>
+							)}
+						</div>
+					</div>
+
+					{/* Output Section */}
+					<div className="border-t bg-muted/30 p-4">
+						<div className="flex items-center gap-2 mb-4">
+							<Folder className="h-4 w-4" />
+							<h3 className="font-medium">Output Configuration</h3>
+						</div>
+						<div className="space-y-4">
+							<div className="grid grid-cols-2 gap-4">
+								<div>
+									<Label className="text-xs font-medium uppercase tracking-wide">
+										Destination Directory
+									</Label>
+									<div className="flex gap-2 mt-1">
+										<Input
+											value={outputPath || ""}
+											placeholder="Select output directory..."
+											readOnly
+											className="text-sm"
+										/>
+										<Button
+											variant="outline"
+											size="sm"
+											onClick={handleSelectOutputDir}
+										>
+											<Folder className="h-4 w-4" />
+										</Button>
+									</div>
+								</div>
+								<div>
+									<Label className="text-xs font-medium uppercase tracking-wide">
+										Output Filename (Optional)
+									</Label>
+									<Input
+										value={customFilename}
+										onChange={(e) => setCustomFilename(e.target.value)}
+										placeholder="Enter custom filename..."
+										className="text-sm mt-1"
+									/>
+								</div>
+							</div>
+							{outputPath && (
+								<div className="text-xs text-muted-foreground p-2 bg-background border rounded">
+									<strong>Preview:</strong>{" "}
+									{(() => {
+										const outputExtension = `.${outputOptions.container}`
+										let filename = customFilename.trim() || "muxed_output"
+										if (!customFilename.trim() && inputPaths.length > 0) {
+											const firstVideoFile = inputPaths.find((path) => {
+												const fileName = path
+													.split(/[\\/]/)
+													.pop()
+													.toLowerCase()
+												return fileName.match(
+													/\.(mp4|mkv|avi|mov|webm|flv|wmv|m4v)$/
+												)
+											})
+											if (firstVideoFile) {
+												filename = firstVideoFile
+													.split(/[\\/]/)
+													.pop()
+													.replace(/\.[^/.]+$/, "")
+											}
+										}
+										return `${outputPath}/${filename}${outputExtension}`
+									})()}
+								</div>
+							)}
+						</div>
+					</div>
+				</div>
+
+				{/* Properties Sidebar */}
+				<div className="bg-card flex flex-col overflow-hidden">
+					<div className="p-4 border-b flex items-center gap-2">
+						<Settings className="h-4 w-4" />
+						<h3 className="font-medium">Properties</h3>
+					</div>
+
+					{/* Action Buttons */}
+					<div className="p-4 border-b">
 						<Button
 							onClick={handleStartMuxing}
 							disabled={
@@ -369,6 +673,7 @@ function VideoMuxerTab() {
 								tracks.filter((t) => t.selected).length === 0 ||
 								isMuxing
 							}
+							className="w-full"
 						>
 							{isMuxing ? (
 								<Clock className="h-4 w-4 mr-2 animate-spin" />
@@ -378,361 +683,182 @@ function VideoMuxerTab() {
 							{isMuxing ? "Muxing..." : "Start Muxing"}
 						</Button>
 					</div>
-				</div>
 
-				{/* Progress Bar */}
-				{isMuxing && (
-					<Card>
-						<CardContent className="pt-6">
-							<div className="flex items-center justify-between mb-2">
-								<span className="text-sm font-medium">Muxing Progress</span>
-								<span className="text-sm text-muted-foreground">
-									{progress?.data?.overall_percent
-										? Math.round(progress.data.overall_percent)
-										: 0}
-									%
-								</span>
-							</div>
-							<Progress
-								value={progress?.data?.overall_percent || 0}
-								className="w-full"
-							/>
-							{progress?.data?.message && (
-								<p className="text-xs text-muted-foreground mt-2">
-									{progress.data.message}
-								</p>
-							)}
-						</CardContent>
-					</Card>
-				)}
-
-				{/* Main Tabs */}
-				<Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1">
-					<TabsList className="grid w-full grid-cols-3">
-						<TabsTrigger value="input">Input Files</TabsTrigger>
-						<TabsTrigger value="tracks">Tracks</TabsTrigger>
-						<TabsTrigger value="output">Output</TabsTrigger>
-					</TabsList>
-
-					{/* Input Files Tab */}
-					<TabsContent value="input" className="flex-1">
-						<Card>
-							<CardHeader>
-								<CardTitle className="flex items-center gap-2">
-									<File className="h-5 w-5" />
-									Source Files
-								</CardTitle>
-								<CardDescription>
-									Add video, audio, and subtitle files to combine
-								</CardDescription>
-							</CardHeader>
-							<CardContent className="space-y-4">
-								{/* Add Files Button */}
-								<div className="flex gap-2">
-									<Button onClick={handleAddInputFiles} className="flex-1">
-										<Plus className="h-4 w-4 mr-2" />
-										Add Source Files
-									</Button>
-									{inputPaths.length > 0 && (
-										<Button
-											variant="outline"
-											onClick={() => {
-												setInputPaths([])
-												setTracks([])
-												setCustomFilename("")
-											}}
-										>
-											<Trash2 className="h-4 w-4 mr-2" />
-											Clear All
-										</Button>
-									)}
-								</div>
-
-								{/* File List */}
-								{inputPaths.length > 0 && (
+					<div className="flex-1 overflow-y-auto">
+						{/* General Options */}
+						<div className="border-b">
+							<button
+								className="w-full p-3 bg-muted/50 hover:bg-muted flex items-center justify-between text-sm font-medium"
+								onClick={() => togglePropertySection("general")}
+							>
+								<span className="uppercase tracking-wide">General Options</span>
+								<ChevronDown
+									className={`h-4 w-4 transition-transform ${collapsedSections.general ? "-rotate-90" : ""}`}
+								/>
+							</button>
+							{!collapsedSections.general && (
+								<div className="p-4 space-y-4">
 									<div className="space-y-2">
-										<Label>Selected Files ({inputPaths.length})</Label>
-										<div className="space-y-2">
-											{inputPaths.map((path, index) => (
-												<div
-													key={index}
-													className="flex items-center justify-between p-3 bg-muted rounded-lg"
-												>
-													<div className="flex items-center gap-2">
-														<File className="h-4 w-4 text-muted-foreground" />
-														<span className="text-sm font-medium">
-															{path.split(/[\\/]/).pop()}
-														</span>
-													</div>
-													<Button
-														variant="ghost"
-														size="sm"
-														onClick={() => handleRemoveFile(index)}
-													>
-														<Trash2 className="h-4 w-4" />
-													</Button>
-												</div>
-											))}
-										</div>
-									</div>
-								)}
-							</CardContent>
-						</Card>
-					</TabsContent>
-
-					{/* Tracks Tab */}
-					<TabsContent value="tracks" className="flex-1">
-						<Card>
-							<CardHeader>
-								<CardTitle className="flex items-center gap-2">
-									<Settings className="h-5 w-5" />
-									Tracks, Chapters and Tags
-								</CardTitle>
-								<CardDescription>
-									Configure which tracks to include in the output
-								</CardDescription>
-							</CardHeader>
-							<CardContent>
-								{tracks.length > 0 ? (
-									<Table>
-										<TableHeader>
-											<TableRow>
-												<TableHead className="w-12"></TableHead>
-												<TableHead>Type</TableHead>
-												<TableHead>Codec</TableHead>
-												<TableHead>Language</TableHead>
-												<TableHead>Name</TableHead>
-												<TableHead>Source</TableHead>
-												<TableHead>Properties</TableHead>
-											</TableRow>
-										</TableHeader>
-										<TableBody>
-											{tracks.map((track, index) => (
-												<TableRow
-													key={track.uniqueId || index}
-													className={
-														selectedTrack?.uniqueId === track.uniqueId
-															? "bg-muted"
-															: ""
-													}
-													onClick={() => setSelectedTrack(track)}
-												>
-													<TableCell>
-														<Switch
-															checked={track.selected}
-															onCheckedChange={() =>
-																toggleTrack(track.uniqueId)
-															}
-														/>
-													</TableCell>
-													<TableCell>
-														<div className="flex items-center gap-2">
-															{getTrackIcon(track.type)}
-															<Badge
-																className={getTrackBadge(
-																	track.type
-																)}
-															>
-																{track.type}
-															</Badge>
-														</div>
-													</TableCell>
-													<TableCell className="font-mono text-sm">
-														{track.codec_name}
-													</TableCell>
-													<TableCell>{track.language || "und"}</TableCell>
-													<TableCell>
-														{track.title ||
-															`${track.type} ${track.index}`}
-													</TableCell>
-													<TableCell className="text-sm text-muted-foreground">
-														{track.sourceFile}
-													</TableCell>
-													<TableCell className="text-sm text-muted-foreground">
-														{track.type === "video" &&
-														track.width &&
-														track.height
-															? `${track.width}x${track.height}`
-															: track.type === "audio" &&
-																  track.sample_rate
-																? `${track.sample_rate}Hz`
-																: ""}
-													</TableCell>
-												</TableRow>
-											))}
-										</TableBody>
-									</Table>
-								) : (
-									<div className="text-center py-8 text-muted-foreground">
-										<File className="h-12 w-12 mx-auto mb-4 opacity-50" />
-										<p>No tracks available. Add source files first.</p>
-									</div>
-								)}
-							</CardContent>
-						</Card>
-					</TabsContent>
-
-					{/* Output Tab */}
-					<TabsContent value="output" className="flex-1">
-						<Card>
-							<CardHeader>
-								<CardTitle className="flex items-center gap-2">
-									<Folder className="h-5 w-5" />
-									Output Configuration
-								</CardTitle>
-								<CardDescription>
-									Configure output file and muxing options
-								</CardDescription>
-							</CardHeader>
-							<CardContent className="space-y-6">
-								{/* Output File */}
-								<div className="space-y-2">
-									<Label>Destination Directory</Label>
-									<div className="flex gap-2">
+										<Label className="text-xs font-medium uppercase tracking-wide">
+											Track name
+										</Label>
 										<Input
-											defaultValue={outputPath || ""}
-											placeholder="Select output directory..."
+											value={
+												selectedTrack?.title || selectedTrack
+													? `${selectedTrack.type} ${selectedTrack.index}`
+													: ""
+											}
+											placeholder="Track name"
 											readOnly
-											className="flex-1"
+											className="text-sm"
 										/>
-										<Button variant="outline" onClick={handleSelectOutputDir}>
-											<Folder className="h-4 w-4 mr-2" />
-											Browse
-										</Button>
 									</div>
-								</div>
-
-								{/* Custom Filename */}
-								<div className="space-y-2">
-									<Label>Output Filename (Optional)</Label>
-									<Input
-										value={customFilename}
-										onChange={(e) => setCustomFilename(e.target.value)}
-										placeholder="Enter custom filename (without extension)..."
-										className="flex-1"
-									/>
-									<p className="text-xs text-muted-foreground">
-										Leave empty to use the first video file name as default
-									</p>
-									{outputPath && (
-										<div className="text-xs text-muted-foreground">
-											<strong>Preview:</strong>{" "}
-											{(() => {
-												const outputExtension =
-													outputOptions.container === "mkv"
-														? ".mkv"
-														: outputOptions.container === "mp4"
-															? ".mp4"
-															: outputOptions.container === "webm"
-																? ".webm"
-																: outputOptions.container === "avi"
-																	? ".avi"
-																	: outputOptions.container ===
-																		  "mov"
-																		? ".mov"
-																		: ".mkv"
-
-												let filename = ""
-												if (customFilename.trim()) {
-													filename = customFilename.trim()
-												} else {
-													const firstVideoFile = inputPaths.find(
-														(path) => {
-															const fileName = path
-																.split(/[\\/]/)
-																.pop()
-																.toLowerCase()
-															return fileName.match(
-																/\.(mp4|mkv|avi|mov|webm|flv|wmv|m4v)$/
-															)
-														}
-													)
-
-													if (firstVideoFile) {
-														const videoFileName = firstVideoFile
-															.split(/[\\/]/)
-															.pop()
-														filename = videoFileName.replace(
-															/\.[^/.]+$/,
-															""
-														)
-													} else {
-														filename = "muxed_output"
-													}
-												}
-
-												return `${outputPath}/${filename}${outputExtension}`
-											})()}
+									<div className="space-y-2">
+										<Label className="text-xs font-medium uppercase tracking-wide">
+											Language
+										</Label>
+										<Select value={selectedTrack?.language || "und"}>
+											<SelectTrigger className="text-sm">
+												<SelectValue />
+											</SelectTrigger>
+											<SelectContent>
+												<SelectItem value="und">Undetermined</SelectItem>
+												<SelectItem value="eng">English</SelectItem>
+												<SelectItem value="spa">Spanish</SelectItem>
+												<SelectItem value="fre">French</SelectItem>
+												<SelectItem value="ger">German</SelectItem>
+												<SelectItem value="jpn">Japanese</SelectItem>
+												<SelectItem value="kor">Korean</SelectItem>
+											</SelectContent>
+										</Select>
+									</div>
+									{selectedTrack && (
+										<div className="space-y-2">
+											<Label className="text-xs font-medium uppercase tracking-wide">
+												Codec
+											</Label>
+											<div className="text-sm font-mono bg-muted p-2 rounded">
+												{selectedTrack.codec_name}
+											</div>
 										</div>
 									)}
 								</div>
+							)}
+						</div>
 
-								<Separator />
-
-								{/* Container Format */}
-								<div className="space-y-2">
-									<Label>Container Format</Label>
-									<Select
-										value={outputOptions.container}
-										onValueChange={(value) =>
-											setOutputOptions((prev) => ({
-												...prev,
-												container: value
-											}))
-										}
-									>
-										<SelectTrigger>
-											<SelectValue />
-										</SelectTrigger>
-										<SelectContent>
-											{muxingOptions?.supported_containers &&
-												Object.entries(
-													muxingOptions.supported_containers
-												).map(([key, container]) => (
-													<SelectItem key={key} value={key}>
-														{container.name} - {container.description}
-													</SelectItem>
-												))}
-										</SelectContent>
-									</Select>
+						{/* Track Flags */}
+						<div className="border-b">
+							<button
+								className="w-full p-3 bg-muted/50 hover:bg-muted flex items-center justify-between text-sm font-medium"
+								onClick={() => togglePropertySection("flags")}
+							>
+								<span className="uppercase tracking-wide">Track Flags</span>
+								<ChevronDown
+									className={`h-4 w-4 transition-transform ${collapsedSections.flags ? "-rotate-90" : ""}`}
+								/>
+							</button>
+							{!collapsedSections.flags && (
+								<div className="p-4 space-y-3">
+									<div className="flex items-center space-x-2">
+										<Switch id="default-track" />
+										<Label htmlFor="default-track" className="text-sm">
+											Default track flag
+										</Label>
+									</div>
+									<div className="flex items-center space-x-2">
+										<Switch id="forced-display" />
+										<Label htmlFor="forced-display" className="text-sm">
+											Forced display flag
+										</Label>
+									</div>
+									<div className="flex items-center space-x-2">
+										<Switch id="hearing-impaired" />
+										<Label htmlFor="hearing-impaired" className="text-sm">
+											Hearing impaired flag
+										</Label>
+									</div>
+									<div className="flex items-center space-x-2">
+										<Switch id="commentary" />
+										<Label htmlFor="commentary" className="text-sm">
+											Commentary flag
+										</Label>
+									</div>
 								</div>
+							)}
+						</div>
 
-								{/* Quality Preset */}
-								<div className="space-y-2">
-									<Label>Quality Preset</Label>
-									<Select
-										value={outputOptions.quality}
-										onValueChange={(value) =>
-											setOutputOptions((prev) => ({
-												...prev,
-												quality: value
-											}))
-										}
-									>
-										<SelectTrigger>
-											<SelectValue />
-										</SelectTrigger>
-										<SelectContent>
-											{muxingOptions?.quality_presets &&
-												Object.entries(muxingOptions.quality_presets).map(
-													([key, preset]) => (
-														<SelectItem key={key} value={key}>
-															{preset.name} - {preset.description}
-														</SelectItem>
-													)
-												)}
-										</SelectContent>
-									</Select>
-								</div>
-
-								<Separator />
-
-								{/* Advanced Options */}
-								<div className="space-y-4">
-									<Label className="text-base font-medium">
-										Advanced Options
-									</Label>
-									<div className="grid grid-cols-2 gap-4">
+						{/* Muxing Options */}
+						<div>
+							<button
+								className="w-full p-3 bg-muted/50 hover:bg-muted flex items-center justify-between text-sm font-medium"
+								onClick={() => togglePropertySection("muxing")}
+							>
+								<span className="uppercase tracking-wide">Muxing Options</span>
+								<ChevronDown
+									className={`h-4 w-4 transition-transform ${collapsedSections.muxing ? "-rotate-90" : ""}`}
+								/>
+							</button>
+							{!collapsedSections.muxing && (
+								<div className="p-4 space-y-4">
+									<div className="space-y-2">
+										<Label className="text-xs font-medium uppercase tracking-wide">
+											Processing Mode
+										</Label>
+										<Select
+											value={outputOptions.quality}
+											onValueChange={(value) =>
+												setOutputOptions((prev) => ({
+													...prev,
+													quality: value
+												}))
+											}
+										>
+											<SelectTrigger className="text-sm">
+												<SelectValue />
+											</SelectTrigger>
+											<SelectContent>
+												<SelectItem value="copy">
+													Copy - Just copy files to new container
+													(Fastest)
+												</SelectItem>
+												<SelectItem value="high">
+													Encode - High quality
+												</SelectItem>
+												<SelectItem value="medium">
+													Encode - Medium quality
+												</SelectItem>
+												<SelectItem value="low">
+													Encode - Low quality
+												</SelectItem>
+											</SelectContent>
+										</Select>
+									</div>
+									<div className="space-y-2">
+										<Label className="text-xs font-medium uppercase tracking-wide">
+											Container Format
+										</Label>
+										<Select
+											value={outputOptions.container}
+											onValueChange={(value) =>
+												setOutputOptions((prev) => ({
+													...prev,
+													container: value
+												}))
+											}
+										>
+											<SelectTrigger className="text-sm">
+												<SelectValue />
+											</SelectTrigger>
+											<SelectContent>
+												<SelectItem value="mkv">MKV (Matroska)</SelectItem>
+												<SelectItem value="mp4">MP4</SelectItem>
+												<SelectItem value="webm">WebM</SelectItem>
+												<SelectItem value="avi">AVI</SelectItem>
+												<SelectItem value="mov">MOV</SelectItem>
+											</SelectContent>
+										</Select>
+									</div>
+									<div className="space-y-3">
 										<div className="flex items-center space-x-2">
 											<Switch
 												id="fast-start"
@@ -744,24 +870,13 @@ function VideoMuxerTab() {
 													}))
 												}
 											/>
-											<Label htmlFor="fast-start">Fast Start</Label>
+											<Label htmlFor="fast-start" className="text-sm">
+												Fast start (web optimized)
+											</Label>
 										</div>
 										<div className="flex items-center space-x-2">
 											<Switch
-												id="overwrite"
-												checked={outputOptions.overwrite}
-												onCheckedChange={(checked) =>
-													setOutputOptions((prev) => ({
-														...prev,
-														overwrite: checked
-													}))
-												}
-											/>
-											<Label htmlFor="overwrite">Overwrite Existing</Label>
-										</div>
-										<div className="flex items-center space-x-2">
-											<Switch
-												id="metadata"
+												id="include-metadata"
 												checked={outputOptions.metadata}
 												onCheckedChange={(checked) =>
 													setOutputOptions((prev) => ({
@@ -770,11 +885,13 @@ function VideoMuxerTab() {
 													}))
 												}
 											/>
-											<Label htmlFor="metadata">Include Metadata</Label>
+											<Label htmlFor="include-metadata" className="text-sm">
+												Include metadata
+											</Label>
 										</div>
 										<div className="flex items-center space-x-2">
 											<Switch
-												id="chapters"
+												id="include-chapters"
 												checked={outputOptions.chapters}
 												onCheckedChange={(checked) =>
 													setOutputOptions((prev) => ({
@@ -783,112 +900,41 @@ function VideoMuxerTab() {
 													}))
 												}
 											/>
-											<Label htmlFor="chapters">Include Chapters</Label>
+											<Label htmlFor="include-chapters" className="text-sm">
+												Include chapters
+											</Label>
 										</div>
 									</div>
 								</div>
-							</CardContent>
-						</Card>
-					</TabsContent>
-				</Tabs>
-			</div>
-
-			{/* Properties Panel */}
-			<div className="w-80 flex flex-col gap-4">
-				{/* Compatibility Info */}
-				{compatibilityResult && (
-					<Card>
-						<CardHeader>
-							<CardTitle className="flex items-center gap-2">
-								<Info className="h-5 w-5" />
-								Compatibility
-							</CardTitle>
-						</CardHeader>
-						<CardContent className="space-y-2">
-							<div className="flex items-center gap-2">
-								{compatibilityResult.compatible ? (
-									<CheckCircle className="h-4 w-4 text-green-500" />
-								) : (
-									<XCircle className="h-4 w-4 text-red-500" />
-								)}
-								<span className="text-sm">
-									{compatibilityResult.compatible ? "Compatible" : "Issues Found"}
-								</span>
-							</div>
-							{compatibilityResult.recommended_container && (
-								<div className="text-sm text-muted-foreground">
-									Recommended:{" "}
-									{compatibilityResult.recommended_container.toUpperCase()}
-								</div>
 							)}
-						</CardContent>
-					</Card>
-				)}
+						</div>
 
-				{/* Track Properties */}
-				{selectedTrack && (
-					<Card>
-						<CardHeader>
-							<CardTitle className="flex items-center gap-2">
-								{getTrackIcon(selectedTrack.type)}
-								Track Properties
-							</CardTitle>
-						</CardHeader>
-						<CardContent className="space-y-4">
-							<div className="space-y-2">
-								<Label>Track Name</Label>
-								<Input
-									defaultValue={
-										selectedTrack.title ||
-										`${selectedTrack.type} ${selectedTrack.index}`
-									}
-									placeholder="Enter track name..."
-									readOnly
-								/>
+						{/* Error Display */}
+						{(fileError || muxingError) && (
+							<div className="p-4">
+								<Alert variant="destructive">
+									<AlertDescription>{fileError || muxingError}</AlertDescription>
+								</Alert>
 							</div>
-							<div className="space-y-2">
-								<Label>Language</Label>
-								<Input
-									defaultValue={selectedTrack.language || "und"}
-									placeholder="Language code..."
-									readOnly
-								/>
-							</div>
-							<div className="space-y-2">
-								<Label>Codec</Label>
-								<div className="text-sm font-mono bg-muted p-2 rounded">
-									{selectedTrack.codec_name}
-								</div>
-							</div>
-							{selectedTrack.type === "video" &&
-								selectedTrack.width &&
-								selectedTrack.height && (
-									<div className="space-y-2">
-										<Label>Resolution</Label>
-										<div className="text-sm">
-											{selectedTrack.width} × {selectedTrack.height}
-										</div>
-									</div>
-								)}
-							{selectedTrack.type === "audio" && selectedTrack.sample_rate && (
-								<div className="space-y-2">
-									<Label>Sample Rate</Label>
-									<div className="text-sm">{selectedTrack.sample_rate} Hz</div>
-								</div>
-							)}
-						</CardContent>
-					</Card>
-				)}
+						)}
+					</div>
+				</div>
 
-				{/* Error Display */}
-				{(fileError || muxingError) && (
-					<Alert variant="destructive">
-						<AlertDescription>{fileError || muxingError}</AlertDescription>
-					</Alert>
-				)}
+				{/* Action Bar */}
+				<div className="col-span-2 bg-muted/50 border-t p-4 flex items-center justify-between">
+					<div className="text-sm text-muted-foreground">
+						{inputPaths.length === 0
+							? "Add source files to begin muxing"
+							: tracks.filter((t) => t.selected).length === 0
+								? "Select tracks to include in the output"
+								: !outputPath
+									? "Select destination file to continue"
+									: `Ready to mux ${tracks.filter((t) => t.selected).length} tracks from ${inputPaths.length} files`}
+					</div>
+				</div>
 			</div>
 		</div>
 	)
 }
 
-export { VideoMuxerTab }
+export default VideoMuxerTab
