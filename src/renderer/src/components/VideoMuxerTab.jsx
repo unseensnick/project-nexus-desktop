@@ -47,6 +47,7 @@ import {
 	Square,
 	Subtitles,
 	Trash2,
+	Upload,
 	Video,
 	Volume2,
 	XCircle
@@ -102,17 +103,29 @@ function VideoMuxerTab() {
 		muxing: false
 	})
 
-	// Handle file selection for muxing
-	const handleAddInputFiles = async () => {
-		console.log("Adding input files...")
-		const result = await handleSelectInputFiles(true) // Append files for video muxing
-		console.log("File selection result:", result)
+	// Drag and drop state
+	const [isDragOver, setIsDragOver] = useState(false)
 
-		if (result && result.length > 0) {
-			console.log("Files selected:", result)
+	// Handle drag events
+	const handleDragOver = useCallback((e) => {
+		e.preventDefault()
+		e.stopPropagation()
+		setIsDragOver(true)
+	}, [])
+
+	const handleDragLeave = useCallback((e) => {
+		e.preventDefault()
+		e.stopPropagation()
+		setIsDragOver(false)
+	}, [])
+
+	// Helper function to handle files from paths (adapted from SelectFilesTab pattern)
+	const handleFilesFromPaths = useCallback(
+		async (filePaths) => {
+			console.log("Adding files from paths:", filePaths)
 
 			// Filter out files that are already added
-			const newFiles = result.filter((newPath) => {
+			const newFiles = filePaths.filter((newPath) => {
 				const newFileName = newPath.split(/[\\/]/).pop()
 				return !inputPaths.some(
 					(existingPath) => existingPath.split(/[\\/]/).pop() === newFileName
@@ -120,13 +133,13 @@ function VideoMuxerTab() {
 			})
 
 			if (newFiles.length === 0) {
-				console.log("All selected files are already added")
+				console.log("All dropped files are already added")
 				return
 			}
 
 			console.log("New files to add:", newFiles)
 
-			// Add new files to input paths first
+			// Add new files to input paths
 			const updatedInputPaths = [...inputPaths, ...newFiles]
 			setInputPaths(updatedInputPaths)
 
@@ -162,8 +175,127 @@ function VideoMuxerTab() {
 				// Replace all tracks with the new analysis
 				setTracks(newTracks)
 			}
+		},
+		[
+			inputPaths,
+			setInputPaths,
+			customFilename,
+			setCustomFilename,
+			analyzeCompatibility,
+			setTracks
+		]
+	)
+
+	// Handle file selection for muxing
+	const handleAddInputFiles = useCallback(async () => {
+		console.log("Adding input files...")
+		const result = await handleSelectInputFiles(true) // Append files for video muxing
+		console.log("File selection result:", result)
+
+		if (result && result.length > 0) {
+			await handleFilesFromPaths(result)
 		}
-	}
+	}, [handleSelectInputFiles, handleFilesFromPaths])
+
+	const handleDrop = useCallback(
+		async (e) => {
+			e.preventDefault()
+			e.stopPropagation()
+			setIsDragOver(false)
+
+			console.log("Drop event triggered in VideoMuxerTab")
+
+			try {
+				const droppedFiles = Array.from(e.dataTransfer.files)
+				const droppedPaths = []
+
+				console.log("Processing", droppedFiles.length, "dropped items")
+
+				// Extract file paths using the simplified approach
+				for (const file of droppedFiles) {
+					let filePath = null
+
+					// Try to get file path using Electron's webUtils
+					if (window.electronAPI?.getFilePath) {
+						try {
+							filePath = window.electronAPI.getFilePath(file)
+							console.log("Got file path via webUtils:", filePath)
+						} catch (error) {
+							console.warn("webUtils.getFilePath failed:", error)
+						}
+					}
+
+					// Fallback to legacy path property
+					if (!filePath && file.path) {
+						filePath = file.path
+						console.log("Got file path via legacy property:", filePath)
+					}
+
+					// Final fallback: use file name (let backend resolve)
+					if (!filePath) {
+						filePath = file.name
+						console.log("Using file name as fallback:", filePath)
+					}
+
+					if (filePath) {
+						droppedPaths.push(filePath)
+					}
+				}
+
+				console.log("Extracted paths:", droppedPaths)
+
+				if (droppedPaths.length === 0) {
+					console.warn("No valid file paths extracted from drop")
+					// Fallback to file dialog
+					await handleAddInputFiles()
+					return
+				}
+
+				// Check if any of the dropped items might be directories
+				// Directories typically have size 0 and empty type in the File API
+				const possibleDirectories = droppedFiles.filter(
+					(file) => file.size === 0 && file.type === "" && !file.name.includes(".")
+				)
+
+				// For video muxer, we handle directories by scanning for media files
+				if (possibleDirectories.length === 1 && droppedFiles.length === 1) {
+					// Single potential directory dropped - try to scan it
+					console.log("Possible directory dropped, attempting to scan...")
+					try {
+						// Use the backend to check if it's a directory and scan for media files
+						const result = await window.electronAPI.callPythonFunction(
+							"track-extractor.find_media_files",
+							{ paths: droppedPaths }
+						)
+
+						if (result.success && result.data.files && result.data.files.length > 0) {
+							console.log(
+								"Directory scan successful, found",
+								result.data.files.length,
+								"files"
+							)
+							await handleFilesFromPaths(result.data.files)
+						} else {
+							console.log("No media files found, treating as regular files")
+							await handleFilesFromPaths(droppedPaths)
+						}
+					} catch (error) {
+						console.warn("Directory scan failed, treating as files:", error)
+						await handleFilesFromPaths(droppedPaths)
+					}
+				} else {
+					// Multiple files or mixed content - process as files
+					console.log("Multiple items or files dropped, processing as files...")
+					await handleFilesFromPaths(droppedPaths)
+				}
+			} catch (error) {
+				console.error("Error handling dropped files:", error)
+				// Fallback to file dialog on error
+				await handleAddInputFiles()
+			}
+		},
+		[handleAddInputFiles, handleFilesFromPaths]
+	)
 
 	// Handle file removal
 	const handleRemoveFile = async (indexToRemove) => {
@@ -411,24 +543,21 @@ function VideoMuxerTab() {
 								<File className="h-4 w-4" />
 								<h3 className="font-medium">Source Files</h3>
 							</div>
-							<div className="flex gap-2">
-								<Button
-									variant="outline"
-									onClick={handleReset}
-									disabled={isMuxing}
-									size="sm"
-								>
-									<Square className="h-4 w-4 mr-2" />
-									Reset
-								</Button>
-								<Button onClick={handleAddInputFiles} size="sm">
-									<Plus className="h-4 w-4 mr-2" />
-									Add Files
-								</Button>
-							</div>
+							<Button
+								variant="outline"
+								onClick={handleReset}
+								disabled={isMuxing}
+								size="sm"
+							>
+								<Square className="h-4 w-4 mr-2" />
+								Reset
+							</Button>
 						</div>
 						<div
 							className={`p-4 ${inputPaths.length > 0 ? "max-h-48 overflow-y-auto" : ""}`}
+							onDragOver={handleDragOver}
+							onDragLeave={handleDragLeave}
+							onDrop={handleDrop}
 						>
 							{inputPaths.length > 0 ? (
 								<div className="space-y-2">
@@ -464,9 +593,22 @@ function VideoMuxerTab() {
 									))}
 								</div>
 							) : (
-								<div className="text-center py-8 text-muted-foreground">
-									<File className="h-12 w-12 mx-auto mb-4 opacity-50" />
-									<p className="font-medium">No Files Added</p>
+								<div
+									className={`text-center py-8 text-muted-foreground cursor-pointer transition-all duration-200 ${
+										isDragOver
+											? "text-primary scale-105"
+											: "hover:text-primary/80"
+									}`}
+									onClick={handleAddInputFiles}
+								>
+									<Upload
+										className={`h-12 w-12 mx-auto mb-4 transition-colors ${
+											isDragOver ? "text-primary" : "opacity-50"
+										}`}
+									/>
+									<p className="font-medium">
+										{isDragOver ? "Drop files here" : "No Files Added"}
+									</p>
 									<p className="text-sm">
 										Drag and drop files here or click "Add Files" to begin.
 									</p>
