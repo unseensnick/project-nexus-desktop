@@ -473,13 +473,13 @@ function VideoMuxerTab() {
 	const getTrackBadge = (type) => {
 		switch (type) {
 			case "video":
-				return "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200"
+				return "bg-destructive/10 text-destructive"
 			case "audio":
-				return "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
+				return "bg-primary/10 text-primary"
 			case "subtitle":
-				return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
+				return "bg-accent text-accent-foreground"
 			default:
-				return "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200"
+				return "bg-muted text-muted-foreground"
 		}
 	}
 
@@ -505,7 +505,7 @@ function VideoMuxerTab() {
 		<div className="h-full bg-background text-foreground">
 			{/* Progress Overlay */}
 			{isMuxing && (
-				<div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center">
+				<div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center">
 					<Card className="w-96">
 						<CardContent className="pt-6">
 							<div className="flex items-center gap-3 mb-6">
@@ -541,7 +541,7 @@ function VideoMuxerTab() {
 						<div className="p-4 border-b flex items-center justify-between">
 							<div className="flex items-center gap-2">
 								<File className="h-4 w-4" />
-								<h3 className="font-medium">Source Files</h3>
+								<h3 className="font-semibold">Source Files</h3>
 							</div>
 							<Button
 								variant="outline"
@@ -622,7 +622,7 @@ function VideoMuxerTab() {
 						<div className="p-4 border-b flex items-center justify-between">
 							<div className="flex items-center gap-2">
 								<Settings className="h-4 w-4" />
-								<h3 className="font-medium">Tracks, Chapters and Tags</h3>
+								<h3 className="font-semibold">Tracks, Chapters and Tags</h3>
 							</div>
 							<div className="flex gap-2">
 								<Button variant="outline" size="sm" onClick={selectAllTracks}>
@@ -715,10 +715,10 @@ function VideoMuxerTab() {
 									</TableBody>
 								</Table>
 							) : (
-								<div className="flex-1 flex items-center justify-center text-muted-foreground">
+								<div className="flex-1 flex items-center justify-center text-muted-foreground min-h-[400px]">
 									<div className="text-center">
 										<Settings className="h-16 w-16 mx-auto mb-4 opacity-50" />
-										<p className="font-medium text-lg">No Tracks Available</p>
+										<p className="font-semibold text-lg">No Tracks Available</p>
 										<p className="text-sm">
 											Add source files to see available tracks for muxing.
 										</p>
@@ -732,12 +732,12 @@ function VideoMuxerTab() {
 					<div className="border-t bg-muted/30 p-4">
 						<div className="flex items-center gap-2 mb-4">
 							<Folder className="h-4 w-4" />
-							<h3 className="font-medium">Output Configuration</h3>
+							<h3 className="font-semibold">Output Configuration</h3>
 						</div>
 						<div className="space-y-4">
 							<div className="grid grid-cols-2 gap-4">
 								<div>
-									<Label className="text-xs font-medium uppercase tracking-wide">
+									<Label className="text-xs font-semibold uppercase tracking-wide">
 										Destination Directory
 									</Label>
 									<div className="flex gap-2 mt-1">
@@ -757,7 +757,7 @@ function VideoMuxerTab() {
 									</div>
 								</div>
 								<div>
-									<Label className="text-xs font-medium uppercase tracking-wide">
+									<Label className="text-xs font-semibold uppercase tracking-wide">
 										Output Filename (Optional)
 									</Label>
 									<Input
@@ -803,7 +803,7 @@ function VideoMuxerTab() {
 				<div className="bg-card flex flex-col overflow-hidden">
 					<div className="p-4 border-b flex items-center gap-2">
 						<Settings className="h-4 w-4" />
-						<h3 className="font-medium">Properties</h3>
+						<h3 className="font-semibold">Properties</h3>
 					</div>
 
 					{/* Action Buttons */}
@@ -830,7 +830,7 @@ function VideoMuxerTab() {
 						{/* General Options */}
 						<div className="border-b">
 							<button
-								className="w-full p-3 bg-muted/50 hover:bg-muted flex items-center justify-between text-sm font-medium"
+								className="w-full p-3 bg-muted/50 hover:bg-muted flex items-center justify-between text-sm font-semibold"
 								onClick={() => togglePropertySection("general")}
 							>
 								<span className="uppercase tracking-wide">General Options</span>
@@ -841,7 +841,7 @@ function VideoMuxerTab() {
 							{!collapsedSections.general && (
 								<div className="p-4 space-y-4">
 									<div className="space-y-2">
-										<Label className="text-xs font-medium uppercase tracking-wide">
+										<Label className="text-xs font-semibold uppercase tracking-wide">
 											Track name
 										</Label>
 										<Input
@@ -856,7 +856,7 @@ function VideoMuxerTab() {
 										/>
 									</div>
 									<div className="space-y-2">
-										<Label className="text-xs font-medium uppercase tracking-wide">
+										<Label className="text-xs font-semibold uppercase tracking-wide">
 											Language
 										</Label>
 										<Select value={selectedTrack?.language || "und"}>
@@ -876,7 +876,7 @@ function VideoMuxerTab() {
 									</div>
 									{selectedTrack && (
 										<div className="space-y-2">
-											<Label className="text-xs font-medium uppercase tracking-wide">
+											<Label className="text-xs font-semibold uppercase tracking-wide">
 												Codec
 											</Label>
 											<div className="text-sm font-mono bg-muted p-2 rounded">
@@ -891,7 +891,7 @@ function VideoMuxerTab() {
 						{/* Track Flags */}
 						<div className="border-b">
 							<button
-								className="w-full p-3 bg-muted/50 hover:bg-muted flex items-center justify-between text-sm font-medium"
+								className="w-full p-3 bg-muted/50 hover:bg-muted flex items-center justify-between text-sm font-semibold"
 								onClick={() => togglePropertySection("flags")}
 							>
 								<span className="uppercase tracking-wide">Track Flags</span>
@@ -932,7 +932,7 @@ function VideoMuxerTab() {
 						{/* Muxing Options */}
 						<div>
 							<button
-								className="w-full p-3 bg-muted/50 hover:bg-muted flex items-center justify-between text-sm font-medium"
+								className="w-full p-3 bg-muted/50 hover:bg-muted flex items-center justify-between text-sm font-semibold"
 								onClick={() => togglePropertySection("muxing")}
 							>
 								<span className="uppercase tracking-wide">Muxing Options</span>
@@ -943,7 +943,7 @@ function VideoMuxerTab() {
 							{!collapsedSections.muxing && (
 								<div className="p-4 space-y-4">
 									<div className="space-y-2">
-										<Label className="text-xs font-medium uppercase tracking-wide">
+										<Label className="text-xs font-semibold uppercase tracking-wide">
 											Processing Mode
 										</Label>
 										<Select
@@ -976,7 +976,7 @@ function VideoMuxerTab() {
 										</Select>
 									</div>
 									<div className="space-y-2">
-										<Label className="text-xs font-medium uppercase tracking-wide">
+										<Label className="text-xs font-semibold uppercase tracking-wide">
 											Container Format
 										</Label>
 										<Select

@@ -276,26 +276,23 @@ function App() {
 				return (
 					<div className="flex-1 flex flex-col overflow-hidden">
 						{/* Application header with mode switch */}
-						<header className="bg-white shadow-sm p-4 flex items-center justify-between dark:bg-gray-800 dark:border-b dark:border-gray-700">
-							<div className="flex items-center gap-2">
-								<h2 className="text-xl font-medium flex items-center gap-2">
-									<FileText className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+						<header className="bg-card border-b border-border px-6 py-4 flex items-center justify-between">
+							<div className="flex items-center gap-3">
+								<div className="w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center">
+									<FileText className="h-4 w-4 text-primary" />
+								</div>
+								<h2 className="text-xl font-semibold text-foreground">
 									Track Extraction
 								</h2>
 							</div>
 
 							{/* Batch mode toggle */}
-							<div className="flex items-center gap-2">
-								<span className="text-sm text-gray-500 dark:text-gray-400">
+							<div className="flex items-center gap-3">
+								<span className="text-sm font-medium text-muted-foreground">
 									Batch Mode
 								</span>
-								<Switch
-									checked={batchMode}
-									onCheckedChange={setBatchMode}
-									className="w-10 h-5 data-[state=checked]:bg-indigo-600"
-									thumbClassName="size-4"
-								/>
-								<span className="text-xs text-gray-400 dark:text-gray-500">
+								<Switch checked={batchMode} onCheckedChange={setBatchMode} />
+								<span className="text-xs text-muted-foreground">
 									{batchMode ? "Enabled" : "Single File"}
 								</span>
 							</div>
@@ -372,18 +369,19 @@ function App() {
 				return (
 					<div className="flex-1 flex flex-col overflow-hidden">
 						{/* Header */}
-						<header className="bg-white shadow-sm p-4 flex items-center justify-between dark:bg-gray-800 dark:border-b dark:border-gray-700">
-							<div className="flex items-center gap-2">
-								<h2 className="text-xl font-medium flex items-center gap-2">
-									<span className="text-indigo-600 dark:text-indigo-400">
-										Video Muxing
-									</span>
+						<header className="bg-card border-b border-border px-6 py-4 flex items-center justify-between">
+							<div className="flex items-center gap-3">
+								<div className="w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center">
+									<FileText className="h-4 w-4 text-primary" />
+								</div>
+								<h2 className="text-xl font-semibold text-foreground">
+									Video Muxing
 								</h2>
 							</div>
 						</header>
 
 						{/* Content */}
-						<div className="flex-1 overflow-auto p-6 bg-white dark:bg-gray-800">
+						<div className="flex-1 overflow-auto p-6 bg-background">
 							<VideoMuxerTab />
 						</div>
 					</div>
@@ -391,18 +389,21 @@ function App() {
 			case "subtitle-editor":
 				return (
 					<div className="flex-1 flex flex-col overflow-hidden">
-						<header className="bg-white shadow-sm p-4 flex items-center justify-between dark:bg-gray-800 dark:border-b dark:border-gray-700">
-							<div className="flex items-center gap-2">
-								<h2 className="text-xl font-medium flex items-center gap-2">
-									<span className="text-indigo-600 dark:text-indigo-400">
-										Subtitle Editor
-									</span>
+						<header className="bg-card border-b border-border px-6 py-4 flex items-center justify-between">
+							<div className="flex items-center gap-3">
+								<div className="w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center">
+									<FileText className="h-4 w-4 text-primary" />
+								</div>
+								<h2 className="text-xl font-semibold text-foreground">
+									Subtitle Editor
 								</h2>
 							</div>
 						</header>
 						<div className="flex-1 overflow-auto p-6">
-							<div className="text-center text-gray-500 dark:text-gray-400">
-								<h3 className="text-lg font-medium mb-2">Coming Soon</h3>
+							<div className="text-center text-muted-foreground">
+								<h3 className="text-lg font-semibold mb-2 text-foreground">
+									Coming Soon
+								</h3>
 								<p>The Subtitle Editor feature is currently under development.</p>
 							</div>
 						</div>
@@ -411,18 +412,21 @@ function App() {
 			case "video-editing":
 				return (
 					<div className="flex-1 flex flex-col overflow-hidden">
-						<header className="bg-white shadow-sm p-4 flex items-center justify-between dark:bg-gray-800 dark:border-b dark:border-gray-700">
-							<div className="flex items-center gap-2">
-								<h2 className="text-xl font-medium flex items-center gap-2">
-									<span className="text-indigo-600 dark:text-indigo-400">
-										Video Editing
-									</span>
+						<header className="bg-card border-b border-border px-6 py-4 flex items-center justify-between">
+							<div className="flex items-center gap-3">
+								<div className="w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center">
+									<FileText className="h-4 w-4 text-primary" />
+								</div>
+								<h2 className="text-xl font-semibold text-foreground">
+									Video Editing
 								</h2>
 							</div>
 						</header>
 						<div className="flex-1 overflow-auto p-6">
-							<div className="text-center text-gray-500 dark:text-gray-400">
-								<h3 className="text-lg font-medium mb-2">Coming Soon</h3>
+							<div className="text-center text-muted-foreground">
+								<h3 className="text-lg font-semibold mb-2 text-foreground">
+									Coming Soon
+								</h3>
 								<p>The Video Editing feature is currently under development.</p>
 							</div>
 						</div>
@@ -431,17 +435,21 @@ function App() {
 			default:
 				return (
 					<div className="flex-1 flex flex-col overflow-hidden">
-						<header className="bg-white shadow-sm p-4 flex items-center justify-between dark:bg-gray-800 dark:border-b dark:border-gray-700">
-							<div className="flex items-center gap-2">
-								<h2 className="text-xl font-medium flex items-center gap-2">
-									<FileText className="h-5 w-5 text-indigo-600 dark:text-indigo-400" />
+						<header className="bg-card border-b border-border px-6 py-4 flex items-center justify-between">
+							<div className="flex items-center gap-3">
+								<div className="w-8 h-8 bg-primary/10 rounded-lg flex items-center justify-center">
+									<FileText className="h-4 w-4 text-primary" />
+								</div>
+								<h2 className="text-xl font-semibold text-foreground">
 									Track Extraction
 								</h2>
 							</div>
 						</header>
 						<div className="flex-1 overflow-auto p-6">
-							<div className="text-center text-gray-500 dark:text-gray-400">
-								<h3 className="text-lg font-medium mb-2">Feature Not Found</h3>
+							<div className="text-center text-muted-foreground">
+								<h3 className="text-lg font-semibold mb-2 text-foreground">
+									Feature Not Found
+								</h3>
 								<p>The selected feature is not available.</p>
 							</div>
 						</div>
@@ -452,7 +460,7 @@ function App() {
 
 	return (
 		<ThemeProvider>
-			<div className="flex h-screen bg-gray-50 text-gray-900 overflow-hidden dark:bg-gray-900 dark:text-gray-100">
+			<div className="flex h-screen bg-background text-foreground overflow-hidden">
 				{/* Navigation sidebar */}
 				<AppSidebar
 					collapsed={sidebarCollapsed}

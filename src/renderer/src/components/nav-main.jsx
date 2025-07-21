@@ -35,7 +35,9 @@ import {
 export function NavMain({ items }) {
 	return (
 		<SidebarGroup>
-			<SidebarGroupLabel>Platform</SidebarGroupLabel>
+			<SidebarGroupLabel className="text-sidebar-foreground/60 font-semibold">
+				Platform
+			</SidebarGroupLabel>
 			<SidebarMenu>
 				{items.map((item) => (
 					<Collapsible
@@ -46,9 +48,12 @@ export function NavMain({ items }) {
 					>
 						<SidebarMenuItem>
 							<CollapsibleTrigger asChild>
-								<SidebarMenuButton tooltip={item.title}>
+								<SidebarMenuButton
+									tooltip={item.title}
+									className="text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+								>
 									{item.icon && <item.icon />}
-									<span>{item.title}</span>
+									<span className="font-medium">{item.title}</span>
 									<ChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
 								</SidebarMenuButton>
 							</CollapsibleTrigger>
@@ -56,9 +61,14 @@ export function NavMain({ items }) {
 								<SidebarMenuSub>
 									{item.items?.map((subItem) => (
 										<SidebarMenuSubItem key={subItem.title}>
-											<SidebarMenuSubButton asChild>
+											<SidebarMenuSubButton
+												asChild
+												className="text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+											>
 												<a href={subItem.url}>
-													<span>{subItem.title}</span>
+													<span className="font-medium">
+														{subItem.title}
+													</span>
 												</a>
 											</SidebarMenuSubButton>
 										</SidebarMenuSubItem>

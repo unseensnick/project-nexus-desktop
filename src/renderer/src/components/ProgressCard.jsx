@@ -24,9 +24,10 @@ function ProgressRing({ progress, size = 60, strokeWidth = 4, color = "#3b82f6" 
 					cx={size / 2}
 					cy={size / 2}
 					r={radius}
-					stroke="rgb(39, 39, 42)"
+					stroke="currentColor"
 					strokeWidth={strokeWidth}
 					fill="transparent"
+					className="text-muted-foreground opacity-20"
 				/>
 				<circle
 					cx={size / 2}
@@ -41,7 +42,9 @@ function ProgressRing({ progress, size = 60, strokeWidth = 4, color = "#3b82f6" 
 				/>
 			</svg>
 			<div className="absolute inset-0 flex items-center justify-center">
-				<span className="text-xs font-semibold text-zinc-50">{Math.round(progress)}%</span>
+				<span className="text-xs font-semibold text-foreground">
+					{Math.round(progress)}%
+				</span>
 			</div>
 		</div>
 	)
@@ -60,9 +63,9 @@ function WorkerCard({
 	isWaiting = false
 }) {
 	const getProgressColor = () => {
-		if (isComplete) return "#22c55e"
-		if (isWaiting) return "#fbbf24"
-		return "#3b82f6"
+		if (isComplete) return "#22c55e" // Green for completed
+		if (isWaiting) return "#f59e0b" // Amber for waiting
+		return "#3b82f6" // Blue for processing
 	}
 
 	const getStateText = () => {
@@ -89,18 +92,18 @@ function WorkerCard({
 	}
 
 	return (
-		<div className="bg-zinc-800 border border-zinc-700 rounded-lg overflow-hidden">
-			<div className="bg-zinc-950 border-b border-zinc-700 px-4 py-3 flex items-center justify-between">
-				<div className="text-sm font-semibold text-zinc-50">{title}</div>
-				<Settings className="h-4 w-4 text-zinc-500" />
+		<div className="bg-card border border-border rounded-lg overflow-hidden">
+			<div className="bg-muted/50 border-b border-border px-4 py-3 flex items-center justify-between">
+				<div className="text-sm font-semibold text-foreground">{title}</div>
+				<Settings className="h-4 w-4 text-muted-foreground" />
 			</div>
 			<div className="p-4 flex gap-4 items-center">
 				<ProgressRing progress={progress} color={getProgressColor()} />
 				<div className="flex-1 min-w-0 space-y-1.5">
 					<div className="flex justify-between text-xs">
-						<span className="text-zinc-500 font-medium">State</span>
+						<span className="text-muted-foreground font-medium">State</span>
 						<span
-							className="text-zinc-300 text-right max-w-[120px] truncate"
+							className="text-foreground text-right max-w-[120px] truncate"
 							title={getStateText()}
 						>
 							{getStateText()}
@@ -108,9 +111,9 @@ function WorkerCard({
 					</div>
 					{fileName && (
 						<div className="flex justify-between text-xs">
-							<span className="text-zinc-500 font-medium">Current File</span>
+							<span className="text-muted-foreground font-medium">Current File</span>
 							<span
-								className="text-zinc-300 text-right max-w-[120px] truncate"
+								className="text-foreground text-right max-w-[120px] truncate"
 								title={fileName}
 							>
 								{fileName}
@@ -118,8 +121,8 @@ function WorkerCard({
 						</div>
 					)}
 					<div className="flex justify-between text-xs">
-						<span className="text-zinc-500 font-medium">ETC</span>
-						<span className="text-zinc-300">{getETC()}</span>
+						<span className="text-muted-foreground font-medium">ETC</span>
+						<span className="text-foreground">{getETC()}</span>
 					</div>
 				</div>
 			</div>
@@ -163,11 +166,11 @@ function ProgressCard({ progressText, progressValue, fileProgressMap = {}, batch
 	}, [fileProgressArray, hasMultipleFiles])
 
 	return (
-		<div className="bg-zinc-800 border border-zinc-700 rounded-xl overflow-hidden">
-			<div className="bg-zinc-950 border-b border-zinc-700 px-5 py-4">
+		<div className="bg-card border border-border rounded-xl overflow-hidden">
+			<div className="bg-muted/50 border-b border-border px-5 py-4">
 				<div className="flex items-center gap-2">
-					<RefreshCw className="h-5 w-5 animate-spin text-blue-400" />
-					<div className="text-sm font-semibold text-zinc-50">
+					<RefreshCw className="h-5 w-5 animate-spin text-primary" />
+					<div className="text-sm font-semibold text-foreground">
 						{batchMode ? "Batch Extraction Progress" : "Extraction Progress"}
 					</div>
 				</div>
@@ -188,10 +191,10 @@ function ProgressCard({ progressText, progressValue, fileProgressMap = {}, batch
 				{/* Batch mode - multiple worker cards */}
 				{hasMultipleFiles && (
 					<div className="space-y-4">
-						<div className="flex items-center gap-2 text-sm font-medium text-zinc-300 mb-4">
-							<Cpu className="h-4 w-4 text-zinc-400" />
+						<div className="flex items-center gap-2 text-sm font-semibold text-foreground mb-4">
+							<Cpu className="h-4 w-4 text-muted-foreground" />
 							<span>Worker Thread Progress</span>
-							<span className="text-xs text-zinc-500 ml-auto">
+							<span className="text-xs text-muted-foreground ml-auto">
 								{activeWorkers} active worker{activeWorkers !== 1 ? "s" : ""} •{" "}
 								{fileProgressArray.length} file
 								{fileProgressArray.length !== 1 ? "s" : ""}

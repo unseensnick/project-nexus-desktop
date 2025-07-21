@@ -47,17 +47,25 @@ export function AppSidebar({ collapsed, activeFeature = "extract-tracks", onFeat
 		<aside
 			className={`${
 				collapsed ? "w-16" : "w-64"
-			} bg-gray-900 text-white flex flex-col transition-all duration-300 ease-in-out h-screen dark:bg-gray-950`}
+			} bg-sidebar text-sidebar-foreground flex flex-col transition-all duration-300 ease-in-out h-screen border-r border-sidebar-border`}
 		>
 			{/* App title - height adjusted to match main header */}
-			<div className="p-4 border-b border-gray-800 flex items-center h-[69px]">
+			<div className="p-4 border-b border-sidebar-border flex items-center h-[69px]">
 				{!collapsed && (
-					<div className="flex items-center gap-2">
-						<Monitor className="size-4" />
-						<h1 className="text-xl font-medium">Project Nexus</h1>
+					<div className="flex items-center gap-3">
+						<div className="w-8 h-8 bg-sidebar-primary/10 rounded-lg flex items-center justify-center">
+							<Monitor className="h-4 w-4 text-sidebar-primary" />
+						</div>
+						<h1 className="text-xl font-semibold text-sidebar-foreground">
+							Project Nexus
+						</h1>
 					</div>
 				)}
-				{collapsed && <Monitor className="size-4 mx-auto" />}
+				{collapsed && (
+					<div className="w-8 h-8 bg-sidebar-primary/10 rounded-lg flex items-center justify-center mx-auto">
+						<Monitor className="h-4 w-4 text-sidebar-primary" />
+					</div>
+				)}
 			</div>
 
 			{/* Navigation menu with conditional tooltips for collapsed state */}
@@ -78,7 +86,7 @@ export function AppSidebar({ collapsed, activeFeature = "extract-tracks", onFeat
 												item.comingSoon
 													? "opacity-60 cursor-not-allowed"
 													: ""
-											}`}
+											} data-[state=on]:bg-sidebar-accent data-[state=on]:text-sidebar-accent-foreground hover:bg-sidebar-accent/50 hover:text-sidebar-accent-foreground`}
 											disabled={item.comingSoon}
 											variant={
 												activeFeature === item.id ? "default" : "ghost"
@@ -87,12 +95,14 @@ export function AppSidebar({ collapsed, activeFeature = "extract-tracks", onFeat
 												!item.comingSoon && onFeatureChange?.(item.id)
 											}
 										>
-											<item.icon className="size-4" />
+											<item.icon className="h-4 w-4" />
 											{!collapsed && (
 												<>
-													<span className="ml-2">{item.title}</span>
+													<span className="ml-2 font-medium">
+														{item.title}
+													</span>
 													{item.comingSoon && (
-														<span className="px-2 py-0.5 text-xs bg-amber-100 text-amber-800 rounded ml-auto">
+														<span className="px-2 py-0.5 text-xs bg-secondary text-secondary-foreground rounded ml-auto font-medium">
 															Coming Soon
 														</span>
 													)}
@@ -114,7 +124,7 @@ export function AppSidebar({ collapsed, activeFeature = "extract-tracks", onFeat
 			</nav>
 
 			{/* Bottom actions bar with theme toggle and utility buttons */}
-			<div className="p-2 border-t border-gray-800">
+			<div className="p-2 border-t border-sidebar-border">
 				<div
 					className={`flex ${collapsed ? "flex-col gap-4 items-center" : "justify-between"}`}
 				>
@@ -125,18 +135,18 @@ export function AppSidebar({ collapsed, activeFeature = "extract-tracks", onFeat
 							<Button
 								variant="ghost"
 								size="icon"
-								className="rounded-full"
+								className="rounded-lg hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
 								title="Settings"
 							>
-								<Settings className="size-4" />
+								<Settings className="h-4 w-4" />
 							</Button>
 							<Button
 								variant="ghost"
 								size="icon"
-								className="rounded-full"
+								className="rounded-lg hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
 								title="Help"
 							>
-								<HelpCircle className="size-4" />
+								<HelpCircle className="h-4 w-4" />
 							</Button>
 						</>
 					) : (
@@ -145,18 +155,18 @@ export function AppSidebar({ collapsed, activeFeature = "extract-tracks", onFeat
 							<Button
 								variant="ghost"
 								size="icon"
-								className="rounded-full"
+								className="rounded-lg hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
 								title="Settings"
 							>
-								<Settings className="size-4" />
+								<Settings className="h-4 w-4" />
 							</Button>
 							<Button
 								variant="ghost"
 								size="icon"
-								className="rounded-full"
+								className="rounded-lg hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
 								title="Help"
 							>
-								<HelpCircle className="size-4" />
+								<HelpCircle className="h-4 w-4" />
 							</Button>
 						</div>
 					)}

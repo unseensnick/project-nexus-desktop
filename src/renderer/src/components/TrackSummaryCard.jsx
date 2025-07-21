@@ -23,32 +23,32 @@ function TrackSummaryCard({ type, count }) {
 		audio: {
 			icon: Headphones,
 			title: "Audio Tracks",
-			bgColor: "bg-blue-50 dark:bg-blue-950/50",
-			borderColor: "border-blue-100 dark:border-blue-900/50",
-			headerBgColor: "bg-blue-100 dark:bg-blue-900/50",
-			iconColor: "text-blue-600 dark:text-blue-400",
-			titleColor: "text-blue-700 dark:text-blue-300",
-			valueColor: "text-blue-800 dark:text-blue-200"
+			bgColor: "bg-primary/5",
+			borderColor: "border-primary/20",
+			headerBgColor: "bg-primary/10",
+			iconColor: "text-primary",
+			titleColor: "text-primary",
+			valueColor: "text-foreground"
 		},
 		subtitle: {
 			icon: Subtitles,
 			title: "Subtitle Tracks",
-			bgColor: "bg-green-50 dark:bg-green-950/50",
-			borderColor: "border-green-100 dark:border-green-900/50",
-			headerBgColor: "bg-green-100 dark:bg-green-900/50",
-			iconColor: "text-green-600 dark:text-green-400",
-			titleColor: "text-green-700 dark:text-green-300",
-			valueColor: "text-green-800 dark:text-green-200"
+			bgColor: "bg-accent/50",
+			borderColor: "border-accent",
+			headerBgColor: "bg-accent",
+			iconColor: "text-accent-foreground",
+			titleColor: "text-accent-foreground",
+			valueColor: "text-foreground"
 		},
 		video: {
 			icon: Video,
 			title: "Video Tracks",
-			bgColor: "bg-amber-50 dark:bg-amber-950/50",
-			borderColor: "border-amber-100 dark:border-amber-900/50",
-			headerBgColor: "bg-amber-100 dark:bg-amber-900/50",
-			iconColor: "text-amber-600 dark:text-amber-400",
-			titleColor: "text-amber-700 dark:text-amber-300",
-			valueColor: "text-amber-800 dark:text-amber-200"
+			bgColor: "bg-secondary/50",
+			borderColor: "border-secondary",
+			headerBgColor: "bg-secondary",
+			iconColor: "text-secondary-foreground",
+			titleColor: "text-secondary-foreground",
+			valueColor: "text-foreground"
 		}
 	}
 
@@ -69,7 +69,9 @@ function TrackSummaryCard({ type, count }) {
 
 	return (
 		<div className={`${bgColor} rounded-lg overflow-hidden shadow-sm border ${borderColor}`}>
-			<div className={`p-2 flex items-center gap-2 border-b ${borderColor} ${headerBgColor}`}>
+			<div
+				className={`px-3 py-2 flex items-center gap-2 border-b ${borderColor} ${headerBgColor}`}
+			>
 				<Icon className={`h-4 w-4 ${iconColor}`} />
 				<span className={`${titleColor} text-sm font-medium`}>{title}</span>
 			</div>
